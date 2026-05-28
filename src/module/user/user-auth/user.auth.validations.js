@@ -11,10 +11,26 @@ export const signupSchema = Joi.object({
 });
 
 /* ── Verify Mobile OTP ── */
-export const verifySignupOtpSchema = Joi.object({
-  mobile:     Joi.string().pattern(/^[0-9]{10,15}$/).required(),
-  mobile_otp: Joi.string().length(6).required(),
+export const verifyMobileOtpSchema = Joi.object({
+  mobile: Joi.string().pattern(/^[0-9]{10,15}$/).required(),  
+  otp:    Joi.string().length(6).required(),
 });
+
+
+/* ── Verify Email OTP ── */
+export const verifyEmailOtpSchema = Joi.object({
+  email: Joi.string().email().required(),   
+  otp:   Joi.string().length(6).required(),
+});
+
+
+
+/* ── Resend OTP ── */
+export const resendOtpSchema = Joi.object({
+  mobile: Joi.string().pattern(/^[0-9]{10,15}$/),
+  email:  Joi.string().email(),
+  type:   Joi.string().valid("mobile", "email").required(),
+}).or("mobile", "email");   
 
 /* ── Login ── */
 export const loginSchema = Joi.object({
@@ -22,29 +38,4 @@ export const loginSchema = Joi.object({
   password: Joi.string().min(6).required(),
 });
 
-/* ── Verify Email Link (query param) ── */
-export const verifyEmailSchema = Joi.object({
-  token: Joi.string().required(),
-});
 
-/* ── Request Contact Change ── */
-export const requestContactChangeSchema = Joi.object({
-  type: Joi.string().valid("email", "mobile").required(),
-});
-
-/* ── Verify Old Contact ── */
-export const verifyOldContactSchema = Joi.object({
-  otp: Joi.string().length(6).required(),
-});
-
-/* ── Verify New Contact ── */
-export const verifyNewContactSchema = Joi.object({
-  new_value: Joi.alternatives().conditional("..type", {
-    switch: [
-      { is: "email",  then: Joi.string().email().required() },
-      { is: "mobile", then: Joi.string().pattern(/^[0-9]{10,15}$/).required() },
-    ],
-  }),
-  otp: Joi.string().length(6).required(),
-  type: Joi.string().valid("email", "mobile").required(),
-});

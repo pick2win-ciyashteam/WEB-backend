@@ -1,19 +1,24 @@
-import { Router } from "express";
-import { authenticate }    from "../../../middlewares/auth.middleware.js";
+import { Router }      from "express";
+import { authenticate } from "../../../middlewares/auth.middleware.js";
 import {
   signup,
-  verifySignupOtp,
-  verifyEmailLink,
+  verifyMobileOtp,
+  verifyEmailOtp,
+  resendOtp,
   login,
   logout,
-} from "./user.auth.controllers.js";
+} from  "./user.auth.controllers.js"
 
 const router = Router();
 
-router.post("/signup",         signup);
-router.post("/verify-signup",  verifySignupOtp);
-router.get ("/verify-email",   verifyEmailLink);  
-router.post("/login",          login);
-router.post("/logout",         authenticate, logout);
+/* ── Public routes ── */
+router.post("/signup",             signup);
+router.post("/verify-mobile-otp",  verifyMobileOtp);
+router.post("/verify-email-otp",   verifyEmailOtp);
+router.post("/resend-otp",         resendOtp);
+router.post("/login",              login);
+
+/* ── Protected routes ── */
+router.post("/logout", authenticate, logout);
 
 export default router;
