@@ -1,18 +1,21 @@
-import jwt from "jsonwebtoken";
 import {
   signupService,
-  verifySignupOtpService,
-  verifyEmailService,
+  verifyMobileOtpService,
+  verifyEmailOtpService,
+  resendOtpService,
   loginService,
   logoutService,
-} from "./user.auth.services.js";
+} from "./user.auth.services.js"
 
 import {
   signupSchema,
-  verifySignupOtpSchema,
+  verifyMobileOtpSchema,
+  verifyEmailOtpSchema,
+  resendOtpSchema,
   loginSchema,
-  verifyEmailSchema,
-} from  "../user-auth/user.auth.validations.js"
+} from  "./user.auth.validations.js"
+
+import { authenticate } from "../../../middlewares/auth.middleware.js";
 
 /* ================= SIGNUP ================= */
 export const signup = async (req, res) => {
@@ -25,22 +28,33 @@ export const signup = async (req, res) => {
   }
 };
 
-/* ================= VERIFY SIGNUP OTP ================= */
-export const verifySignupOtp = async (req, res) => {
+/* ================= VERIFY MOBILE OTP ================= */
+export const verifyMobileOtp = async (req, res) => {
   try {
-    await verifySignupOtpSchema.validateAsync(req.body);
-    const result = await verifySignupOtpService(req.body);
+    await verifyMobileOtpSchema.validateAsync(req.body);
+    const result = await verifyMobileOtpService(req.body);
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 };
 
-/* ================= VERIFY EMAIL LINK ================= */
-export const verifyEmailLink = async (req, res) => {
+/* ================= VERIFY EMAIL OTP ================= */
+export const verifyEmailOtp = async (req, res) => {
   try {
-    await verifyEmailSchema.validateAsync(req.query);
-    const result = await verifyEmailService(req.query.token);
+    await verifyEmailOtpSchema.validateAsync(req.body);
+    const result = await verifyEmailOtpService(req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= RESEND OTP ================= */
+export const resendOtp = async (req, res) => {
+  try {
+    await resendOtpSchema.validateAsync(req.body);
+    const result = await resendOtpService(req.body);
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
