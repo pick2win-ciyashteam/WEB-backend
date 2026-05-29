@@ -6,13 +6,15 @@ import countriesRoutes   from "./countries/countries.route.js"
 import matchesRoutes     from "./matches/match.route.js"
 import bannerRoutes      from "../banner/banner.route.js";
 import planRoutes        from "../user/subscription/subscription.route.js";
+import depositeRoutes     from "../user/deposite/deposite.route.js";
 
 const router = Router();
 
 router.use("/user-auth",   userAuthRoutes);
 router.use("/series", authenticate, seriesRoutes);
-router.use("/countries", authenticate, countriesRoutes);
+router.use("/countries",  countriesRoutes);
 router.use("/matches",authenticate,matchesRoutes);
 router.use("/banner",bannerRoutes);
 router.use("/plans",planRoutes);
-export default router;
+router.use("/deposite",authenticate,depositeRoutes);
+export default router;    
