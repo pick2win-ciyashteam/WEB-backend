@@ -335,6 +335,9 @@ export const loginService = async ({ email, password }) => {
   };
 };
 
+
+
+
 /* ================= LOGOUT ================= */
 export const logoutService = async (userId) => {
   await db.execute(

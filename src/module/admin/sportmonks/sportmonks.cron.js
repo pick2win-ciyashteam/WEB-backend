@@ -1,120 +1,28 @@
-
 import cron from "node-cron";
-import db    from "../../config/db.js";
-import redis from "../../config/redis.js";
+import db   from "../../../config/db.js";
+import {
+  syncPlayingXIService,
+  
+} from "./sportmonks.service.js";
 
-import { syncPlayingXIService, syncPlayerPointsService,syncAllPlayerStatsService} from "./sportmonks.service.js";
-
-
-import { scoreContestService } from "../scoring/scoring.service.js";
-
-import { STUDENT_DEPOSIT_LIMIT, DEFAULT_DEPOSIT_LIMIT } from "../../config/constants.js";
-
-
+/* ================= HELPERS ================= */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const formatDateTime = (date) => {
   return date.toISOString().slice(0, 19).replace("T", " ");
 };
-  
-// ─────────────────────────────────────────────────────────────────────────────
-// CACHE KEY
-// ─────────────────────────────────────────────────────────────────────────────
-export const leaderboardCacheKey = (contestId) => `LB:${contestId}`;
-const CACHE_TTL = 120; // 2 minutes
 
-
-export const computeAndCacheLeaderboard = async (contestId, matchId) => {
-  const [entries] = await db.query(
-    `SELECT
-       ce.user_id,
-       ce.user_team_id,
-       u.name,
-       u.nickname,
-       u.image,
-       ut.team_name
-     FROM contest_entries ce
-     JOIN users u ON u.id = ce.user_id
-     JOIN user_teams ut ON ut.id = ce.user_team_id  -- ✅ LEFT JOIN → JOIN
-     WHERE ce.contest_id = ?`,
-    [contestId]
-  );
-
-  if (!entries.length) return [];
-
-  const teamIds = [...new Set(entries.map(e => e.user_team_id).filter(Boolean))];
-
-  if (!teamIds.length) return [];  // ✅ empty check
-
-  const [playerRows] = await db.query(
-    `SELECT
-       utp.user_team_id,
-       utp.player_id,
-       utp.is_captain,
-       utp.is_vice_captain,
-       utp.is_substitude,
-       COALESCE(pms.fantasy_points, 0) AS base_points
-     FROM user_team_players utp
-     LEFT JOIN player_match_stats pms
-       ON pms.player_id = utp.player_id
-      AND pms.match_id  = ?
-     WHERE utp.user_team_id IN (?)`,
-    [matchId, teamIds]
-  );
-
-  const teamPlayersMap = {};
-  playerRows.forEach(r => {
-    if (!teamPlayersMap[r.user_team_id]) teamPlayersMap[r.user_team_id] = [];
-    teamPlayersMap[r.user_team_id].push(r);
-  });
-
-  // ── Captain ×2, VC ×1.5 apply ──
-  const teamPointsMap = {};
-  for (const teamId of teamIds) {
-    const players = teamPlayersMap[teamId] || [];
-    if (!players.length) { teamPointsMap[teamId] = 0; continue; }
-
-    const total = players.reduce((sum, p) => {
-      const multiplier = p.is_captain ? 2 : p.is_vice_captain ? 1.5 : 1;
-      return sum + (parseFloat(p.base_points) || 0) * multiplier;
-    }, 0);
-
-    teamPointsMap[teamId] = parseFloat(total.toFixed(2));
-  }
-
-  // ── DENSE_RANK ──
-  const ranked = entries
-    .map(e => ({
-      user_id:       e.user_id,
-      user_team_id:  e.user_team_id,
-      team_name:     e.team_name    || null,
-      username:      e.nickname     || e.name || `User${e.user_id}`,
-      profile_image: e.image        || null,
-      points:        teamPointsMap[e.user_team_id] || 0,
-    }))
-    .sort((a, b) => b.points - a.points);
-
-  let rank = 1, lastPts = null, skip = 0;
-  ranked.forEach((entry, i) => {
-    const pts = entry.points;
-    if (lastPts === null)     { lastPts = pts; skip = 1; }
-    else if (pts === lastPts) { skip++; }
-    else                      { rank += skip; skip = 1; lastPts = pts; }
-    entry.rank = rank;
-  });
-
-  await redis.set(
-    leaderboardCacheKey(contestId),
-    ranked,
-    { ex: CACHE_TTL }
-  );
-
-  return ranked;
+const getISTHour = () => {
+  const istMs = Date.now() + 5.5 * 60 * 60 * 1000;
+  return new Date(istMs).getUTCHours();
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JOB 1 — LINEUP SYNC — every 5 mins
-// ─────────────────────────────────────────────────────────────────────────────
+const isLiveWindow = () => {
+  const h = getISTHour();
+  return h >= 14 || h <= 2; // IST 14:00 – 02:00
+};
+
+/* ================= JOB 1 — LINEUP SYNC — every 5 mins ================= */
 const syncLineups = async () => {
   console.log("⏰ [CRON] Lineup sync started:", new Date().toISOString());
   try {
@@ -159,22 +67,24 @@ const syncLineups = async () => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JOB 2 — MATCH STATUS — every 5 mins lll
-// ─────────────────────────────────────────────────────────────────────────────
+/* ================= JOB 2 — MATCH STATUS — every 5 mins ================= */
 const syncMatchStatuses = async () => {
   console.log("⏰ [CRON] Status sync started:", new Date().toISOString());
   try {
     const [toLive] = await db.query(
       `UPDATE matches SET status = 'LIVE'
-       WHERE is_active = 1 AND status = 'UPCOMING' AND start_time <= NOW()`
+       WHERE is_active = 1
+         AND status = 'UPCOMING'
+         AND start_time <= NOW()`
     );
+
     const [toResult] = await db.query(
       `UPDATE matches SET status = 'RESULT'
        WHERE is_active = 1
          AND status IN ('UPCOMING', 'LIVE')
          AND start_time <= DATE_SUB(NOW(), INTERVAL 150 MINUTE)`
     );
+
     console.log(
       `✅ [CRON] UPCOMING→LIVE: ${toLive.affectedRows} | LIVE→RESULT: ${toResult.affectedRows}`
     );
@@ -183,123 +93,90 @@ const syncMatchStatuses = async () => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JOB 3 — POINTS + LEADERBOARD — every 2 mins
-// ✅ Points sync ముందు, leaderboard cache తర్వాత — ORDER GUARANTEED
-// ─────────────────────────────────────────────────────────────────────────────
-const syncPointsAndCacheLeaderboard = async () => {
-  console.log("⏰ [CRON] Points + Leaderboard sync started:", new Date().toISOString());
+/* ================= JOB 3 — PLAYER STATS — every 5 mins ================= */
+const getMatchesToSync = async () => {
+  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 19)
+    .replace("T", " ");
+
+  const [rows] = await db.query(
+    `SELECT id, provider_match_id, status, start_time
+     FROM matches
+     WHERE
+       status IN ('live', 'inplay', 'LIVE')
+       OR (
+         status IN ('finished', 'completed', 'RESULT')
+         AND stats_final_synced = 0
+         AND start_time >= ?
+       )
+     ORDER BY start_time ASC`,
+    [twoHoursAgo]
+  );
+  return rows;
+};
+
+const markFinalSynced = async (matchId) => {
+  await db.query(
+    `UPDATE matches SET stats_final_synced = 1 WHERE id = ?`,
+    [matchId]
+  );
+};
+
+const syncMatchStats = async (match) => {
   try {
-    // ── Step 1: LIVE + RESULT matches కి points sync ──
-    const [matches] = await db.query(
-      `SELECT id, provider_match_id, status
-       FROM matches
-       WHERE is_active = 1
-         AND status IN ('LIVE', 'RESULT')
-         AND start_time >= DATE_SUB(NOW(), INTERVAL 6 HOUR)
-       ORDER BY start_time DESC`
-    );
+    const result = await syncAllPlayerStatsService(match.id);
 
-    if (!matches.length) {
-      console.log("✅ [CRON] No matches needing sync");
+    if (result.reason) {
+      console.log(`  [SKIP] Match ${match.id}: ${result.reason}`);
       return;
     }
 
-    // Points sync — parallel
-    const pointsResults = await Promise.allSettled(
-      matches.map(m => syncPlayerPointsService(m.provider_match_id))
+    console.log(
+      `  [OK]   Match ${match.id} — ${result.count} saved, ${result.skipped?.length || 0} skipped`
     );
 
-    pointsResults.forEach((r, i) => {
-      const m = matches[i];
-      if (r.status === "fulfilled") {
-        console.log(`✅ [CRON] Points synced: Match ${m.provider_match_id} [${m.status}]`);
-      } else {
-        console.error(`❌ [CRON] Points failed: Match ${m.provider_match_id}:`, r.reason?.message);
-      }
-    });
-
-    // ── Step 2: LIVE matches కి leaderboard cache ──
-    // Points sync after, cache before — to ensure users see updated points on LB
-    const liveMatchIds = matches
-      .filter(m => m.status === 'LIVE')
-      .map(m => m.id);
-
-    if (!liveMatchIds.length) {
-      console.log("✅ [CRON] No LIVE matches for leaderboard cache");
-      return;
+    const finishedStatuses = ["finished", "completed", "result"];
+    if (finishedStatuses.includes(match.status?.toLowerCase())) {
+      await markFinalSynced(match.id);
+      console.log(`  [DONE] Match ${match.id} marked final-synced`);
     }
-
-  
-const [liveContests] = await db.query(
-  `SELECT c.id AS contest_id, c.match_id
-   FROM contest c
-   WHERE c.match_id IN (?)
-     AND c.status = 'LIVE'`,
-  [liveMatchIds]
-);
-    if (!liveContests.length) {
-      console.log("✅ [CRON] No live contests to cache");
-      return;
-    }
-
-    await Promise.allSettled(
-      liveContests.map(c => computeAndCacheLeaderboard(c.contest_id, c.match_id))
-    );
-
-    console.log(`✅ [CRON] Leaderboard cached for ${liveContests.length} contest(s)`);
-
   } catch (err) {
-    console.error("❌ [CRON] syncPointsAndCacheLeaderboard failed:", err.message);
+    console.error(`  [ERR]  Match ${match.id}: ${err.message}`);
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JOB 4 — CONTEST SCORING — every 10 mins (RESULT only)
-// ─────────────────────────────────────────────────────────────────────────────
-
-const scoreCompletedMatches = async () => {
-  console.log("⏰ [CRON] Contest scoring started:", new Date().toISOString());
+const syncPlayerStatsJob = async () => {
   try {
-    const [contests] = await db.query(
-      `SELECT c.id AS contestId, c.match_id AS matchId
-       FROM contest c
-       JOIN matches m ON m.id = c.match_id
-       WHERE m.is_active = 1
-         AND m.status = 'RESULT'
-         AND c.status NOT IN ('COMPLETED')
-         AND m.start_time >= DATE_SUB(NOW(), INTERVAL 48 HOUR)
-   
-
-       ORDER BY c.id ASC`
-    );
-
-    if (!contests.length) {
-      console.log("✅ [CRON] No contests pending scoring");
+    if (!isLiveWindow()) {
+      /* ── Outside live window — only unsynced finished matches ── */
+      const [rows] = await db.query(
+        `SELECT id, provider_match_id, status
+         FROM matches
+         WHERE stats_final_synced = 0
+           AND status IN ('finished', 'completed', 'RESULT')
+         LIMIT 10`
+      );
+      if (!rows.length) return;
+      console.log(`[StatsCron] Outside window — ${rows.length} unsynced`);
+      for (const m of rows) await syncMatchStats(m);
       return;
     }
 
-    console.log(`🏆 [CRON] Scoring ${contests.length} contest(s)...`);
+    const matches = await getMatchesToSync();
+    if (!matches.length) return;
 
-    for (const contest of contests) {
-      try {
-        const result = await scoreContestService(contest.contestId, contest.matchId);
-        console.log(
-          `✅ [CRON] Contest ${contest.contestId} scored — ${result.totalEntries} entries`
-        );
-        await sleep(500);
-      } catch (err) {
-        console.error(`❌ [CRON] Scoring failed for contest ${contest.contestId}:`, err.message);
-      }
+    console.log(`[StatsCron] Syncing ${matches.length} match(es)...`);
+    for (const m of matches) {
+      await syncMatchStats(m);
+      await sleep(400);
     }
   } catch (err) {
-    console.error("❌ [CRON] scoreCompletedMatches failed:", err.message);
+    console.error("[StatsCron] Error:", err.message);
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// JOB 5 — CLEANUP — daily 2 AM UTC
-// ─────────────────────────────────────────────────────────────────────────────
+/* ================= JOB 4 — CLEANUP — daily 2 AM UTC ================= */
 const cleanupOldInactiveMatches = async () => {
   console.log("🧹 [CRON] Cleanup started:", new Date().toISOString());
   try {
@@ -314,219 +191,20 @@ const cleanupOldInactiveMatches = async () => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONTEST STATUS SYNC — match status బట్టి contest status update
-// ─────────────────────────────────────────────────────────────────────────────
-const syncContestStatuses = async () => {
-  console.log("⏰ [CRON] Contest status sync started:", new Date().toISOString());
-  try {
-
-    // ── UPCOMING → LIVE (match LIVE ) ──
-    const [toLive] = await db.query(
-      `UPDATE contest c
-       JOIN matches m ON m.id = c.match_id
-       SET c.status = 'LIVE'
-       WHERE c.status = 'UPCOMING'
-         AND m.status = 'LIVE'
-         AND m.is_active = 1`
-    );
-
-    // ── LIVE → INREVIEW (match RESULT ) ──
-    const [toReview] = await db.query(
-      `UPDATE contest c
-       JOIN matches m ON m.id = c.match_id
-       SET c.status = 'INREVIEW'
-       WHERE c.status = 'LIVE'
-         AND m.status = 'RESULT'
-         AND m.is_active = 1`
-    );
-
-    console.log(
-      `✅ [CRON] Contest UPCOMING→LIVE: ${toLive.affectedRows} | LIVE→INREVIEW: ${toReview.affectedRows}`
-    );
-
-  } catch (err) {
-    console.error("❌ [CRON] syncContestStatuses failed:", err.message);
-  }
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// REGISTER ALL CRON JOBS
-// ─────────────────────────────────────────────────────────────────────────────
-
-
-const resetMonthlyDepositLimits = async () => {
-
-  console.log(
-    "⏰ [CRON] Monthly deposit limit reset started:",
-    new Date().toISOString()
-  );
-
-  try {
-
-    // ── Reset deposit limits ──
-    const [result] = await db.query(
-      `UPDATE wallets w
-       JOIN users u ON u.id = w.user_id
-       SET 
-         w.deposit_limit     = CASE WHEN u.category = 'students' THEN ? ELSE ? END,
-         w.remaining_limit   = CASE WHEN u.category = 'students' THEN ? ELSE ? END,
-         w.monthly_limit     = CASE WHEN u.category = 'students' THEN ? ELSE ? END,
-         w.depositelimitdate = CURDATE()
-       WHERE u.is_deleted = 0`,
-      [
-        STUDENT_DEPOSIT_LIMIT,
-        DEFAULT_DEPOSIT_LIMIT,
-
-        STUDENT_DEPOSIT_LIMIT,
-        DEFAULT_DEPOSIT_LIMIT,
-
-        STUDENT_DEPOSIT_LIMIT,
-        DEFAULT_DEPOSIT_LIMIT,
-      ]
-    );
-
-    // ── Cleanup old monthly deposits ──
-    const currentYM = new Date().toISOString().slice(0, 7);
-
-    await db.query(
-      `DELETE FROM monthly_deposits WHERE ym <= ?`,
-      [currentYM]
-    );
-
-    console.log(
-      `✅ [CRON] Monthly limit reset — ${result.affectedRows} users updated`
-    );
-
-  } catch (err) {
-
-    console.error(
-      "❌ [CRON] Monthly limit reset failed:",
-      err.message
-    );
-
-  }
-};
-
-
-
-/* ══════════════════════════════════════════
-   PLAYER STATS CRON HELPERS
-══════════════════════════════════════════ */
- 
-const getISTHour = () => {
-  const istMs = Date.now() + (5.5 * 60 * 60 * 1000);
-  return new Date(istMs).getUTCHours();
-};
- 
-const isLiveWindow = () => {
-  const h = getISTHour();
-  return h >= 14 || h <= 2; // IST 14:00 – 02:00
-};
- 
-const getMatchesToSync = async () => {
-  const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000)
-    .toISOString().slice(0, 19).replace("T", " ");
- 
-  const [rows] = await db.query(
-    `SELECT id, provider_match_id, status, start_time
-     FROM matches
-     WHERE
-       status IN ('live', 'inplay', '1st-half', '2nd-half', 'ht', 'et', 'pen')
-       OR (
-         status IN ('finished', 'completed', 'ft')
-         AND stats_final_synced = 0
-         AND start_time >= ?
-       )
-     ORDER BY start_time ASC`,
-    [twoHoursAgo]
-  );
-  return rows;
-};
- 
-const markFinalSynced = async (matchId) => {
-  await db.query(
-    `UPDATE matches SET stats_final_synced = 1 WHERE id = ?`,
-    [matchId]
-  );
-};
- 
-const syncMatchStats = async (match) => {
-  try {
-    const result = await syncAllPlayerStatsService(match.id);
- 
-    if (result.reason) {
-      console.log(`  [SKIP] Match ${match.id}: ${result.reason}`);
-      return;
-    }
- 
-    console.log(`  [OK]   Match ${match.id} — ${result.count} saved, ${result.skipped?.length || 0} skipped`);
- 
-    const finishedStatuses = ["finished", "completed", "ft"];
-    if (finishedStatuses.includes(match.status?.toLowerCase())) {
-      await markFinalSynced(match.id);
-      console.log(`  [DONE] Match ${match.id} marked final-synced`);
-    }
-  } catch (err) {
-    console.error(`  [ERR]  Match ${match.id}: ${err.message}`);
-  }
-};
- 
-const syncPlayerStatsJob = async () => {
-  try {
-    if (!isLiveWindow()) {
-      // Outside live window — only unsynced finished matches
-      const [rows] = await db.query(
-        `SELECT id, provider_match_id, status
-         FROM matches
-         WHERE stats_final_synced = 0
-           AND status IN ('finished', 'completed', 'ft')
-         LIMIT 10`
-      );
-      if (!rows.length) return;
-      console.log(`[StatsCron] Outside window — ${rows.length} unsynced`);
-      for (const m of rows) await syncMatchStats(m);
-      return;
-    }
- 
-    const matches = await getMatchesToSync();
-    if (!matches.length) return;
- 
-    console.log(`[StatsCron] Syncing ${matches.length} match(es)...`);
-    for (const m of matches) {
-      await syncMatchStats(m);
-      await new Promise(r => setTimeout(r, 400)); // avoid rate limit
-    }
-  } catch (err) {
-    console.error("[StatsCron] Error:", err.message);
-  }
-};
-
+/* ================= START ALL CRON JOBS ================= */
 export const startCronJobs = () => {
 
-  // Lineup — every 5 mins
-  cron.schedule("*/5 * * * *",  syncLineups,                    { scheduled: true, timezone: "UTC" });
+  // Lineup sync      — every 5 mins
+  cron.schedule("*/5 * * * *", syncLineups,             { scheduled: true, timezone: "UTC" });
 
-  // Status — every 5 mins
-  cron.schedule("*/5 * * * *",  syncMatchStatuses,              { scheduled: true, timezone: "UTC" });
+  // Match status     — every 5 mins
+  cron.schedule("*/5 * * * *", syncMatchStatuses,       { scheduled: true, timezone: "UTC" });
 
-   // ✅ Contest Status — every 5 mins 
-  cron.schedule("*/5 * * * *",  syncContestStatuses,            { scheduled: true, timezone: "UTC" })
- 
-  // Points + Leaderboard — every 2 mins (combined, order guaranteed)
-  cron.schedule("*/2 * * * *",  syncPointsAndCacheLeaderboard,  { scheduled: true, timezone: "UTC" });
+  // Player stats     — every 5 mins
+  cron.schedule("*/5 * * * *", syncPlayerStatsJob,      { scheduled: true, timezone: "UTC" });
 
-  // Scoring — every 10 mins
-  cron.schedule("*/10 * * * *", scoreCompletedMatches,          { scheduled: true, timezone: "UTC" });
+  // Cleanup          — daily 2 AM UTC
+  cron.schedule("0 2 * * *",   cleanupOldInactiveMatches, { scheduled: true, timezone: "UTC" });
 
-  // Cleanup — daily 2 AM
-  cron.schedule("0 2 * * *",    cleanupOldInactiveMatches,      { scheduled: true, timezone: "UTC" });
-
-   //  Player Stats (sportmonks_player_stats) — every 5 mins
-  cron.schedule("*/5 * * * *",  syncPlayerStatsJob,            { scheduled: true, timezone: "UTC" });
- 
-
-  console.log("🚀 [CRON] All jobs registered");
+  console.log("✅ [CRON] All jobs registered");
 };
-
-  
