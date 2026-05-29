@@ -1,41 +1,125 @@
+// import Joi from "joi";
+
+// /* ── Signup ── */
+// export const signupSchema = Joi.object({
+//   fullname:      Joi.string().min(3).max(100).required(),
+//   email:         Joi.string().email().required(),
+//   mobile: Joi.string().pattern(/^[0-9]{5,15}$/).required(),
+//   country:       Joi.string().min(2).max(100).required(),
+//   date_of_birth: Joi.date().less("now").required(),
+//   password:      Joi.string().min(6).max(100).required(),
+// });
+
+// /* ── Verify Mobile OTP ── */
+// export const verifyMobileOtpSchema = Joi.object({
+//   mobile: Joi.string().pattern(/^[0-9]{5,15}$/).required(),  
+//   otp:    Joi.string().length(6).required(),
+// });
+
+
+// /* ── Verify Email OTP ── */
+// export const verifyEmailOtpSchema = Joi.object({
+//   email: Joi.string().email().required(),   
+//   otp:   Joi.string().length(6).required(),
+// });
+
+
+
+// /* ── Resend OTP ── */
+// export const resendOtpSchema = Joi.object({
+//   mobile: Joi.string().pattern(/^[0-9]{5,15}$/),
+//   email:  Joi.string().email(),
+//   type:   Joi.string().valid("mobile", "email").required(),
+// }).or("mobile", "email");   
+
+// /* ── Login ── */
+// export const loginSchema = Joi.object({
+//   email:    Joi.string().email().required(),
+//   password: Joi.string().min(6).required(),
+// });
+
+
+
+// export const updateProfile = (req, res, next) => {
+//   const schema = Joi.object({
+//     fullname:      Joi.string().min(3).max(100),
+//     country:       Joi.string().min(2).max(100),
+//     date_of_birth: Joi.date().less("now"),
+//   }).min(1);
+
+//   const { error } = schema.validate(req.body);
+//   if (error)
+//     return res.status(400).json({ success: false, message: error.details[0].message });
+//   next();
+// };
+
+
+
+
 import Joi from "joi";
 
 /* ── Signup ── */
-export const signupSchema = Joi.object({
-  fullname:      Joi.string().min(3).max(100).required(),
-  email:         Joi.string().email().required(),
-  mobile: Joi.string().pattern(/^[0-9]{5,15}$/).required(),
-  country:       Joi.string().min(2).max(100).required(),
-  date_of_birth: Joi.date().less("now").required(),
-  password:      Joi.string().min(6).max(100).required(),
-});
+export const signup = (req, res, next) => {
+  const { error } = Joi.object({
+    fullname:      Joi.string().min(3).max(100).required(),
+    email:         Joi.string().email().required(),
+    mobile:        Joi.string().pattern(/^[0-9]{5,15}$/).required(),
+    country:       Joi.string().min(2).max(100).required(),
+    date_of_birth: Joi.date().less("now").required(),
+    password:      Joi.string().min(6).max(100).required(),
+  }).validate(req.body);
+  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+  next();
+};
 
 /* ── Verify Mobile OTP ── */
-export const verifyMobileOtpSchema = Joi.object({
-  mobile: Joi.string().pattern(/^[0-9]{5,15}$/).required(),  
-  otp:    Joi.string().length(6).required(),
-});
-
+export const verifyMobileOtp = (req, res, next) => {
+  const { error } = Joi.object({
+    mobile: Joi.string().pattern(/^[0-9]{5,15}$/).required(),
+    otp:    Joi.string().length(6).required(),
+  }).validate(req.body);
+  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+  next();
+};
 
 /* ── Verify Email OTP ── */
-export const verifyEmailOtpSchema = Joi.object({
-  email: Joi.string().email().required(),   
-  otp:   Joi.string().length(6).required(),
-});
-
-
+export const verifyEmailOtp = (req, res, next) => {
+  const { error } = Joi.object({
+    email: Joi.string().email().required(),
+    otp:   Joi.string().length(6).required(),
+  }).validate(req.body);
+  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+  next();
+};
 
 /* ── Resend OTP ── */
-export const resendOtpSchema = Joi.object({
-  mobile: Joi.string().pattern(/^[0-9]{5,15}$/),
-  email:  Joi.string().email(),
-  type:   Joi.string().valid("mobile", "email").required(),
-}).or("mobile", "email");   
+export const resendOtp = (req, res, next) => {
+  const { error } = Joi.object({
+    mobile: Joi.string().pattern(/^[0-9]{5,15}$/),
+    email:  Joi.string().email(),
+    type:   Joi.string().valid("mobile", "email").required(),
+  }).or("mobile", "email").validate(req.body);
+  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+  next();
+};
 
 /* ── Login ── */
-export const loginSchema = Joi.object({
-  email:    Joi.string().email().required(),
-  password: Joi.string().min(6).required(),
-});
+export const login = (req, res, next) => {
+  const { error } = Joi.object({
+    email:    Joi.string().email().required(),
+    password: Joi.string().min(6).required(),
+  }).validate(req.body);
+  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+  next();
+};
 
-
+/* ── Update Profile ── */
+export const updateProfile = (req, res, next) => {
+  const { error } = Joi.object({
+    fullname:      Joi.string().min(3).max(100),
+    country:       Joi.string().min(2).max(100),
+    date_of_birth: Joi.date().less("now"),
+  }).min(1).validate(req.body);
+  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+  next();
+};

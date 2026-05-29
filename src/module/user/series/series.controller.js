@@ -8,34 +8,50 @@ export const getAllSeries = async (req, res) => {
               start_date, end_date, created_at,
               status, is_selected
        FROM series
+       WHERE status = 'active'        -- ✅ is_selected remove చేశాం
        ORDER BY created_at DESC`
     );
+
+    if (!seriesRows.length) {
+      return res.status(200).json({ success: true, count: 0, data: [] });
+    }
 
     const result = await Promise.all(
       seriesRows.map(async (series) => {
 
         const [matches] = await db.execute(
           `SELECT
-              m.id,
-              m.provider_match_id,
-              m.series_id,
-              m.start_time,
-              m.status,
-              m.matchdate,
-              m.lineupavailable,
-              m.lineup_status,
-              m.is_active,
-              ht.short_name AS home_team_name,
-              awt.short_name AS away_team_name,
-              ht.logo AS home_team_logo,
-              awt.logo AS away_team_logo
-           FROM matches m
-           JOIN teams ht  ON m.home_team_id = ht.id
-           JOIN teams awt ON m.away_team_id = awt.id
-           WHERE m.series_id = ?
-             AND m.is_active = 1
-             AND m.status = 'UPCOMING'
-           ORDER BY m.start_time ASC`,
+      m.id,
+      m.provider_match_id,
+      m.series_id,
+      m.start_time,
+      m.status,
+      m.matchdate,
+      m.lineupavailable,
+      m.lineup_status,
+      m.is_active,
+      COALESCE(ht.short_name, ht.name, 'TBA') AS home_team_name,
+      COALESCE(awt.short_name, awt.name, 'TBA') AS away_team_name,
+      ht.logo  AS home_team_logo,
+      awt.logo AS away_team_logo
+   FROM matches m
+   LEFT JOIN teams ht  ON m.home_team_id = ht.id
+   LEFT JOIN teams awt ON m.away_team_id = awt.id
+   WHERE m.series_id = ?
+     AND m.is_active = 1
+     AND (
+       m.status = 'LIVE'                          -- ✅ live matches always show
+       OR (
+         m.status = 'UPCOMING'
+         AND m.start_time >= CURDATE()             -- ✅ today + future only
+       )
+     )
+   ORDER BY
+     CASE m.status
+       WHEN 'LIVE'     THEN 1                      -- LIVE first
+       WHEN 'UPCOMING' THEN 2                      -- UPCOMING second
+     END,
+     m.start_time ASC`,
           [series.seriesid]
         );
 
@@ -52,15 +68,15 @@ export const getAllSeries = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      count:   filtered.length,
-      data:    filtered,
+      count: filtered.length,
+      data: filtered,
     });
 
   } catch (error) {
+    console.error("getAllSeries error:", error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };
-
 /* ================= GET SERIES BY ID ================= */
 export const getSeriesById = async (req, res) => {
   try {
@@ -126,8 +142,8 @@ export const getMatchesBySeriesId = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      count:   rows.length,
-      data:    rows,
+      count: rows.length,
+      data: rows,
     });
 
   } catch (error) {
