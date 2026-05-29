@@ -7,7 +7,7 @@ export const addPointsService = async (userId, planId, coins, amount, paymentInt
   if (!userId || !planId || !coins || !amount)
     throw new Error("Invalid parameters");
 
-  const safePaymentIntentId = typeof paymentIntentId === "string"
+  const safePaymentIntentId = typeof paymentIntentId === "string"  
     ? paymentIntentId.trim().slice(0, 200)
     : null;
 
