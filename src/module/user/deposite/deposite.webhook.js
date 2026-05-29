@@ -26,6 +26,8 @@ export const stripeWebhook = async (req, res) => {
 
   const paymentIntent = event.data.object;
 
+  console.log("🔔 metadata:", JSON.stringify(paymentIntent.metadata));
+
   if (paymentIntent.metadata?.type !== "points_purchase")
     return res.json({ received: true });
 

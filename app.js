@@ -4,16 +4,23 @@ import cors         from "cors";
 import morgan       from "morgan";
 import helmet       from "helmet";
 import routes       from "./src/routes/index.js";
-import { stripeWebhook } from "./src/module/user/deposite/deposite.webhook.js"
+import { stripeWebhook } from "./src/module/user/deposite/deposite.webhook.js";
 
 const app = express();
+
+
+app.post(
+  "/api/webhook/stripe",
+  express.raw({ type: "application/json" }),
+  stripeWebhook
+);
 
 app.use(helmet());
 app.use(morgan("combined"));
 
 const allowedOrigins = [
   "http://localhost:3000",
-  "http://localhost:5173",
+  "http://localhost:3001",
   "http://localhost:4200",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
@@ -32,18 +39,9 @@ app.use(cors({
   optionsSuccessStatus: 200,
 }));
 
- 
-app.post(
-  "/api/webhook/stripe",
-  express.raw({ type: "application/json" }),
-  stripeWebhook
-);
-
-// ── Normal middleware ──
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ── Routes ──
 app.use("/api", routes);
 
-export default app;  
+export default app;
