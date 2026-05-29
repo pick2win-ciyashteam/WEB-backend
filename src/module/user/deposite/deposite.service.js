@@ -1,7 +1,7 @@
 import db from "../../../config/db.js";
 
-/* ================= ADD POINTS SERVICE ================= */
-export const addPointsService = async (userId, planId, coins, amount, paymentIntentId) => {
+/* ================= ADD COINS SERVICE ================= */
+export const addCoinsService = async (userId, planId, coins, amount, paymentIntentId) => {
 
   if (!userId || !planId || !coins || !amount)
     throw new Error("Invalid parameters");
@@ -39,24 +39,24 @@ export const addPointsService = async (userId, planId, coins, amount, paymentInt
     );
     if (!user) throw new Error("User not found");
 
-    /* ── Current points ── */
-    const [[pointsRow]] = await conn.query(
-      `SELECT points FROM user_points WHERE user_id = ? FOR UPDATE`,
+    /* ── Current coins ── */
+    const [[coinsRow]] = await conn.query(
+      `SELECT coins FROM user_coins WHERE user_id = ? FOR UPDATE`,
       [userId]
     );
 
-    const openingPoints = pointsRow ? Number(pointsRow.points) : 0;
-    const closingPoints = openingPoints + Number(coins);
+    const openingCoins = coinsRow ? Number(coinsRow.coins) : 0;
+    const closingCoins = openingCoins + Number(coins);
 
-    /* ── Points update or insert ── */
-    if (pointsRow) {
+    /* ── Coins update or insert ── */
+    if (coinsRow) {
       await conn.query(
-        `UPDATE user_points SET points = points + ? WHERE user_id = ?`,
+        `UPDATE user_coins SET coins = coins + ? WHERE user_id = ?`,
         [coins, userId]
       );
     } else {
       await conn.query(
-        `INSERT INTO user_points (user_id, points) VALUES (?, ?)`,
+        `INSERT INTO user_coins (user_id, coins) VALUES (?, ?)`,
         [userId, coins]
       );
     }
@@ -66,7 +66,7 @@ export const addPointsService = async (userId, planId, coins, amount, paymentInt
       `INSERT INTO points_transactions
          (user_id, plan_id, coins, amount, opening_points, closing_points, reference_id, status)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'success')`,
-      [userId, planId, coins, amount, openingPoints, closingPoints, safePaymentIntentId]
+      [userId, planId, coins, amount, openingCoins, closingCoins, safePaymentIntentId]
     );
 
     await conn.commit();
@@ -74,12 +74,12 @@ export const addPointsService = async (userId, planId, coins, amount, paymentInt
     return {
       success:    true,
       addedCoins: Number(coins),
-      totalCoins: closingPoints,
+      totalCoins: closingCoins,
     };
 
   } catch (err) {
     await conn.rollback().catch(() => {});
-    console.error(`[addPointsService] error: ${err.message}`);
+    console.error(`[addCoinsService] error: ${err.message}`);
     throw err;
   } finally {
     conn.release();

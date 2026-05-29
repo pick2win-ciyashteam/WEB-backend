@@ -191,8 +191,54 @@ const cleanupOldInactiveMatches = async () => {
   }
 };
 
+
+
+export const startTimelineCron = () => {
+  // Every minute
+  cron.schedule("* * * * *", async () => {
+    try {
+      const now = new Date();
+
+      // Upcoming matches with lineup available
+      const [matches] = await db.execute(
+        `SELECT id, start_time, lineupavailable
+         FROM matches
+         WHERE status     IN ('UPCOMING', 'LIVE')
+           AND is_active   = 1
+           AND lineupavailable = 1
+           AND start_time  > ?`,
+        [now]
+      );
+
+      for (const match of matches) {
+        const kickoff  = new Date(match.start_time);
+        const minsLeft = Math.round((kickoff - now) / (1000 * 60));
+
+        let stage;
+        if      (minsLeft > 60) stage = "LINEUPS_OUT";
+        else if (minsLeft > 45) stage = "USERS_ADJUSTING";
+        else if (minsLeft > 30) stage = "CAPTAIN_ROTATIONS";
+        else if (minsLeft > 15) stage = "DEADLINE_PRESSURE";
+        else if (minsLeft > 0)  stage = "CHAOS_ZONE";
+        else                    stage = "FANTASY_LOCK";
+
+        await db.execute(
+          `UPDATE matches SET lineup_status = ? WHERE id = ?`,
+          [stage, match.id]
+        );
+      }
+
+      console.log(`✅ [TimelineCron] Updated ${matches.length} matches`);
+    } catch (err) {
+      console.error("[TimelineCron] Error:", err.message);
+    }
+  });
+
+  console.log("✅ [CRON] Timeline job registered");
+};
+
 /* ================= START ALL CRON JOBS ================= */
-export const startCronJobs = () => {
+ export const startCronJobs = () => {
 
   // Lineup sync      — every 5 mins
   cron.schedule("*/5 * * * *", syncLineups,             { scheduled: true, timezone: "UTC" });
@@ -205,6 +251,9 @@ export const startCronJobs = () => {
 
   // Cleanup          — daily 2 AM UTC
   cron.schedule("0 2 * * *",   cleanupOldInactiveMatches, { scheduled: true, timezone: "UTC" });
+
+  // Timeline status  — every 1 min
+  startTimelineCron();
 
   console.log("✅ [CRON] All jobs registered");
 };

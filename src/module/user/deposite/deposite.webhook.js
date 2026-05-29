@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { addPointsService } from "./deposite.service.js";
+import { addCoinsService } from "./deposite.service.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -45,15 +45,15 @@ export const stripeWebhook = async (req, res) => {
   }
 
   try {
-    await addPointsService(userId, plan_id, Number(coins), amount, paymentIntentId);
-    console.log(`✅ Points added — userId:${userId} coins:${coins}`);
+    await addCoinsService(userId, plan_id, Number(coins), amount, paymentIntentId);
+    console.log(`✅ Coins added — userId:${userId} coins:${coins}`);
     return res.json({ received: true });
   } catch (err) {
     if (err.message === "Payment already processed") {
       console.log("⚠️ Duplicate webhook ignored:", paymentIntentId);
       return res.json({ received: true });
     }
-    console.error(`❌ Points update failed:`, err.message);
-    return res.status(500).json({ error: "Points update failed" });
+    console.error(`❌ Coins update failed:`, err.message);
+    return res.status(500).json({ error: "Coins update failed" });
   }
 };

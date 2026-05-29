@@ -70,16 +70,19 @@ export const logout = async (req, res) => {
 };
 
 /* ================= GET PROFILE ================= */
+
 export const getProfile = async (req, res) => {
   try {
     const [[user]] = await db.execute(
       `SELECT
-         id, fullname, email, mobile,
-         country, date_of_birth,
-         email_verify, mobile_verify,
-         account_status, created_at
-       FROM users
-       WHERE id = ? AND account_status != 'deleted'`,
+         u.id, u.fullname, u.email, u.mobile,
+         u.country, u.date_of_birth,
+         u.email_verify, u.mobile_verify,
+         u.account_status, u.created_at,
+         COALESCE(up.coins, 0) AS coins
+       FROM users u
+       LEFT JOIN user_coins up ON up.user_id = u.id
+       WHERE u.id = ? AND u.account_status != 'deleted'`,
       [req.user.id]
     );
 
