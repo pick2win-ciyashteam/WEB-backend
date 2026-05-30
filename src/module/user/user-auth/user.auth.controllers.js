@@ -6,6 +6,11 @@ import {
   loginService,
   logoutService,
   requestMobileChangeService,
+  verifyMobileChangeService,
+  requestEmailChangeService,
+  verifyEmailChangeService,
+  forgotPasswordService,
+  resetPasswordService,
 } from "./user.auth.services.js"
 
 import db from "../../../config/db.js";
@@ -261,10 +266,12 @@ export const deleteAccount = async (req, res) => {
 
   
 
+
 /* ================= REQUEST MOBILE CHANGE ================= */
 export const requestMobileChange = async (req, res) => {
   try {
-    const result = await requestMobileChangeService(req.user.id, req.body.new_mobile);
+    // ✅ object గా pass చేయి
+    const result = await requestMobileChangeService(req.user.id, { new_mobile: req.body.new_mobile });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -274,7 +281,8 @@ export const requestMobileChange = async (req, res) => {
 /* ================= VERIFY MOBILE CHANGE ================= */
 export const verifyMobileChange = async (req, res) => {
   try {
-    const result = await verifyMobileChangeService(req.user.id, req.body.otp);
+    // ✅ object గా pass చేయి
+    const result = await verifyMobileChangeService(req.user.id, { otp: req.body.otp });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -314,7 +322,11 @@ export const forgotPassword = async (req, res) => {
 /* ================= RESET PASSWORD ================= */
 export const resetPassword = async (req, res) => {
   try {
-    const result = await resetPasswordService(req.body.email, req.body.otp, req.body.password);
+    const result = await resetPasswordService(
+      req.body.email,
+      req.body.otp,
+      req.body.password
+    );
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
