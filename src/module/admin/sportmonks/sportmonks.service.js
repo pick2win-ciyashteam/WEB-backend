@@ -514,7 +514,7 @@ export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
    PLAYING XI (match_players table only)
 ══════════════════════════════════════════ */
 
-
+   
 export const syncPlayingXIService = async (matchId) => {
 
   /* ── 1. Match fetch ── */
@@ -569,15 +569,52 @@ export const syncPlayingXIService = async (matchId) => {
     }
 
     /* ── Position map ── */
-    const positionMap = {
-      "Goalkeeper":  "GK",
-      "Defender":    "DEF",
-      "Midfielder":  "MID",
-      "Attacker":    "FWD",
-      "Forward":     "FWD",
-    };
-    const rawPosition = player?.position?.name || player?.detailed_position?.name || "";
-    const position    = positionMap[rawPosition] || "MID";
+    // const positionMap = {
+    //   "Goalkeeper":  "GK",
+    //   "Defender":    "DEF",
+    //   "Midfielder":  "MID",
+    //   "Attacker":    "FWD",
+    //   "Forward":     "FWD",
+    // };
+
+    /* ── Position map ── */
+const positionMap = {
+  // Standard
+  "Goalkeeper":        "GK",
+  "Defender":          "DEF",
+  "Midfielder":        "MID",
+  "Attacker":          "FWD",
+  "Forward":           "FWD",
+  // Detailed positions
+  "Centre-Back":       "DEF",
+  "Left-Back":         "DEF",
+  "Right-Back":        "DEF",
+  "Left Wingback":     "DEF",
+  "Right Wingback":    "DEF",
+  "Defensive Midfielder": "MID",
+  "Central Midfielder":   "MID",
+  "Attacking Midfielder": "MID",
+  "Left Winger":       "FWD",
+  "Right Winger":      "FWD",
+  "Centre-Forward":    "FWD",
+  "Second Striker":    "FWD",
+};
+
+// position_id map — Sportmonks standard IDs
+const positionIdMap = {
+  24: "GK",
+  25: "DEF",
+  26: "MID",
+  27: "FWD",
+};
+const rawPosition = player?.position?.name ||  player?.detailed_position?.name ||  null;
+
+const positionById = positionIdMap[lineup?.position_id] || null;
+
+const position = positionMap[rawPosition] || positionById || "MID";
+
+    // const rawPosition = player?.position?.name || player?.detailed_position?.name || "";
+    // const position    = positionMap[rawPosition] || "MID";
 
     await db.query(
       `INSERT INTO match_players
