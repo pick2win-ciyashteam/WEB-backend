@@ -6,7 +6,7 @@ import db     from "../../../config/db.js";
  
 import { sendMail } from "../../../utils/send.mail.js";
 
-const OTP_EXPIRY_MINS = 10;
+const OTP_EXPIRY_MINS = 10;  
 
 
 /* ================= SIGNUP — store temp + send both OTPs ================= */

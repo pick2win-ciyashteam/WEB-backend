@@ -514,15 +514,21 @@ export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
    PLAYING XI (match_players table only)
 ══════════════════════════════════════════ */
 
+
 export const syncPlayingXIService = async (matchId) => {
+
+  /* ── 1. Match fetch ── */
   const [[matchRow]] = await db.query(
-    `SELECT id, provider_match_id FROM matches
-     WHERE provider_match_id = ? LIMIT 1`,
+    `SELECT id, provider_match_id, home_team_id, away_team_id
+     FROM matches WHERE provider_match_id = ? LIMIT 1`,
     [matchId]
   );
   if (!matchRow) throw new Error("Match not found: " + matchId);
 
-  const data    = await apiGet(`/fixtures/${matchId}`, { include: "lineups.player" });
+  /* ── 2. API call ── */
+  const data    = await apiGet(`/fixtures/${matchId}`, {
+    include: "lineups.player;participants"
+  });
   const fixture = data?.data;
   const lineups = fixture?.lineups || [];
 
@@ -534,57 +540,82 @@ export const syncPlayingXIService = async (matchId) => {
     return { count: 0, reason: "Lineup not published yet" };
   }
 
-  const allLineupPlayers = lineups.map((l) => ({
-    pid:             String(l.player_id),
-    is_substitute:   l.type_id === 12 ? 1 : 0,
-    provider_team_id: String(l.team_id),
-  }));
-
-  const pids = [...new Set(allLineupPlayers.map((l) => l.pid))];
-
-  const [playerRows] = await db.query(
-    `SELECT id, provider_player_id, team_id FROM players
-     WHERE provider_player_id IN (?)`,
-    [pids]
+  /* ── 3. Teams map — provider_team_id → db team_id ── */
+  const [teamRows] = await db.query(
+    `SELECT id, provider_team_id FROM teams
+     WHERE id IN (?, ?)`,
+    [matchRow.home_team_id, matchRow.away_team_id]
   );
-  const playerMap = new Map(playerRows.map((r) => [r.provider_player_id, r]));
+  const teamMap = new Map(teamRows.map((t) => [String(t.provider_team_id), t.id]));
 
-  // Clean slate — fresh insert
+  /* ── 4. Clean slate ── */
   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
 
+  /* ── 5. Insert directly from API data ── */
   let count = 0;
-  for (const l of allLineupPlayers) {
-    const player = playerMap.get(l.pid);
-    if (!player) {
-      console.warn(`Player not found in DB: pid=${l.pid}`);
+
+  for (const lineup of lineups) {
+    const player          = lineup.player;
+    const providerPlayerId = String(lineup.player_id);
+    const providerTeamId   = String(lineup.team_id);
+    const isSubstitute     = lineup.type_id === 12 ? 1 : 0;
+    const isPlaying        = isSubstitute === 0 ? 1 : 0;
+
+    /* ── team_id DB లో find చేయి ── */
+    const dbTeamId = teamMap.get(providerTeamId);
+    if (!dbTeamId) {
+      console.warn(`Team not found: provider_team_id=${providerTeamId}`);
       continue;
     }
 
+    /* ── Position map ── */
+    const positionMap = {
+      "Goalkeeper":  "GK",
+      "Defender":    "DEF",
+      "Midfielder":  "MID",
+      "Attacker":    "FWD",
+      "Forward":     "FWD",
+    };
+    const rawPosition = player?.position?.name || player?.detailed_position?.name || "";
+    const position    = positionMap[rawPosition] || "MID";
+
     await db.query(
       `INSERT INTO match_players
-         (match_id, player_id, team_id, is_playing, is_substitute, is_pre_squad)
-       VALUES (?, ?, ?, ?, ?, 0)
+         (match_id, team_id, player_name, position,
+          is_playing, is_substitute, is_pre_squad,
+          provider_player_id, logo)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
        ON DUPLICATE KEY UPDATE
-         is_playing    = VALUES(is_playing),
-         is_substitute = VALUES(is_substitute),
-         is_pre_squad  = 0`,
+         is_playing         = VALUES(is_playing),
+         is_substitute      = VALUES(is_substitute),
+         is_pre_squad       = 0,
+         player_name        = VALUES(player_name),
+         position           = VALUES(position),
+         logo               = VALUES(logo)`,
       [
         matchRow.id,
-        player.id,
-        player.team_id,
-        l.is_substitute === 0 ? 1 : 0,
-        l.is_substitute,
+        dbTeamId,
+        player?.display_name || player?.name || `Player ${providerPlayerId}`,
+        position,
+        isPlaying,
+        isSubstitute,
+        providerPlayerId,
+        player?.image_path || null,
       ]
     );
     count++;
   }
 
+  /* ── 6. Update match status ── */
   await db.query(
-    `UPDATE matches SET lineupavailable = 1, lineup_status = 'confirmed' WHERE id = ?`,
+    `UPDATE matches
+     SET lineupavailable = 1,
+         lineup_status   = 'confirmed'
+     WHERE id = ?`,
     [matchRow.id]
   );
 
-  console.log(` Playing XI synced: ${count} players for match ${matchId}`);
+  console.log(`✅ Playing XI synced: ${count} players for match ${matchId}`);
   return { count, reason: null, type: "lineup" };
 };
 
