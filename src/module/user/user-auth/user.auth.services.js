@@ -3,6 +3,12 @@ import bcrypt from "bcryptjs";
 import jwt    from "jsonwebtoken";
 import db     from "../../../config/db.js";
 
+ 
+import { sendMail } from "../../../utils/send.mail.js";
+
+const OTP_EXPIRY_MINS = 10;
+
+
 /* ================= SIGNUP — store temp + send both OTPs ================= */
 export const signupService = async (data) => {
   const { fullname, email, mobile, country, date_of_birth, password } = data;
@@ -345,4 +351,174 @@ export const logoutService = async (userId) => {
     [userId]
   );
   return { success: true, message: "Logged out successfully" };
+};
+
+
+
+
+/* ── Generate OTP ── */
+const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+/* ================= REQUEST MOBILE CHANGE ================= */
+export const requestMobileChangeService = async (userId, newMobile) => {
+  // Check mobile already exists
+  const [[existing]] = await db.execute(
+    `SELECT id FROM users WHERE mobile = ? AND id != ?`,
+    [newMobile, userId]
+  );
+  if (existing) throw new Error("Mobile number already in use");
+
+  const otp     = generateOtp();
+  const expiry  = new Date(Date.now() + OTP_EXPIRY_MINS * 60 * 1000);
+
+  // Store OTP in signup_sessions
+  await db.execute(
+    `INSERT INTO signup_sessions (mobile, otp, otp_expires_at, type)
+     VALUES (?, ?, ?, 'mobile_change')
+     ON DUPLICATE KEY UPDATE otp = ?, otp_expires_at = ?`,
+    [newMobile, otp, expiry, otp, expiry]
+  );
+
+  // TODO: Send SMS OTP — replace with your SMS service
+  console.log(`📱 Mobile change OTP for ${newMobile}: ${otp}`);
+
+  return { success: true, message: "OTP sent to new mobile number" };
+};
+
+/* ================= VERIFY MOBILE CHANGE ================= */
+export const verifyMobileChangeService = async (userId, otp) => {
+  // Get pending mobile change session
+  const [[session]] = await db.execute(
+    `SELECT mobile, otp, otp_expires_at
+     FROM signup_sessions
+     WHERE type = 'mobile_change'
+       AND otp  = ?
+       AND otp_expires_at > NOW()
+     ORDER BY id DESC LIMIT 1`,
+    [otp]
+  );
+
+  if (!session) throw new Error("Invalid or expired OTP");
+
+  // Update user mobile
+  await db.execute(
+    `UPDATE users SET mobile = ?, mobile_verify = 1 WHERE id = ?`,
+    [session.mobile, userId]
+  );
+
+  // Cleanup session
+  await db.execute(
+    `DELETE FROM signup_sessions WHERE mobile = ? AND type = 'mobile_change'`,
+    [session.mobile]
+  );
+
+  return { success: true, message: "Mobile number updated successfully" };
+};
+
+/* ================= REQUEST EMAIL CHANGE ================= */
+export const requestEmailChangeService = async (userId, newEmail) => {
+  // Check email already exists
+  const [[existing]] = await db.execute(
+    `SELECT id FROM users WHERE email = ? AND id != ?`,
+    [newEmail, userId]
+  );
+  if (existing) throw new Error("Email already in use");
+
+  const otp    = generateOtp();
+  const expiry = new Date(Date.now() + OTP_EXPIRY_MINS * 60 * 1000);
+
+  await db.execute(
+    `INSERT INTO signup_sessions (email, otp, otp_expires_at, type)
+     VALUES (?, ?, ?, 'email_change')
+     ON DUPLICATE KEY UPDATE otp = ?, otp_expires_at = ?`,
+    [newEmail, otp, expiry, otp, expiry]
+  );
+
+
+
+
+await sendMail({
+  to:      newEmail,
+  subject: "Email Change OTP",
+  html:    `<p>Your OTP to change email: <b>${otp}</b>. Valid for 10 minutes.</p>`,
+});
+
+  return { success: true, message: "OTP sent to new email address" };
+};
+
+/* ================= VERIFY EMAIL CHANGE ================= */
+export const verifyEmailChangeService = async (userId, otp) => {
+  const [[session]] = await db.execute(
+    `SELECT email, otp, otp_expires_at
+     FROM signup_sessions
+     WHERE type = 'email_change'
+       AND otp  = ?
+       AND otp_expires_at > NOW()
+     ORDER BY id DESC LIMIT 1`,
+    [otp]
+  );
+
+  if (!session) throw new Error("Invalid or expired OTP");
+
+  await db.execute(
+    `UPDATE users SET email = ?, email_verify = 1 WHERE id = ?`,
+    [session.email, userId]
+  );
+
+  await db.execute(
+    `DELETE FROM signup_sessions WHERE email = ? AND type = 'email_change'`,
+    [session.email]
+  );
+
+  return { success: true, message: "Email updated successfully" };
+};
+
+/* ================= FORGOT PASSWORD ================= */
+export const forgotPasswordService = async (email) => {
+  const [[user]] = await db.execute(
+    `SELECT id FROM users WHERE email = ? AND account_status != 'deleted'`,
+    [email]
+  );
+  if (!user) throw new Error("No account found with this email");
+
+  const otp    = generateOtp();
+  const expiry = new Date(Date.now() + OTP_EXPIRY_MINS * 60 * 1000);
+
+  await db.execute(
+    `INSERT INTO signup_sessions (email, otp, otp_expires_at, type)
+     VALUES (?, ?, ?, 'forgot_password')
+     ON DUPLICATE KEY UPDATE otp = ?, otp_expires_at = ?`,
+    [email, otp, expiry, otp, expiry]
+  );
+
+  await sendOtpEmail(email, otp);
+
+  return { success: true, message: "OTP sent to your email" };
+};
+
+/* ================= RESET PASSWORD ================= */
+export const resetPasswordService = async (email, otp, newPassword) => {
+  const [[session]] = await db.execute(
+    `SELECT id FROM signup_sessions
+     WHERE email = ?
+       AND otp   = ?
+       AND type  = 'forgot_password'
+       AND otp_expires_at > NOW()`,
+    [email, otp]
+  );
+  if (!session) throw new Error("Invalid or expired OTP");
+
+  const hashed = await bcrypt.hash(newPassword, 10);
+
+  await db.execute(
+    `UPDATE users SET password = ? WHERE email = ?`,
+    [hashed, email]
+  );
+
+  await db.execute(
+    `DELETE FROM signup_sessions WHERE email = ? AND type = 'forgot_password'`,
+    [email]
+  );
+
+  return { success: true, message: "Password reset successfully" };
 };

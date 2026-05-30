@@ -158,7 +158,7 @@ export const getProfile = async (req, res) => {
         coins: {
           total_coins:     totalCoins,
           used_coins:      usedCoins,
-          available_coins: availableCoins,
+          coins: availableCoins,
         },
 
         /* ── Subscription ── */
@@ -255,5 +255,67 @@ export const deleteAccount = async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+
+/* ================= REQUEST MOBILE CHANGE ================= */
+export const requestMobileChange = async (req, res) => {
+  try {
+    const result = await requestMobileChangeService(req.user.id, req.body.new_mobile);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= VERIFY MOBILE CHANGE ================= */
+export const verifyMobileChange = async (req, res) => {
+  try {
+    const result = await verifyMobileChangeService(req.user.id, req.body.otp);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= REQUEST EMAIL CHANGE ================= */
+export const requestEmailChange = async (req, res) => {
+  try {
+    const result = await requestEmailChangeService(req.user.id, req.body.new_email);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= VERIFY EMAIL CHANGE ================= */
+export const verifyEmailChange = async (req, res) => {
+  try {
+    const result = await verifyEmailChangeService(req.user.id, req.body.otp);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= FORGOT PASSWORD ================= */
+export const forgotPassword = async (req, res) => {
+  try {
+    const result = await forgotPasswordService(req.body.email);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= RESET PASSWORD ================= */
+export const resetPassword = async (req, res) => {
+  try {
+    const result = await resetPasswordService(req.body.email, req.body.otp, req.body.password);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
   }
 };

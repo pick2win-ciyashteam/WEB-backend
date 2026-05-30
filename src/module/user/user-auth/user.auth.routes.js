@@ -8,7 +8,7 @@ const router = Router();
 /* ── Public routes ── */
 router.post("/signup",            v.signup,          c.signup);
 router.post("/verify-mobile-otp", v.verifyMobileOtp, c.verifyMobileOtp);
-router.post("/verify-email-otp",  v.verifyEmailOtp,  c.verifyEmailOtp);
+router.post("/verify-email-otp",  v.verifyEmailOtp,  c.verifyEmailOtp);   
 router.post("/resend-otp",        v.resendOtp,       c.resendOtp);
 router.post("/login",             v.login,           c.login);
 
@@ -17,6 +17,19 @@ router.post  ("/logout",  authenticate,              c.logout);
 router.get   ("/profile", authenticate,              c.getProfile);
 router.patch ("/update",  authenticate, v.updateProfile, c.updateProfile);
 router.delete("/delete",  authenticate,              c.deleteAccount);
+
+
+
+
+/* ── Forgot Password — public ── */
+router.post("/forgot-password",  v.forgotPassword,  c.forgotPassword);
+router.post("/reset-password",   v.resetPassword,   c.resetPassword);
+
+/* ── Change Mobile/Email — protected ── */
+router.post("/change-mobile",        authenticate, v.requestMobileChange, c.requestMobileChange);
+router.post("/verify-mobile-change", authenticate, v.verifyChangeOtp,     c.verifyMobileChange);
+router.post("/change-email",         authenticate, v.requestEmailChange,  c.requestEmailChange);
+router.post("/verify-email-change",  authenticate, v.verifyChangeOtp,     c.verifyEmailChange);
 
 export default router;
   
