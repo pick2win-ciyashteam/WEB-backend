@@ -244,37 +244,70 @@ export const resendOtpService = async ({ mobile, email, type }) => {
   };
 };
 /* ================= COMPLETE REGISTRATION — only when BOTH verified ================= */
-const completeRegistration = async (sessionId) => {
+// const completeRegistration = async (sessionId) => {
 
-  /* ── 1. Fetch full session data ── */
+//   /* ── 1. Fetch full session data ── */
+//   const [[session]] = await db.execute(
+//     `SELECT * FROM signup_sessions WHERE id = ?`,
+//     [sessionId]
+//   );
+
+//   if (!session) throw new Error("Session not found");
+
+//   /* ── 2. Insert into users table ── */
+//   await db.execute(
+//     `INSERT INTO users
+//        (fullname, country, date_of_birth, mobile, email, password,
+//         email_verify, mobile_verify, account_status)
+//      VALUES (?, ?, ?, ?, ?, ?, 1, 1, 'active')`,
+//     [
+//       session.fullname,
+//       session.country,
+//       session.date_of_birth,
+//       session.mobile,
+//       session.email,
+//       session.password,
+//     ]
+//   );
+
+//   /* ── 3. Delete session — cleanup ── */
+//   await db.execute(
+//     `DELETE FROM signup_sessions WHERE id = ?`,
+//     [sessionId]
+//   );
+// };
+
+
+const completeRegistration = async (sessionId) => {
+  /* ── 1. Fetch session data ── */
   const [[session]] = await db.execute(
-    `SELECT * FROM signup_sessions WHERE id = ?`,
+    `SELECT fullname, email, mobile, country, date_of_birth, password
+     FROM signup_sessions WHERE id = ?`,
     [sessionId]
   );
-
-  if (!session) throw new Error("Session not found");
 
   /* ── 2. Insert into users table ── */
-  await db.execute(
-    `INSERT INTO users
-       (fullname, country, date_of_birth, mobile, email, password,
-        email_verify, mobile_verify, account_status)
-     VALUES (?, ?, ?, ?, ?, ?, 1, 1, 'active')`,
-    [
-      session.fullname,
-      session.country,
-      session.date_of_birth,
-      session.mobile,
-      session.email,
-      session.password,
-    ]
+  const [result] = await db.execute(
+    `INSERT INTO users (fullname, email, mobile, country, date_of_birth, password, account_status)
+     VALUES (?, ?, ?, ?, ?, ?, 'active')`,
+    [session.fullname, session.email, session.mobile,
+     session.country, session.date_of_birth, session.password]
   );
 
-  /* ── 3. Delete session — cleanup ── */
+  const newUserId = result.insertId;
+
+  /* ── 3. Gift welcome coin ── */
   await db.execute(
-    `DELETE FROM signup_sessions WHERE id = ?`,
-    [sessionId]
+    `INSERT INTO user_coins
+       (user_id, coins, total_coins, used_coins, available_coins, updated_at)
+     VALUES (?, 1, 1, 0, 1, NOW())`,
+    [newUserId]
   );
+
+  /* ── 4. Clean up session ── */
+  await db.execute(`DELETE FROM signup_sessions WHERE id = ?`, [sessionId]);
+
+  return newUserId;
 };
 
 /* ================= LOGIN ================= */

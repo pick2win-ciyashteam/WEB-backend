@@ -18,14 +18,21 @@ import {
 
 const router = Router();
 
-// ── USER only (user token required) ──────────────────────────
+//   ──────────────────────────
+
+router.get   ("/user-feedbacks",      adminLimiter, adminAuth(["super_admin", "admin"]), getAllFeedbacks);
+router.post  ("/feedback-post",       adminLimiter, adminAuth(["super_admin", "admin"]), createFeedbackPost);
+
+
+// ──────── status base no post user────────────────────────────────────────────
+
 router.post("/user-post",   authenticate,  submitFeedback);
 router.get("/feedback-get", authenticate,  getFeedbackPosts);
 
    
-// ── ADMIN only (admin token required) ────────────────────────
-router.get   ("/user-feedbacks",      adminLimiter, adminAuth(["super_admin", "admin"]), getAllFeedbacks);
-router.post  ("/feedback-post",       adminLimiter, adminAuth(["super_admin", "admin"]), createFeedbackPost);
+// ──────────────────────────
+
+
 router.get("/feedback-post", adminLimiter, adminAuth(["super_admin", "admin"]), getAdminFeedbackPosts);
 router.patch ("/feedback-post/:id",   adminLimiter, adminAuth(["super_admin", "admin"]), updateFeedbackPost);
 router.delete("/feedback-post/:id",   adminLimiter, adminAuth(["super_admin", "admin"]), deleteFeedbackPost);
