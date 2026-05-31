@@ -2,7 +2,7 @@ import { Router } from "express";
 import { adminLimiter, adminAuth } from "../../../middlewares/adminAuth.middleware.js";
 import { authenticate } from "../../../middlewares/auth.middleware.js";
 import {
-  getAllFeedbacks, replyFeedback, deleteFeedback,
+  getAllFeedbacks, 
   updateFeedbackPost, deleteFeedbackPost,
   createFeedbackPost, submitFeedback,
    getFeedbackPosts,
@@ -30,12 +30,7 @@ router.get("/feedback-post", adminLimiter, adminAuth(["super_admin", "admin"]), 
 router.patch ("/feedback-post/:id",   adminLimiter, adminAuth(["super_admin", "admin"]), updateFeedbackPost);
 router.delete("/feedback-post/:id",   adminLimiter, adminAuth(["super_admin", "admin"]), deleteFeedbackPost);
 
-// optional
-
-router.patch ("/:id",                 adminLimiter, adminAuth(["super_admin", "admin"]), replyFeedback);
-router.delete("/:id",                 adminLimiter, adminAuth(["super_admin"]),          deleteFeedback);
-
-
+// uct questions
 
 router.post  ("/question",     adminLimiter, adminAuth(["super_admin", "admin"]), createQuestion);
 router.get   ("/question",     adminLimiter, adminAuth(["super_admin", "admin"]), getAdminQuestions);
