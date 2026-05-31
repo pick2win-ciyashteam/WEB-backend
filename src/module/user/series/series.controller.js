@@ -61,7 +61,8 @@ export const getAllSeries = async (req, res) => {
         ELSE 3
       END,
       m.start_time ASC`,
-  [series.seriesid]
+ 
+  [Number(series.seriesid)]  
 );
 
         return {

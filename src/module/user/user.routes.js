@@ -19,5 +19,5 @@ router.use("/banner",bannerRoutes);
 router.use("/plans",planRoutes);
 router.use("/deposite",authenticate,depositeRoutes);
 router.use("/lineup",lineupRoutes);
-router.use("/teams",teamsRoutes);
+router.use("/teams",authenticate,teamsRoutes);
 export default router;    

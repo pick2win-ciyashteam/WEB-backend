@@ -4,6 +4,7 @@ import axios from "axios";
 
 export const generateTeams = async (req, res) => {
   try {
+    const userId = req.user.id; 
     const { match_id, team_a, team_b } = req.body;
 
     if (!match_id || !team_a || !team_b) {
@@ -49,6 +50,16 @@ export const generateTeams = async (req, res) => {
        (match_id, team_side, name, role, mandate, captain)
        VALUES ?`,
       [rows]
+    );
+
+     // ── match_generation_log insert ──
+    await db.execute(
+      `INSERT INTO match_generation_log (match_id, user_id, total_teams)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         total_teams = VALUES(total_teams),
+         created_at  = NOW()`,
+      [match_id, userId, 1]
     );
 
     // Send to UCT API
@@ -151,73 +162,183 @@ export const getMyTeams = async (req, res) => {
 
 
 
+/* ================= GET MY GENERATED MATCHES ================= */
+ 
+export const getMyGeneratedMatches = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId)
+      return res.status(401).json({ success: false, message: "Unauthorized" });
 
-// import {
-//   generateTeamsService,
-//   getMyTeamsWithPlayersService,
-// } from "./teams.service.js";
+    const [rows] = await db.execute(
+      `SELECT
+         mgl.match_id,
+         mgl.total_teams,
+         mgl.created_at  AS generated_at,
+         m.start_time,
+         m.status,
+         s.name          AS series_name,
+         COALESCE(ht.short_name,  ht.name,  'TBA') AS home_team,
+         COALESCE(awt.short_name, awt.name, 'TBA') AS away_team,
+         ht.logo   AS home_logo,
+         awt.logo  AS away_logo
+       FROM match_generation_log mgl
+       JOIN matches m   ON m.id   = mgl.match_id
+       LEFT JOIN series s   ON CAST(s.seriesid AS UNSIGNED) = m.series_id
+       LEFT JOIN teams ht   ON ht.id  = m.home_team_id
+       LEFT JOIN teams awt  ON awt.id = m.away_team_id
+       WHERE mgl.user_id = ?
+       ORDER BY mgl.created_at DESC`,
+      [userId]
+    );
 
-// const KNOWN_ERRORS = [
-//   "No players provided",
-//   "Match not found",
-//   "Team generation is closed",
-//   "Teams already generated",
-//   "Invalid players",
-//   "Binary generated no teams",
-// ];
+    res.json({
+      success: true,
+      total:   rows.length,
+      data:    rows.map((r) => ({
+        match_id:        r.match_id,
+        series_name:     r.series_name,
+        home_team:       r.home_team,
+        away_team:       r.away_team,
+        home_logo:       r.home_logo,
+        away_logo:       r.away_logo,
+        start_time:      r.start_time,
+        status:          r.status,
+        teams_generated: r.total_teams,
+        generated_at:    r.generated_at,
+      })),
+    });
 
-// export const generateTeams = async (req, res) => {
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= GET MY 20 TEAMS ================= */
+export const getMyGeneratedTeams = async (req, res) => {
+  try {
+    const userId      = req.user.id;
+    const { matchId } = req.params;
+
+    const [teams] = await db.execute(
+      `SELECT
+         ut.id          AS team_id,
+         ut.team_name,
+         ut.created_at,
+         COUNT(utp.id)  AS total_players,
+         SUM(utp.is_captain)      AS has_captain,
+         SUM(utp.is_vice_captain) AS has_vc
+       FROM user_teams ut
+       LEFT JOIN user_team_players utp ON utp.user_team_id = ut.id
+       WHERE ut.user_id  = ?
+         AND ut.match_id = ?
+       GROUP BY ut.id
+       ORDER BY ut.id ASC`,
+      [userId, matchId]
+    );
+
+    if (!teams.length)
+      return res.json({ success: true, total: 0, data: [] });
+
+    res.json({
+      success: true,
+      total:   teams.length,
+      data:    teams.map((t) => ({
+        team_id:       t.team_id,
+        team_name:     t.team_name,
+        total_players: t.total_players,
+        created_at:    t.created_at,
+      })),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= GET TEAM PLAYERS BY TEAM ID ================= */
+//  export const getTeamPlayers = async (req, res) => {
 //   try {
-//     if (!req.user?.id)
-//       return res.status(401).json({ success: false, message: "User not authenticated" });
+//     const { matchId, teamSide } = req.params; // team_a or team_b
 
-//     const { matchId, team_a, team_b } = req.body;
-
-//     if (!matchId)
-//       return res.status(400).json({ success: false, message: "matchId is required" });
-//     if (!Array.isArray(team_a) || !team_a.length)
-//       return res.status(400).json({ success: false, message: "team_a is required" });
-//     if (!Array.isArray(team_b) || !team_b.length)
-//       return res.status(400).json({ success: false, message: "team_b is required" });
-
-//     const result = await generateTeamsService(
-//       req.user.id,
-//       Number(matchId),
-//       team_a,
-//       team_b
+//     // Latest generation only — MAX created_at
+//     const [[latest]] = await db.execute(
+//       `SELECT MAX(created_at) AS latest_at
+//        FROM user_teams
+//        WHERE match_id = ?`,
+//       [matchId]
 //     );
 
-//     return res.status(201).json(result);
+//     const [players] = await db.execute(
+//       `SELECT id, name, role, mandate, captain, team_side
+//        FROM user_teams
+//        WHERE match_id   = ?
+//          AND team_side  = ?
+//          AND created_at = ?
+//        ORDER BY FIELD(role, 'GK', 'DEF', 'MID', 'FWD')`,
+//       [matchId, teamSide, latest.latest_at]
+//     );
 
-//   } catch (error) {
-//     if (KNOWN_ERRORS.some(e => error.message?.startsWith(e)))
-//       return res.status(400).json({ success: false, message: error.message });
-
-//     console.error("[generateTeams]", error);
-//     return res.status(500).json({ success: false, message: "Internal server error" });
-//   }
-// };
-
-// export const getMyTeams = async (req, res) => {
-//   try {
-//     const userId    = req.user?.id;
-//     const { matchId }    = req.params;
-//     const { contestId }  = req.query;
-
-//     if (!userId)
-//       return res.status(401).json({ success: false, message: "User not authenticated" });
-
-//     const teams = await getMyTeamsWithPlayersService(userId, matchId, contestId);
-
-//     return res.status(200).json({
-//       success: true,
-//       total:   teams.length,
-//       data:    teams,
-//       ...(teams.length === 0 && { message: "No teams found" }),
+//     res.json({
+//       success:    true,
+//       match_id:   Number(matchId),
+//       team_side:  teamSide,
+//       total:      players.length,
+//       captain:    players.find((p) => p.captain === "C")  || null,
+//       vc:         players.find((p) => p.captain === "VC") || null,
+//       players,
 //     });
 
-//   } catch (error) {
-//     console.error("[getMyTeams]", error);
-//     return res.status(500).json({ success: false, message: "Internal server error" });
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
 //   }
 // };
+
+
+export const getTeamPlayers = async (req, res) => {
+  try {
+    const userId          = req.user.id;
+    const { teamId }      = req.params;
+
+    const [[team]] = await db.execute(
+  `SELECT id, name AS team_name, match_id, team_side, created_at
+   FROM user_teams
+   WHERE id = ?
+   LIMIT 1`,
+  [teamId]
+);
+
+    if (!team)
+      return res.status(404).json({ success: false, message: "Team not found" });
+
+    const latestAt = team.created_at;
+
+    const [players] = await db.execute(
+      `SELECT id, name, role, mandate, captain, team_side
+       FROM user_teams
+       WHERE match_id  = ?
+         AND team_side = ?
+         AND created_at = (
+           SELECT MAX(created_at) FROM user_teams
+           WHERE match_id = ? AND team_side = ?
+         )
+       ORDER BY FIELD(role, 'GK', 'DEF', 'MID', 'FWD')`,
+      [team.match_id, team.team_side, team.match_id, team.team_side]
+    );
+
+    res.json({
+      success:   true,
+      team_id:   team.id,
+      team_name: team.team_name,
+      match_id:  team.match_id,
+      team_side: team.team_side,
+      total:     players.length,
+      captain:   players.find((p) => p.captain === "C")  || null,
+      vc:        players.find((p) => p.captain === "VC") || null,
+      players,
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
