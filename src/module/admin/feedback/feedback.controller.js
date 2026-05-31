@@ -30,15 +30,15 @@ import * as s from "./feedback.service.js"
   }
 };
 
-export const createFeedbackPost = async (req, res) => {
+ export const createFeedbackPost = async (req, res) => {
   try {
-    const { title, message } = req.body;
+    const { title, message, status } = req.body;
 
     await db.execute(
       `INSERT INTO feedbacks
        (user_id, type, message, status)
        VALUES (?, ?, ?, ?)`,
-      [null, title, message, "resolved"]
+      [null, title, message, status || ""]
     );
 
     res.json({
@@ -62,6 +62,7 @@ export const createFeedbackPost = async (req, res) => {
           id,
           type AS title,
           message,
+          status,
           created_at
        FROM feedbacks
        WHERE user_id IS NULL
