@@ -1,24 +1,26 @@
 import db from "../../../config/db.js";
+import * as s from "./feedback.service.js"
 
 /* ================= USER — SUBMIT FEEDBACK ================= */
-export const submitFeedback = async (req, res) => {
+ export const submitFeedback = async (req, res) => {
   try {
-    const userId          = req.user.id;
-    const { type, message } = req.body;
-
-    if (!type || !message)
-      return res.status(400).json({ success: false, message: "type and message required" });
-
-    const validTypes = ["uct_tuning", "feature_suggestion", "league_request", "engine_accuracy", "bug_report", "what_you_love"];
-    if (!validTypes.includes(type))
-      return res.status(400).json({ success: false, message: "Invalid feedback type" });
-
-    if (message.trim().length < 10)
-      return res.status(400).json({ success: false, message: "Message too short" });
+    const userId = req.user.id;
+    const { category, importance, subject, description, email, location, email_followup } = req.body;
 
     await db.execute(
-      `INSERT INTO feedbacks (user_id, type, message) VALUES (?, ?, ?)`,
-      [userId, type, message.trim()]
+      `INSERT INTO feedbacks 
+        (user_id, type, subject, importance, message, email, location, email_followup) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        userId,
+        category,
+        subject.trim(),
+        importance,
+        description.trim(),
+        email?.trim()    || null,
+        location?.trim() || null,
+        email_followup   ? 1 : 0,
+      ]
     );
 
     res.status(200).json({ success: true, message: "Feedback submitted successfully" });
@@ -231,25 +233,7 @@ export const deleteFeedback = async (req, res) => {
 
 
 
-/* ================= USER — MY FEEDBACKS ================= */
-export const getMyFeedbacks = async (req, res) => {
-  try {
-    const userId = req.user.id;
 
-    const [rows] = await db.execute(
-      `SELECT id, type, message, status, admin_reply, created_at
-       FROM feedbacks
-       WHERE user_id = ?
-       ORDER BY created_at DESC`,
-      [userId]
-    );
-
-    res.json({ success: true, total: rows.length, data: rows });
-
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
 
 export const getAdminFeedbackPosts = async (req, res) => {
   try {
@@ -264,5 +248,76 @@ export const getAdminFeedbackPosts = async (req, res) => {
 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+//uct 
+
+
+
+
+export const createQuestion = async (req, res) => {
+  try {
+    const result = await s.createQuestionService(req.body);
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const getAdminQuestions = async (req, res) => {
+  try {
+    const result = await s.getAdminQuestionsService();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const updateQuestion = async (req, res) => {
+  try {
+    const result = await s.updateQuestionService(req.params.id, req.body);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const deleteQuestion = async (req, res) => {
+  try {
+    const result = await s.deleteQuestionService(req.params.id);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const getAdminAnswers = async (req, res) => {
+  try {
+    const result = await s.getAdminAnswersService();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ── USER controllers ───────────────────────────────────────────
+
+export const getUserQuestions = async (req, res) => {
+  try {
+    const result = await s.getUserQuestionsService();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const submitAnswers = async (req, res) => {
+  try {
+    const result = await s.submitAnswersService(req.user.id, req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
   }
 };
