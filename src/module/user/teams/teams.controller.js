@@ -2,98 +2,240 @@ import db from "../../../config/db.js";
 
 import axios from "axios";
 
+// export const generateTeams = async (req, res) => {
+//   try {
+//     const userId = req.user.id; 
+//     const { match_id, team_a, team_b } = req.body;
+
+//     if (!match_id || !team_a || !team_b) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "match_id, team_a, team_b required",
+//       });
+//     }
+
+//     if (!Array.isArray(team_a) || !Array.isArray(team_b)) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "team_a and team_b must be arrays",
+//       });
+//     }
+
+//     const rows = [];
+
+//     for (const player of team_a) {
+//       rows.push([
+//         match_id,
+//         "team_a",
+//         player.name,
+//         player.role,
+//         player.mandate || null,
+//         player.captain || null,
+//       ]);
+//     }
+
+//     for (const player of team_b) {
+//       rows.push([
+//         match_id,
+//         "team_b",
+//         player.name,
+//         player.role,
+//         player.mandate || null,
+//         player.captain || null,
+//       ]);
+//     }  
+
+//     await db.query(
+//       `INSERT INTO user_teams
+//        (match_id, team_side, name, role, mandate, captain)
+//        VALUES ?`,
+//       [rows]
+//     );
+
+//      // ── match_generation_log insert ──
+//     await db.execute(
+//       `INSERT INTO match_generation_log (match_id, user_id, total_teams)
+//        VALUES (?, ?, ?)
+//        ON DUPLICATE KEY UPDATE
+//          total_teams = VALUES(total_teams),
+//          created_at  = NOW()`,
+//       [match_id, userId, 1]
+//     );
+
+//     // Send to UCT API
+//     try {
+//       const response = await axios.post(
+//         `${process.env.UCT_API}/football/teams`,
+//         {
+//           match_id,
+//           team_a,
+//           team_b,
+//         }
+//       );
+
+//       console.log("UCT API Response:", response.data);
+//     } catch (apiError) {
+//       console.error(
+//         "UCT API Error:",
+//         apiError.response?.data || apiError.message
+//       );
+//     }
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Teams created successfully",
+//       total_players: rows.length,
+//     });
+//   } catch (err) {
+//     return res.status(500).json({
+//       success: false,
+//       message: err.message,
+//     });
+//   }
+// };
+
+
+ 
 export const generateTeams = async (req, res) => {
   try {
-    const userId = req.user.id; 
-    const { match_id, team_a, team_b } = req.body;
+    const userId = req.user.id;
+    const { match_id, home_players, away_players } = req.body;
 
-    if (!match_id || !team_a || !team_b) {
+    if (!match_id || !home_players || !away_players) {
       return res.status(400).json({
         success: false,
-        message: "match_id, team_a, team_b required",
+        message: "match_id, home_players, away_players required",
       });
     }
 
-    if (!Array.isArray(team_a) || !Array.isArray(team_b)) {
+    /* ── Check already generated ── */
+    const [[existing]] = await db.execute(
+      `SELECT id FROM match_generation_log WHERE match_id = ? AND user_id = ?`,
+      [match_id, userId]
+    );
+    if (existing) {
       return res.status(400).json({
         success: false,
-        message: "team_a and team_b must be arrays",
+        message: "Teams already generated for this match",
       });
     }
 
-    const rows = [];
+    /* ── Convert real players → UCT format ── */
+    const convertToUCT = (players, side) => {
+      const counters = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+      return players.map((p) => {
+        counters[p.role]++;
+        const codedName = `${p.role[0]}${counters[p.role]}_${side}`;
+        // GK_A, D1_A, M1_A etc.
+        return {
+          name:     codedName,
+          role:     p.role,
+          captain:  p.captain  || undefined,
+          mandate:  p.mandate  || undefined,
+          // keep original name for DB storage
+          original_name:        p.name,
+          provider_player_id:   p.provider_player_id,
+        };
+      });
+    };
 
-    for (const player of team_a) {
-      rows.push([
-        match_id,
-        "team_a",
-        player.name,
-        player.role,
-        player.mandate || null,
-        player.captain || null,
-      ]);
-    }
+    const team_a_uct = convertToUCT(home_players, "A");
+    const team_b_uct = convertToUCT(away_players, "B");
 
-    for (const player of team_b) {
-      rows.push([
-        match_id,
-        "team_b",
-        player.name,
-        player.role,
-        player.mandate || null,
-        player.captain || null,
-      ]);
-    }
-
-    await db.query(
-      `INSERT INTO user_teams
-       (match_id, team_side, name, role, mandate, captain)
-       VALUES ?`,
-      [rows]
-    );
-
-     // ── match_generation_log insert ──
-    await db.execute(
-      `INSERT INTO match_generation_log (match_id, user_id, total_teams)
-       VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         total_teams = VALUES(total_teams),
-         created_at  = NOW()`,
-      [match_id, userId, 1]
-    );
-
-    // Send to UCT API
+    /* ── UCT API call ── */
+    let uctTeams = [];
     try {
       const response = await axios.post(
         `${process.env.UCT_API}/football/teams`,
         {
-          match_id,
-          team_a,
-          team_b,
-        }
+          team_a: team_a_uct.map(p => ({
+            name:    p.name,
+            role:    p.role,
+            ...(p.captain && { captain: p.captain }),
+            ...(p.mandate && { mandate: p.mandate }),
+          })),
+          team_b: team_b_uct.map(p => ({
+            name:    p.name,
+            role:    p.role,
+            ...(p.captain && { captain: p.captain }),
+            ...(p.mandate && { mandate: p.mandate }),
+          })),
+        },
+        { timeout: 30000 }
       );
 
-      console.log("UCT API Response:", response.data);
+      uctTeams = response.data || [];
+      console.log(`✅ UCT teams: ${uctTeams.length} players across 20 teams`);
+
     } catch (apiError) {
-      console.error(
-        "UCT API Error:",
-        apiError.response?.data || apiError.message
+      console.error("❌ UCT API Error:", apiError.response?.data || apiError.message);
+      return res.status(500).json({
+        success: false,
+        message: "UCT API failed: " + (apiError.response?.data?.message || apiError.message),
+      });
+    }
+
+    if (!uctTeams.length) {
+      return res.status(400).json({ success: false, message: "UCT API returned no teams" });
+    }
+
+    /* ── Build name mapping — coded → real ── */
+    const nameMap = {};
+    [...team_a_uct, ...team_b_uct].forEach(p => {
+      nameMap[p.name] = {
+        original_name:       p.original_name,
+        provider_player_id:  p.provider_player_id,
+      };
+    });
+
+    /* ── Delete old teams ── */
+    await db.execute(
+      `DELETE FROM user_teams WHERE match_id = ? AND user_id = ?`,
+      [match_id, userId]
+    );
+
+    /* ── Store 20 teams ── */
+    for (const player of uctTeams) {
+      const mapped = nameMap[player.name] || {};
+      await db.execute(
+        `INSERT INTO user_teams
+           (match_id, user_id, dt_no, name, role, cap,
+            original_name, provider_player_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          match_id,
+          userId,
+          player.dt_no,
+          player.name,
+          player.role,
+          player.cap || null,
+          mapped.original_name       || player.name,
+          mapped.provider_player_id  || null,
+        ]
       );
     }
 
+    /* ── Log ── */
+    const totalTeams = [...new Set(uctTeams.map(p => p.dt_no))].length;
+    await db.execute(
+      `INSERT INTO match_generation_log (match_id, user_id, total_teams)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE total_teams = VALUES(total_teams), created_at = NOW()`,
+      [match_id, userId, totalTeams]
+    );
+
     return res.status(200).json({
-      success: true,
-      message: "Teams created successfully",
-      total_players: rows.length,
+      success:      true,
+      message:      `${totalTeams} teams generated successfully`,
+      total_teams:  totalTeams,
+      total_players: uctTeams.length,
     });
+
   } catch (err) {
-    return res.status(500).json({
-      success: false,
-      message: err.message,
-    });
+    console.error("generateTeams error:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
-
 
 export const getMyTeams = async (req, res) => {
   try {
@@ -341,4 +483,4 @@ export const getTeamPlayers = async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-};
+};    

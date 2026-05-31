@@ -193,43 +193,8 @@ export const getAllFeedbacks = async (req, res) => {
   }
 };
 
-/* ================= ADMIN — REPLY TO FEEDBACK ================= */
-export const replyFeedback = async (req, res) => {
-  try {
-    const { id }                    = req.params;
-    const { admin_reply, status }   = req.body;
 
-    if (!admin_reply)
-      return res.status(400).json({ success: false, message: "admin_reply required" });
 
-    const validStatus = ["pending", "reviewed", "resolved"];
-    const newStatus   = validStatus.includes(status) ? status : "reviewed";
-
-    await db.execute(
-      `UPDATE feedbacks SET admin_reply = ?, status = ? WHERE id = ?`,
-      [admin_reply.trim(), newStatus, id]
-    );
-
-    res.json({ success: true, message: "Reply sent successfully" });
-
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
-/* ================= ADMIN — DELETE FEEDBACK ================= */
-export const deleteFeedback = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    await db.execute(`DELETE FROM feedbacks WHERE id = ?`, [id]);
-
-    res.json({ success: true, message: "Feedback deleted" });
-
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
 
 
 
@@ -320,4 +285,4 @@ export const submitAnswers = async (req, res) => {
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-};
+};  

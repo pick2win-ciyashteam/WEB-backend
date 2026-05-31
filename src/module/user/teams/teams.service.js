@@ -146,6 +146,61 @@ export const generateTeamsService = async (userId, matchId, teamA, teamB) => {
   }
 };
 
+// export const getMyGeneratedTeams = async (req, res) => {
+//   try {
+//     const userId  = req.user.id;
+//     const matchId = req.params.match_id;
+
+//     /* ── Check generated ── */
+//     const [[log]] = await db.execute(
+//       `SELECT total_teams FROM match_generation_log
+//        WHERE match_id = ? AND user_id = ?`,
+//       [matchId, userId]
+//     );
+
+//     if (!log) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No teams generated for this match",
+//       });
+//     }
+
+//     /* ── Fetch all teams ── */
+//     const [players] = await db.execute(
+//       `SELECT dt_no, name, role, cap
+//        FROM user_teams
+//        WHERE match_id = ? AND user_id = ?
+//        ORDER BY dt_no ASC`,
+//       [matchId, userId]
+//     );
+
+//     /* ── Group by dt_no ── */
+//     const teamsMap = {};
+//     for (const player of players) {
+//       const dt = player.dt_no;
+//       if (!teamsMap[dt]) teamsMap[dt] = [];
+//       teamsMap[dt].push({
+//         name: player.name,
+//         role: player.role,
+//         cap:  player.cap,
+//       });
+//     }
+
+//     const teams = Object.entries(teamsMap).map(([dt_no, players]) => ({
+//       dt_no:   Number(dt_no),
+//       players,
+//     }));
+
+//     return res.status(200).json({
+//       success:     true,
+//       total_teams: teams.length,
+//       data:        teams,
+//     });
+
+//   } catch (err) {
+//     return res.status(500).json({ success: false, message: err.message });
+//   }
+// };
 
 export const getMyTeamsWithPlayersService = async (userId, matchId, contestId) => {
 

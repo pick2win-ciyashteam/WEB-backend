@@ -132,7 +132,7 @@ export const verifyMobileOtpService = async ({ mobile, otp }) => {
 };
 
 /* ================= VERIFY EMAIL OTP ================= */
-export const verifyEmailOtpService = async ({ email, otp }) => {  // ✅ email not mobile
+export const verifyEmailOtpService = async ({ email, otp }) => {  //  email not mobile
 
   /* ── 1. Fetch session by EMAIL ── */
   const [[session]] = await db.execute(
@@ -176,7 +176,7 @@ export const verifyEmailOtpService = async ({ email, otp }) => {  // ✅ email n
     registered: false,
   };
 };
-
+  
 
 /* ================= RESEND OTP ================= */
 export const resendOtpService = async ({ mobile, email, type }) => {
@@ -401,7 +401,7 @@ export const requestMobileChangeService = async (userId, { new_mobile }) => {
 };
 
 /* ================= VERIFY MOBILE CHANGE ================= */
-export const verifyMobileChangeService = async (userId, { otp }) => {
+export const verifyMobileChangeService = async (userId, { otp }) => {   
 
   /* ── 1. Fetch user ── */
   const [[user]] = await db.execute(
@@ -576,4 +576,6 @@ export const resetPasswordService = async (email, otp, newPassword) => {
     success: true,
     message: "Password reset successfully",
   };
-};
+};  
+
+ 
