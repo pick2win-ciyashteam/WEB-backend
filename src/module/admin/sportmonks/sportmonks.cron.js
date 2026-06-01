@@ -191,6 +191,36 @@ const syncLineupStatus = async () => {
   }
 };
 
+ const syncSubscriptionExpiry = async () => {
+  try {
+    /* ── 1. Actual expiry — expiry_date     ── */
+    const [result] = await db.execute(
+      `UPDATE user_subscriptions
+       SET status = 'expired'
+       WHERE status = 'active'
+         AND expiry_date < NOW()`
+    );
+
+    /* ── 2. Old packs — same user కి latest ── */
+    const [oldResult] = await db.execute(
+      `UPDATE user_subscriptions us
+       INNER JOIN (
+         SELECT user_id, MAX(id) AS latest_id
+         FROM user_subscriptions
+         WHERE status = 'active'
+         GROUP BY user_id
+       ) latest ON latest.user_id = us.user_id
+       SET us.status = 'expired'
+       WHERE us.status = 'active'
+         AND us.id != latest.latest_id`
+    );
+
+    console.log(`✅ [SubscriptionCron] Expired: ${result.affectedRows} | Old packs: ${oldResult.affectedRows}`);
+  } catch (err) {
+    console.error("❌ [SubscriptionCron] Error:", err.message);
+  }
+};
+
 /* ================= START ALL CRON JOBS ================= */
 export const startCronJobs = () => {
   cron.schedule(SCHEDULES.EVERY_5_MINS,  syncLineups,               { scheduled: true, timezone: "UTC" });
@@ -198,6 +228,8 @@ export const startCronJobs = () => {
   cron.schedule(SCHEDULES.EVERY_5_MINS,  syncPlayerStatsJob,        { scheduled: true, timezone: "UTC" });
   cron.schedule(SCHEDULES.EVERY_5_MINS,  syncLineupStatus,          { scheduled: true, timezone: "UTC" });
   cron.schedule(SCHEDULES.DAILY_2AM_UTC, cleanupOldInactiveMatches, { scheduled: true, timezone: "UTC" });
+  cron.schedule("0 0 * * *",             syncSubscriptionExpiry,    { scheduled: true, timezone: "UTC" });
+
 
   console.log("✅ [CRON] All jobs registered");
-}; 
+};   
