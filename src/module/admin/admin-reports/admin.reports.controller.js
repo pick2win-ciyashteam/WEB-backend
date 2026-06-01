@@ -778,25 +778,27 @@ export const getPackBuyersReport = async (req, res) => {
       activity = "",
     } = req.query;
 
- 
     const limitNum  = Number(limit);
-const offsetNum = (Number(page) - 1) * limitNum;
+    const offsetNum = (Number(page) - 1) * limitNum;
 
     /* ── Build WHERE ── */
     const conditions = [];
     const params     = [];
 
+    /* search */
     if (search) {
       conditions.push(`(u.fullname LIKE ? OR u.email LIKE ? OR u.mobile LIKE ? OR CAST(u.id AS CHAR) LIKE ?)`);
       const s = `%${search}%`;
       params.push(s, s, s, s);
     }
 
+    /* country */
     if (country) {
       conditions.push(`u.country = ?`);
       params.push(country);
     }
 
+    /* plan */
     if (plan === "none") {
       conditions.push(`us.id IS NULL`);
     } else if (plan) {
@@ -804,40 +806,47 @@ const offsetNum = (Number(page) - 1) * limitNum;
       params.push(`%${plan}%`);
     }
 
+    /* status */
     if (status === "active") {
       conditions.push(
         `CAST(u.account_status AS CHAR) = 'active'
          AND u.email_verify  = 1
          AND u.mobile_verify = 1`
       );
-    } else if (status === "dormant") {
+    } else if (status === "pending") {
       conditions.push(
         `CAST(u.account_status AS CHAR) = 'active'
-         AND NOT EXISTS (
-           SELECT 1 FROM match_generation_log m
-           WHERE m.user_id    = u.id
-             AND m.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM coins_transactions ct2
-           WHERE ct2.user_id    = u.id
-             AND ct2.coins      > 0
-             AND ct2.status     = 'success'
-             AND ct2.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-         )`
+         AND (u.email_verify = 0 OR u.mobile_verify = 0)`
       );
-    } else if (status === "deleted") {
-      conditions.push(`CAST(u.account_status AS CHAR) = 'deleted'`);
     } else if (status === "banned") {
       conditions.push(`CAST(u.account_status AS CHAR) = 'banned'`);
+    } else if (status === "deleted") {
+      conditions.push(`CAST(u.account_status AS CHAR) = 'deleted'`);
     }
 
-    if (activity === "active_30d") {
+    /* activity */
+    if (activity === "active_7d") {
+      conditions.push(
+        `EXISTS (
+           SELECT 1 FROM match_generation_log m
+           WHERE m.user_id    = u.id
+             AND m.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+         )`
+      );
+    } else if (activity === "active_30d") {
       conditions.push(
         `EXISTS (
            SELECT 1 FROM match_generation_log m
            WHERE m.user_id    = u.id
              AND m.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+         )`
+      );
+    } else if (activity === "dormant_60d") {
+      conditions.push(
+        `NOT EXISTS (
+           SELECT 1 FROM match_generation_log m
+           WHERE m.user_id    = u.id
+             AND m.created_at >= DATE_SUB(NOW(), INTERVAL 60 DAY)
          )`
       );
     } else if (activity === "never") {
@@ -877,6 +886,8 @@ const offsetNum = (Number(page) - 1) * limitNum;
          CASE
            WHEN CAST(u.account_status AS CHAR) = 'deleted' THEN 'deleted'
            WHEN CAST(u.account_status AS CHAR) = 'banned'  THEN 'banned'
+           WHEN CAST(u.account_status AS CHAR) = 'active'
+             AND (u.email_verify = 0 OR u.mobile_verify = 0) THEN 'pending'
            WHEN NOT EXISTS (
              SELECT 1 FROM match_generation_log m2
              WHERE m2.user_id    = u.id
@@ -904,14 +915,14 @@ const offsetNum = (Number(page) - 1) * limitNum;
 
        ${whereClause}
 
-      GROUP BY
-  u.id, u.fullname, u.email, u.mobile, u.country,
-  u.account_status, u.email_verify, u.mobile_verify, u.created_at,
-  sp.name, sp.coins, us.status, us.expiry_date
-ORDER BY u.id DESC
-LIMIT ${limitNum} OFFSET ${offsetNum}`,
-params    
-);
+       GROUP BY
+         u.id, u.fullname, u.email, u.mobile, u.country,
+         u.account_status, u.email_verify, u.mobile_verify, u.created_at,
+         sp.name, sp.coins, us.status, us.expiry_date
+       ORDER BY u.id DESC
+       LIMIT ${limitNum} OFFSET ${offsetNum}`,
+      params
+    );
 
     /* ── Total count ── */
     const [[{ total }]] = await db.execute(
@@ -937,8 +948,8 @@ params
       pagination: {
         total:       Number(total),
         page:        Number(page),
-        limit:       Number(limit),
-        total_pages: Math.ceil(Number(total) / Number(limit)),
+        limit:       limitNum,
+        total_pages: Math.ceil(Number(total) / limitNum),
       },
       filters: { search, country, plan, status, activity },
       data: users.map((u) => ({
@@ -963,3 +974,321 @@ params
   }
 };
 
+/* ================= MATCHES — LIVE ================= */
+export const getLiveMatches = async (req, res) => {
+  try {
+    const [liveMatches] = await db.execute(
+      `SELECT
+         m.id,
+         m.provider_match_id,
+         m.hometeamname,
+         m.awayteamname,
+         m.start_time,
+         m.status,
+         m.lineup_status,
+         m.lineupavailable,
+         s.name AS series_name,
+         COUNT(DISTINCT mgl.user_id) AS unique_users,
+         COUNT(DISTINCT mgl.id)      AS total_ucts,
+         ROUND(
+           COUNT(DISTINCT mgl.id) /
+           GREATEST(TIMESTAMPDIFF(MINUTE, MIN(mgl.created_at), NOW()), 1),
+           1
+         ) AS ucts_per_min
+       FROM matches m
+       LEFT JOIN series s               ON s.seriesid         = m.series_id
+       LEFT JOIN match_generation_log mgl ON mgl.match_id = m.id
+       WHERE m.status          = 'UPCOMING'
+         AND m.lineupavailable = 1
+         AND m.lineup_status   = 'confirmed'
+         AND m.is_active       = 1
+       GROUP BY
+         m.id, m.provider_match_id, m.hometeamname, m.awayteamname,
+         m.start_time, m.status, m.lineup_status, m.lineupavailable, s.name
+       ORDER BY m.start_time ASC`
+    );
+
+    const [activityFeed] = await db.execute(
+      `SELECT
+         mgl.id,
+         mgl.user_id,
+         mgl.match_id,
+         mgl.total_teams,
+         mgl.created_at,
+         u.fullname,
+         u.country,
+         m.hometeamname,
+         m.awayteamname,
+         us.plan_name
+       FROM match_generation_log mgl
+       JOIN users   u ON u.id = mgl.user_id
+       JOIN matches m ON m.id = mgl.match_id
+       LEFT JOIN (
+         SELECT us1.user_id, sp.name AS plan_name
+         FROM user_subscriptions us1
+         JOIN subscription_plans sp ON sp.id = us1.plan_id
+         INNER JOIN (
+           SELECT user_id, MAX(id) AS max_id
+           FROM user_subscriptions
+           WHERE status = 'active' AND expiry_date > NOW()
+           GROUP BY user_id
+         ) us2 ON us2.user_id = us1.user_id AND us2.max_id = us1.id
+       ) us ON us.user_id = mgl.user_id
+       WHERE mgl.created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND)
+       ORDER BY mgl.created_at DESC
+       LIMIT 20`
+    );
+
+    return res.status(200).json({
+      success:    true,
+      total_live: liveMatches.length,
+      matches: liveMatches.map((m) => ({
+        id:              m.id,
+        home_team:       m.hometeamname,
+        away_team:       m.awayteamname,
+        series:          m.series_name,
+        start_time:      m.start_time,
+        kickoff_in_mins: Math.max(0, Math.round(
+          (new Date(m.start_time) - new Date()) / (1000 * 60)
+        )),
+        lineup_status:   m.lineup_status,
+        total_ucts:      Number(m.total_ucts),
+        unique_users:    Number(m.unique_users),
+        ucts_per_min:    Number(m.ucts_per_min),
+      })),
+      activity_feed: activityFeed.map((a) => ({
+        id:          a.id,
+        user_id:     a.user_id,
+        fullname:    a.fullname,
+        country:     a.country,
+        match:       `${a.hometeamname} v ${a.awayteamname}`,
+        total_teams: a.total_teams,
+        plan_name:   a.plan_name,
+        is_free:     !a.plan_name,
+        seconds_ago: Math.round((new Date() - new Date(a.created_at)) / 1000),
+        created_at:  a.created_at,
+      })),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= MATCHES — UPCOMING ================= */
+export const getUpcomingMatches = async (req, res) => {
+  try {
+    const [matches] = await db.execute(
+      `SELECT
+         m.id,
+         m.hometeamname,
+         m.awayteamname,
+         m.start_time,
+         m.lineup_status,
+         m.lineupavailable,
+         s.id   AS series_id,
+         s.name AS series_name,
+         COUNT(DISTINCT mgl.user_id) AS registrations
+       FROM matches m
+       LEFT JOIN series s ON s.seriesid = m.series_id
+       LEFT JOIN match_generation_log mgl ON mgl.match_id = m.id
+       WHERE m.status    = 'UPCOMING'
+         AND m.is_active = 1
+       GROUP BY
+         m.id, m.hometeamname, m.awayteamname,
+         m.start_time, m.lineup_status, m.lineupavailable,
+         s.id, s.name
+       ORDER BY m.start_time ASC`
+    );
+
+    /* group by series */
+    const seriesMap = {};
+    for (const m of matches) {
+      const key = m.series_id || "other";
+      if (!seriesMap[key]) {
+        seriesMap[key] = {
+           series_id:   m.series_id,
+         series_name: m.series_name || "Unknown Series",
+          matches:     [],
+        };
+      }
+      seriesMap[key].matches.push({
+        id:              m.id,
+        home_team:       m.hometeamname,
+        away_team:       m.awayteamname,
+        start_time:      m.start_time,
+        lineup_status:   m.lineup_status,
+        lineupavailable: Boolean(m.lineupavailable),
+        registrations:   Number(m.registrations),
+      });
+    }
+
+    return res.status(200).json({
+      success:      true,
+      total:        matches.length,
+      by_series:    Object.values(seriesMap),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= MATCHES — PAST ================= */
+export const getPastMatches = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, days = 14 } = req.query;
+    const limitNum  = Number(limit);
+    const offsetNum = (Number(page) - 1) * limitNum;
+    const daysNum   = Number(days);
+
+    /* ── Summary ── */
+    const [[summary]] = await db.execute(
+      `SELECT
+         COUNT(DISTINCT mgl.id)       AS total_ucts,
+         COUNT(DISTINCT mgl.user_id)  AS unique_participants,
+         COALESCE(SUM(ct.amount), 0)  AS revenue
+       FROM matches m
+       LEFT JOIN match_generation_log mgl ON mgl.match_id  = m.id
+       LEFT JOIN coins_transactions   ct  ON ct.user_id    = mgl.user_id
+         AND ct.coins > 0 AND ct.status = 'success'
+       WHERE m.status    = 'RESULT'
+         AND m.is_active = 1
+         AND m.start_time >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
+      [daysNum]
+    );
+
+    /* ── Match list ── */
+    const [matches] = await db.execute(
+      `SELECT
+         m.id,
+         m.hometeamname,
+         m.awayteamname,
+         m.start_time,
+         m.status,
+         s.name                      AS series_name,
+         COUNT(DISTINCT mgl.id)      AS total_ucts,
+         COUNT(DISTINCT mgl.user_id) AS unique_users,
+         ROUND(
+           COUNT(DISTINCT mgl.id) /
+           GREATEST(COUNT(DISTINCT mgl.user_id), 1),
+           2
+         )                           AS avg_per_user,
+         SUM(CASE WHEN u.free_trial_used = 1
+           AND NOT EXISTS (
+             SELECT 1 FROM coins_transactions ct2
+             WHERE ct2.user_id = mgl.user_id
+               AND ct2.coins   > 0
+               AND ct2.status  = 'success'
+           ) THEN 1 ELSE 0 END)      AS free_ucts
+       FROM matches m
+       LEFT JOIN series s               ON s.seriesid          = m.series_id
+       LEFT JOIN match_generation_log mgl ON mgl.match_id = m.id
+       LEFT JOIN users u                ON u.id          = mgl.user_id
+       WHERE m.status    = 'RESULT'
+         AND m.is_active = 1
+         AND m.start_time >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       GROUP BY m.id, m.hometeamname, m.awayteamname, m.start_time, m.status, s.name
+       ORDER BY total_ucts DESC
+       LIMIT ${limitNum} OFFSET ${offsetNum}`,
+      [daysNum]
+    );
+
+    const [[{ total }]] = await db.execute(
+      `SELECT COUNT(*) AS total FROM matches
+       WHERE status = 'RESULT'
+         AND is_active = 1
+         AND start_time >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
+      [daysNum]
+    );
+
+    const totalUcts        = Number(summary.total_ucts);
+    const uniqueParticipants = Number(summary.unique_participants);
+
+    return res.status(200).json({
+      success: true,
+      summary: {
+        total_ucts:           totalUcts,
+        unique_participants:  uniqueParticipants,
+        avg_ucts_per_user:    uniqueParticipants > 0
+          ? (totalUcts / uniqueParticipants).toFixed(2)
+          : "0.00",
+        revenue:              Number(summary.revenue).toFixed(2),
+      },
+      pagination: {
+        total:       Number(total),
+        page:        Number(page),
+        limit:       limitNum,
+        total_pages: Math.ceil(Number(total) / limitNum),
+      },
+      matches: matches.map((m) => ({
+        id:           m.id,
+        home_team:    m.hometeamname,
+        away_team:    m.awayteamname,
+        series:       m.series_name,
+        start_time:   m.start_time,
+        total_ucts:   Number(m.total_ucts),
+        unique_users: Number(m.unique_users),
+        avg_per_user: Number(m.avg_per_user),
+        free_ucts:    Number(m.free_ucts),
+      })),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= MATCHES — BY LEAGUE ================= */
+export const getLeagueMatches = async (req, res) => {
+  try {
+    const [leagues] = await db.execute(
+      `SELECT
+         s.id,
+         s.name                       AS series_name,
+         COUNT(DISTINCT m.id)         AS total_matches,
+         COUNT(DISTINCT CASE WHEN m.status = 'UPCOMING' THEN m.id END) AS upcoming,
+         COUNT(DISTINCT CASE WHEN m.status = 'LIVE'     THEN m.id END) AS live,
+         COUNT(DISTINCT CASE WHEN m.status = 'RESULT'   THEN m.id END) AS completed,
+         COUNT(DISTINCT mgl.user_id)  AS unique_users,
+         COUNT(DISTINCT mgl.id)       AS total_ucts
+       FROM series s
+       LEFT JOIN matches m               ON m.series_id  = s.id AND m.is_active = 1
+       LEFT JOIN match_generation_log mgl ON mgl.match_id = m.id
+       GROUP BY s.id, s.name
+       ORDER BY total_ucts DESC`
+    );
+
+    const grandTotal = leagues.reduce(
+      (acc, l) => {
+        acc.total_matches += Number(l.total_matches);
+        acc.unique_users  += Number(l.unique_users);
+        acc.total_ucts    += Number(l.total_ucts);
+        return acc;
+      },
+      { total_matches: 0, unique_users: 0, total_ucts: 0 }
+    );
+
+    return res.status(200).json({
+      success:      true,
+      total_leagues: leagues.length,
+      totals:        grandTotal,
+      leagues: leagues.map((l) => ({
+        series_id:     l.id,
+        series_name:   l.series_name,
+        total_matches: Number(l.total_matches),
+        upcoming:      Number(l.upcoming),
+        live:          Number(l.live),
+        completed:     Number(l.completed),
+        unique_users:  Number(l.unique_users),
+        total_ucts:    Number(l.total_ucts),
+        pct_of_total:  grandTotal.total_ucts > 0
+          ? ((Number(l.total_ucts) / grandTotal.total_ucts) * 100).toFixed(1)
+          : "0.0",
+      })),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

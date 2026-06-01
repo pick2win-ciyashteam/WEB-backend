@@ -3,6 +3,7 @@ import Joi from "joi";
 export const addBanner = (req, res, next) => {
   const schema = Joi.object({
     name:        Joi.string().min(2).max(200).required(),
+    button:      Joi.string().min(2).max(200).required(),
     image_url:   Joi.string().uri().required(),
     description: Joi.string().max(1000).allow("", null),
     link:        Joi.string().uri().allow("", null),
