@@ -20,6 +20,7 @@ export const addBanner = (req, res, next) => {
 export const updateBanner = (req, res, next) => {
   const schema = Joi.object({
     name:        Joi.string().min(2).max(200),
+    button:      Joi.string().min(2).max(200),
     image_url:   Joi.string().uri(),
     description: Joi.string().max(1000).allow("", null),
     link:        Joi.string().uri().allow("", null),

@@ -6,6 +6,7 @@ import {
     getGeographyReport,
     getLeagueMatches,
     getLiveMatches,
+    getMatchDashboardReport,
     getPackBuyersReport,
     getPastMatches,
     getUpcomingMatches
@@ -30,6 +31,8 @@ router.get("/matches/upcoming", getUpcomingMatches);
 
 router.get("/matches/past", getPastMatches);
 
-router.get("/matches/league", getLeagueMatches);
+router.get("/matches/league", getLeagueMatches);      
+
+router.get("/uct-activity",getMatchDashboardReport);  
 
 export default router;

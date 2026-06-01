@@ -18,14 +18,7 @@ export const getAllBanners = async (req, res) => {
   }
 };
 
-export const getBannerById = async (req, res) => {
-  try {
-    const result = await s.getBannerByIdService(req.params.id);
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-};
+ 
 
 export const updateBanner = async (req, res) => {
   try {
