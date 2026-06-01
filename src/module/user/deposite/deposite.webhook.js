@@ -118,11 +118,12 @@ export const stripeWebhook = async (req, res) => {
     }
 
     /* ── 2. Plan verify ── */
-    const [[plan]] = await conn.query(
-      `SELECT id, coins, price, name FROM subscription_plans WHERE id = ? LIMIT 1`,
-      [plan_id]
-    );
-    if (!plan) throw new Error("Plan not found");
+const [[plan]] = await conn.query(
+  `SELECT id, coins, price, name, matches, validity_days FROM subscription_plans WHERE id = ? LIMIT 1`,
+  [plan_id]
+);
+if (!plan) throw new Error("Plan not found");
+
 
     /* ── 3. Current wallet ── */
     const [[wallet]] = await conn.query(
@@ -161,14 +162,15 @@ export const stripeWebhook = async (req, res) => {
       [userId, plan_id, coins, amount, openingCoins, closingCoins, paymentIntentId]
     );
 
+   
     /* ── 6. Subscription record ── */
-    await conn.query(
-      `INSERT INTO user_subscriptions
-         (user_id, plan_id, plan_name, coins_purchased,
-          amount, status, start_date, expiry_date)
-       VALUES (?, ?, ?, ?, ?, 'active', NOW(), DATE_ADD(NOW(), INTERVAL 1 YEAR))`,
-      [userId, plan_id, plan.name, coins, amount]
-    );
+await conn.query(
+  `INSERT INTO user_subscriptions
+     (user_id, plan_id, plan_name, coins, matches_allowed,
+      amount, payment_reference, status, start_date, expiry_date)
+   VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), DATE_ADD(NOW(), INTERVAL ? DAY))`,
+  [userId, plan_id, plan.name, coins, plan.matches, amount, paymentIntentId, plan.validity_days]
+);
 
     await conn.commit();
 
