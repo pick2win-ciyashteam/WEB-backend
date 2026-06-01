@@ -722,4 +722,4 @@ export const deleteAccountService = async (userId) => {
   } finally {
     conn.release();
   }
-};
+};  
