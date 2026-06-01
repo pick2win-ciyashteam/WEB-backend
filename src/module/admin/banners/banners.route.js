@@ -7,7 +7,6 @@ const router = Router();
 
 router.post  ("/",           adminLimiter, adminAuth(["super_admin"]), v.addBanner,    c.addBanner);
 router.get   ("/",           adminLimiter, adminAuth(["super_admin"]),                 c.getAllBanners);
-router.get   ("/:id",        adminLimiter, adminAuth(["super_admin"]),                 c.getBannerById);
 router.patch ("/:id",        adminLimiter, adminAuth(["super_admin"]), v.updateBanner, c.updateBanner);
 router.delete("/:id",        adminLimiter, adminAuth(["super_admin"]),                 c.deleteBanner);
 router.patch ("/:id/toggle", adminLimiter, adminAuth(["super_admin"]),                 c.toggleBanner);

@@ -43,14 +43,7 @@ export const getAllBannersAdminService = async () => {
   };
 };
 
-/* ================= GET BANNER BY ID ================= */
-export const getBannerByIdService = async (id) => {
-  const [[banner]] = await db.execute(
-    `SELECT * FROM banners WHERE id = ?`, [id]
-  );
-  if (!banner) throw new Error("Banner not found");
-  return { success: true, data: banner };
-};
+ 
 
 /* ================= UPDATE BANNER ================= */
 export const updateBannerService = async (id, data) => {

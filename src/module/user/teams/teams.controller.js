@@ -71,42 +71,42 @@ export const generateTeams = async (req, res) => {
     }
 
     /* ── 4. Check coins ── */
-const [[wallet]] = await db.execute(
-  `SELECT available_coins FROM user_coins WHERE user_id = ?`,
-  [userId]
-);
+    const [[wallet]] = await db.execute(
+      `SELECT available_coins FROM user_coins WHERE user_id = ?`,
+      [userId]
+    );
 
-if (!wallet || Number(wallet.available_coins) < 1) {
-  return res.status(400).json({
-    success: false,
-    message: "Insufficient coins. Please buy coins to generate teams.",
-  });
-}
+    if (!wallet || Number(wallet.available_coins) < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Insufficient coins. Please buy coins to generate teams.",
+      });
+    }
 
-/* ── 5. Check active subscription ── */
-const [[subscription]] = await db.execute(
-  `SELECT id, plan_name, expiry_date, matches_allowed, matches_used
+    /* ── 5. Check active subscription ── */
+    const [[subscription]] = await db.execute(
+      `SELECT id, plan_name, expiry_date, matches_allowed, matches_used
    FROM user_subscriptions
    WHERE user_id = ?
      AND status = 'active'
      AND expiry_date > NOW()
    ORDER BY id DESC LIMIT 1`,
-  [userId]
-);
+      [userId]
+    );
 
-if (!subscription) {
-  return res.status(400).json({
-    success: false,
-    message: "No active subscription found. Please purchase a plan.",
-  });
-}
+    if (!subscription) {
+      return res.status(400).json({
+        success: false,
+        message: "No active subscription found. Please purchase a plan.",
+      });
+    }
 
-if (Number(subscription.matches_used) >= Number(subscription.matches_allowed)) {
-  return res.status(400).json({
-    success: false,
-    message: `Match limit reached. Your ${subscription.plan_name} allows ${subscription.matches_allowed} matches.`,
-  });
-}
+    if (Number(subscription.matches_used) >= Number(subscription.matches_allowed)) {
+      return res.status(400).json({
+        success: false,
+        message: `Match limit reached. Your ${subscription.plan_name} allows ${subscription.matches_allowed} matches.`,
+      });
+    }
     /* ── 5. Call UCT API ── */
     let uctTeams = [];
     try {
@@ -136,6 +136,16 @@ if (Number(subscription.matches_used) >= Number(subscription.matches_allowed)) {
         message: "UCT API returned no teams",
       });
     }
+
+    const startTime = Date.now();
+    const generationTimeMs = Date.now() - startTime;
+
+    await conn.query(
+      `INSERT INTO match_generation_log
+     (match_id, user_id, total_teams, generation_time_ms, status)
+   VALUES (?, ?, ?, ?, 'success')`,
+      [match_id, userId, totalTeams, generationTimeMs]
+    );
 
     /* ── 6. Build coded name → real player name map ── */
     const nameMap = {};
