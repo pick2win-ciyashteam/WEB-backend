@@ -16,7 +16,10 @@ router.post("/login",             v.login,           c.login);
 router.post  ("/logout",  authenticate,              c.logout); 
 router.get   ("/profile", authenticate,              c.getProfile);
 router.patch ("/update",  authenticate, v.updateProfile, c.updateProfile);
-router.delete("/delete",  authenticate,              c.deleteAccount);
+// router.delete("/delete",  authenticate,              c.deleteAccount);
+
+router.post("/delete-account",         authenticate, c.deleteAccount);
+router.post("/confirm-delete-account", authenticate, c.confirmDeleteAccount);
 
 
 

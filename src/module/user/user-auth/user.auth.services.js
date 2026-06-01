@@ -613,4 +613,113 @@ export const resetPasswordService = async (email, otp, newPassword) => {
   };
 };  
 
- 
+ /* ================= DELETE ACCOUNT SERVICE ================= */
+export const deleteAccountService = async (userId) => {
+  /* ── 1. Fetch user ── */
+  const [[user]] = await db.execute(
+    `SELECT id, email, fullname FROM users WHERE id = ? AND account_status != 'deleted'`,
+    [userId]
+  );
+
+  if (!user) throw new Error("User not found");
+
+  /* ── 2. Generate OTP ── */
+  const otp       = crypto.randomInt(100000, 999999).toString();
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  /* ── 3. Save OTP ── */
+  await db.execute(
+    `UPDATE users SET loginotp = ?, loginotpexpires = ? WHERE id = ?`,
+    [otp, otpExpiry, userId]
+  );
+
+  /* ── 4. Send email ── */
+  // await sendEmail(user.email, `Your account deletion OTP is ${otp}`);
+
+  return {
+    success: true,
+    message: "OTP sent to your email. Please verify to delete your account.",
+    ...(process.env.NODE_ENV !== "production" && { otp }),
+  };
+};
+
+/* ================= CONFIRM DELETE ACCOUNT SERVICE ================= */
+ export const confirmDeleteAccountService = async (userId, otp) => {
+  /* ── 1. Fetch user + OTP ── */
+  const [[user]] = await db.execute(
+    `SELECT id, loginotp, loginotpexpires FROM users
+     WHERE id = ? AND account_status != 'deleted'`,
+    [userId]
+  );
+
+  if (!user)          throw new Error("User not found");
+  if (!user.loginotp) throw new Error("OTP not requested. Please request again.");
+  if (String(user.loginotp) !== String(otp)) throw new Error("Invalid OTP");
+  if (new Date(user.loginotpexpires) < new Date()) throw new Error("OTP expired. Please request again.");
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    /* ── 2. Delete in correct FK order ── */
+
+    // user_team_players — user_teams కి child
+    await conn.query(
+      `DELETE utp FROM user_team_players utp
+       INNER JOIN user_teams ut ON ut.id = utp.user_team_id
+       WHERE ut.user_id = ?`,
+      [userId]
+    );
+
+    // user_teams
+    await conn.query(
+      `DELETE FROM user_teams WHERE user_id = ?`,
+      [userId]
+    );
+
+    // match_generation_log
+    await conn.query(
+      `DELETE FROM match_generation_log WHERE user_id = ?`,
+      [userId]
+    );
+
+    // signup_sessions
+    await conn.query(
+      `DELETE FROM signup_sessions WHERE email = (SELECT email FROM users WHERE id = ?)`,
+      [userId]
+    );
+
+    // user_subscriptions
+    await conn.query(
+      `DELETE FROM user_subscriptions WHERE user_id = ?`,
+      [userId]
+    );
+
+    // user_coins
+    await conn.query(
+      `DELETE FROM user_coins WHERE user_id = ?`,
+      [userId]
+    );
+
+    // coins_transactions — ledger కోసం ఉంచాలి అన్నారు కాబట్టి DELETE చేయడం లేదు
+
+    // users — last గా delete
+    await conn.query(
+      `DELETE FROM users WHERE id = ?`,
+      [userId]
+    );
+
+    await conn.commit();
+
+    return {
+      success: true,
+      message: "Account deleted successfully",
+    };
+
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    throw err;
+  } finally {
+    conn.release();
+  }
+};

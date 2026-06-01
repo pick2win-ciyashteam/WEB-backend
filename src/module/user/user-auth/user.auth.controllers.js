@@ -11,6 +11,8 @@ import {
   verifyEmailChangeService,
   forgotPasswordService,
   resetPasswordService,
+  deleteAccountService,
+  confirmDeleteAccountService,
 } from "./user.auth.services.js"
 
 import db from "../../../config/db.js";
@@ -251,22 +253,6 @@ export const updateProfile = async (req, res) => {
 };
 
 /* ================= DELETE ACCOUNT ================= */
-export const deleteAccount = async (req, res) => {
-  try {
-    await db.execute(
-      `UPDATE users SET account_status = 'deleted' WHERE id = ?`,
-      [req.user.id]
-    );
-
-    res.status(200).json({
-      success: true,
-      message: "Account deleted successfully",
-    });
-
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
 
   
 
@@ -334,5 +320,32 @@ export const resetPassword = async (req, res) => {
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+
+ 
+
+/* ================= DELETE ACCOUNT ================= */
+export const deleteAccount = async (req, res) => {
+  try {
+    const result = await deleteAccountService(req.user.id);
+    return res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= CONFIRM DELETE ACCOUNT ================= */
+export const confirmDeleteAccount = async (req, res) => {
+  try {
+    const { otp } = req.body;
+    if (!otp) {
+      return res.status(400).json({ success: false, message: "OTP required" });
+    }
+    const result = await confirmDeleteAccountService(req.user.id, otp);
+    return res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
