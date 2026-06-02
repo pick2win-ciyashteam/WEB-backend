@@ -2,13 +2,14 @@ import db from "../../../config/db.js";
 
 /* ================= ADD BANNER ================= */
 export const addBannerService = async (data) => {
-  const { name,button, image_url, description, link, is_active, sort_order } = data;
+  const { name,heading,button, image_url, description, link, is_active, sort_order } = data;
 
   const [result] = await db.execute(
-    `INSERT INTO banners (name,button, image_url, description, link, is_active, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?,?)`,
+    `INSERT INTO banners (name,heading,button, image_url, description, link, is_active, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?,?,?)`,
     [
       name,
+      heading,
       button,
       image_url,
       description || null,
@@ -30,7 +31,7 @@ export const addBannerService = async (data) => {
 export const getAllBannersAdminService = async () => {
 
   const [rows] = await db.execute(
-    `SELECT id, name,button, image_url, description, link,
+    `SELECT id, name,heading,button, image_url, description, link,
             is_active, sort_order, created_at
      FROM banners
      ORDER BY sort_order ASC, created_at DESC`
@@ -47,7 +48,7 @@ export const getAllBannersAdminService = async () => {
 
 /* ================= UPDATE BANNER ================= */
 export const updateBannerService = async (id, data) => {
-  const ALLOWED = ["name", "button", "image_url", "description", "link", "is_active", "sort_order"];
+  const ALLOWED = ["name", "heading", "button", "image_url", "description", "link", "is_active", "sort_order"];
   const sanitized = {};
   for (const key of ALLOWED) {
     if (data[key] !== undefined) sanitized[key] = data[key];
