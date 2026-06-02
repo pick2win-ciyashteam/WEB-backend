@@ -7,7 +7,7 @@ export const addBanner = (req, res, next) => {
     button:      Joi.string().min(2).max(200).required(),
     image_url:   Joi.string().uri().required(),
     description: Joi.string().max(1000).allow("", null),
-    link:        Joi.string().uri().allow("", null),
+    link:        Joi.string().min(2).max(200).allow("", null),
     is_active:   Joi.number().valid(0, 1).default(1),
     sort_order:  Joi.number().integer().min(0).default(0),
   });
@@ -24,8 +24,8 @@ export const updateBanner = (req, res, next) => {
     heading:     Joi.string().min(2).max(200),
     button:      Joi.string().min(2).max(200),
     image_url:   Joi.string().uri(),
-    description: Joi.string().max(1000).allow("", null),
-    link:        Joi.string().uri().allow("", null),
+    description: Joi.string().max(1000).allow("", null),  
+    link:        Joi.string().min(2).max(200).allow("", null),  
     is_active:   Joi.number().valid(0, 1),
     sort_order:  Joi.number().integer().min(0),
   }).min(1);
