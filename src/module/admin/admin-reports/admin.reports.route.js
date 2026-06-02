@@ -6,10 +6,13 @@ import {
     getGeographyReport,
     getLeagueMatches,
     getLiveMatches,
-    getMatchDashboardReport,
+    // getMatchDashboardReport,
     getPackBuyersReport,
     getPastMatches,
-    getUpcomingMatches
+    getUpcomingMatches,
+    getEnginePerformance,
+    getLiveStream
+    
 } from "./admin.reports.controller.js";
 
 
@@ -33,6 +36,12 @@ router.get("/matches/past", getPastMatches);
 
 router.get("/matches/league", getLeagueMatches);      
 
-router.get("/uct-activity",getMatchDashboardReport);  
+// router.get("/match-activity",getMatchDashboardReport);     
+
+router.get("/match-activity",  getEnginePerformance);
+
+router.get("/matches/live-stream", getLiveStream);
+
+
 
 export default router;
