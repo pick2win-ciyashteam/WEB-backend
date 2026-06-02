@@ -3,7 +3,7 @@ import db from "../../../config/db.js";
 export const getActiveBanners = async (req, res) => {
   try {
     const [rows] = await db.execute(
-      `SELECT id, name, image_url, description, link
+      `SELECT id, name, button,heading, image_url, description, link
        FROM banners
        WHERE is_active = 1
        ORDER BY sort_order ASC, created_at DESC`
