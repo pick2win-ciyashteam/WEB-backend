@@ -108,6 +108,7 @@ export const generateTeams = async (req, res) => {
       });
     }
     /* ── 5. Call UCT API ── */
+    const startTime = Date.now();
     let uctTeams = [];
     try {
       const response = await axios.post(
@@ -130,6 +131,9 @@ export const generateTeams = async (req, res) => {
       });
     }
 
+    const generationTimeMs = Date.now() - startTime;
+
+
     if (!uctTeams.length) {
       return res.status(400).json({
         success: false,
@@ -137,16 +141,8 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    const startTime = Date.now();
-    const generationTimeMs = Date.now() - startTime;
 
-    await conn.query(
-      `INSERT INTO match_generation_log
-     (match_id, user_id, total_teams, generation_time_ms, status)
-   VALUES (?, ?, ?, ?, 'success')`,
-      [match_id, userId, totalTeams, generationTimeMs]
-    );
-
+   
     /* ── 6. Build coded name → real player name map ── */
     const nameMap = {};
 
@@ -260,14 +256,14 @@ export const generateTeams = async (req, res) => {
 
       await conn.query(
         `INSERT INTO match_generation_log
-           (match_id, user_id, total_teams)
-         VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE
-           total_teams = VALUES(total_teams),
-           created_at  = NOW()`,
-        [match_id, userId, totalTeams]
+     (match_id, user_id, total_teams, generation_time_ms, status)
+   VALUES (?, ?, ?, ?, 'success')
+   ON DUPLICATE KEY UPDATE
+     total_teams        = VALUES(total_teams),
+     generation_time_ms = VALUES(generation_time_ms),
+     created_at         = NOW()`,
+        [match_id, userId, totalTeams, generationTimeMs]
       );
-
       await conn.commit();
 
       return res.status(200).json({

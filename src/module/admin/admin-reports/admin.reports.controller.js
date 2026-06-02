@@ -1295,410 +1295,798 @@ export const getLeagueMatches = async (req, res) => {
 
 
 
-export const getMatchDashboardReport = async (req, res) => {
+// export const getMatchDashboardReport = async (req, res) => {
+//   try {
+//     const { match_id, window_mins = 60, days = 30 } = req.query;
+//     if (!match_id) return res.status(400).json({ success: false, message: "match_id required" });
+
+//     const windowNum = Number(window_mins);
+//     const daysNum = Number(days);
+
+//     /* ════════════════════════════════
+//        MATCH INFO
+//     ════════════════════════════════ */
+//     const [[match]] = await db.execute(
+//       `SELECT m.id, m.hometeamname, m.awayteamname, m.start_time, m.status,
+//               s.name AS series_name
+//        FROM matches m
+//        LEFT JOIN series s ON s.seriesid = m.series_id
+//        WHERE m.id = ?`,
+//       [match_id]
+//     );
+
+//     /* ════════════════════════════════
+//        TAB 1 — MATCH ACTIVITY (KPIs)
+//     ════════════════════════════════ */
+//     const [[kpi]] = await db.execute(
+//       `SELECT
+//          COUNT(DISTINCT mgl.user_id)                               AS total_users,
+//          COUNT(DISTINCT mgl.id)                                    AS total_ucts,
+//          ROUND(AVG(mgl.generation_time_ms) / 1000, 1)             AS avg_gen_time_sec,
+//          SUM(CASE WHEN mgl.status = 'success' THEN 1 ELSE 0 END)  AS success_count,
+//          COUNT(mgl.id)                                             AS total_requests,
+//          MIN(mgl.created_at)                                       AS first_uct_at
+//        FROM match_generation_log mgl
+//        WHERE mgl.match_id = ?`,
+//       [match_id]
+//     );
+
+//     /* Generation time percentiles */
+//     const [genTimes] = await db.execute(
+//       `SELECT generation_time_ms FROM match_generation_log
+//        WHERE match_id = ? AND generation_time_ms IS NOT NULL
+//        ORDER BY generation_time_ms ASC`,
+//       [match_id]
+//     );
+//     const times = genTimes.map((r) => r.generation_time_ms / 1000);
+//     const pct = (arr, p) => {
+//       if (!arr.length) return 0;
+//       const idx = Math.ceil((p / 100) * arr.length) - 1;
+//       return Number(arr[Math.max(0, idx)].toFixed(1));
+//     };
+//     const mean = times.length
+//       ? Number((times.reduce((a, b) => a + b, 0) / times.length).toFixed(1))
+//       : 0;
+
+//     /* Pack tier breakdown */
+//     const [packTiers] = await db.execute(
+//       `SELECT
+//          COALESCE(sp.name, 'Free') AS tier,
+//          COUNT(DISTINCT mgl.user_id) AS users,
+//          COUNT(DISTINCT mgl.id)      AS ucts
+//        FROM match_generation_log mgl
+//        LEFT JOIN (
+//          SELECT us1.user_id, sp.name
+//          FROM user_subscriptions us1
+//          JOIN subscription_plans sp ON sp.id = us1.plan_id
+//          INNER JOIN (
+//            SELECT user_id, MAX(id) AS max_id
+//            FROM user_subscriptions
+//            WHERE status = 'active' AND expiry_date > NOW()
+//            GROUP BY user_id
+//          ) us2 ON us2.user_id = us1.user_id AND us2.max_id = us1.id
+//        ) sp ON sp.user_id = mgl.user_id
+//        WHERE mgl.match_id = ?
+//        GROUP BY COALESCE(sp.name, 'Free')
+//        ORDER BY ucts DESC`,
+//       [match_id]
+//     );
+
+//     /* Time-series (10-min buckets) */
+//     const [timeSeries] = await db.execute(
+//       `SELECT
+//          DATE_FORMAT(
+//            DATE_SUB(mgl.created_at, INTERVAL MOD(MINUTE(mgl.created_at), 10) MINUTE),
+//            '%Y-%m-%d %H:%i'
+//          )                            AS bucket,
+//          COUNT(DISTINCT mgl.user_id) AS users,
+//          COUNT(DISTINCT mgl.id)      AS ucts
+//        FROM match_generation_log mgl
+//        WHERE mgl.match_id = ?
+//        GROUP BY bucket
+//        ORDER BY bucket ASC`,
+//       [match_id]
+//     );
+
+//     const peakMinsBeforeKickoff = kpi.first_uct_at && match?.start_time
+//       ? Math.round((new Date(match.start_time) - new Date(kpi.first_uct_at)) / (1000 * 60))
+//       : null;
+
+//     /* ════════════════════════════════
+//        TAB 2 — LIVE STREAM (last 60s)
+//     ════════════════════════════════ */
+//     const [[rolling]] = await db.execute(
+//       `SELECT
+//          COUNT(DISTINCT mgl.user_id)                        AS active_users,
+//          COUNT(DISTINCT mgl.id)                             AS ucts_last_60s,
+//          ROUND(AVG(mgl.generation_time_ms) / 1000, 2)      AS avg_gen_sec
+//        FROM match_generation_log mgl
+//        WHERE mgl.match_id   = ?
+//          AND mgl.created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND)`,
+//       [match_id]
+//     );
+
+//     const [liveFeed] = await db.execute(
+//       `SELECT
+//          mgl.id, mgl.user_id, mgl.total_teams,
+//          mgl.generation_time_ms, mgl.status, mgl.created_at,
+//          u.fullname, u.country,
+//          COALESCE(sp.name, 'Free') AS plan_name
+//        FROM match_generation_log mgl
+//        JOIN users u ON u.id = mgl.user_id
+//        LEFT JOIN (
+//          SELECT us1.user_id, sp.name
+//          FROM user_subscriptions us1
+//          JOIN subscription_plans sp ON sp.id = us1.plan_id
+//          INNER JOIN (
+//            SELECT user_id, MAX(id) AS max_id
+//            FROM user_subscriptions
+//            WHERE status = 'active' AND expiry_date > NOW()
+//            GROUP BY user_id
+//          ) us2 ON us2.user_id = us1.user_id AND us2.max_id = us1.id
+//        ) sp ON sp.user_id = mgl.user_id
+//        WHERE mgl.match_id   = ?
+//          AND mgl.created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND)
+//        ORDER BY mgl.created_at DESC
+//        LIMIT 50`,
+//       [match_id]
+//     );
+
+//     /* ════════════════════════════════
+//        TAB 3 — PEAK ANALYSIS
+//     ════════════════════════════════ */
+//     const [perMinute] = await db.execute(
+//       `SELECT
+//          DATE_FORMAT(mgl.created_at, '%Y-%m-%d %H:%i')      AS minute_bucket,
+//          COUNT(DISTINCT mgl.user_id)                         AS users,
+//          COUNT(DISTINCT mgl.id)                              AS ucts,
+//          ROUND(AVG(mgl.generation_time_ms) / 1000, 2)       AS avg_gen_sec
+//        FROM match_generation_log mgl
+//        WHERE mgl.match_id   = ?
+//          AND mgl.created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+//        GROUP BY minute_bucket
+//        ORDER BY minute_bucket ASC`,
+//       [match_id, windowNum]
+//     );
+
+//     const peakMinute = perMinute.reduce(
+//       (max, r) => (Number(r.ucts) > Number(max.ucts || 0) ? r : max),
+//       {}
+//     );
+
+//     const [byCountry] = await db.execute(
+//       `SELECT
+//          u.country,
+//          COUNT(DISTINCT mgl.user_id) AS users,
+//          COUNT(DISTINCT mgl.id)      AS ucts
+//        FROM match_generation_log mgl
+//        JOIN users u ON u.id = mgl.user_id
+//        WHERE mgl.match_id   = ?
+//          AND mgl.created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
+//        GROUP BY u.country
+//        ORDER BY ucts DESC
+//        LIMIT 10`,
+//       [match_id, windowNum]
+//     );
+
+//     /* ════════════════════════════════
+//        TAB 4 — ENGINE PERFORMANCE
+//     ════════════════════════════════ */
+//     const [[funnel]] = await db.execute(
+//       `SELECT
+//          COUNT(*)                                                                   AS total_requests,
+//          SUM(CASE WHEN attempt_number = 1 AND status = 'success' THEN 1 ELSE 0 END) AS first_try_success,
+//          SUM(CASE WHEN attempt_number = 1 AND status = 'failed'  THEN 1 ELSE 0 END) AS first_try_failed,
+//          SUM(CASE WHEN attempt_number = 2                         THEN 1 ELSE 0 END) AS retriggers,
+//          SUM(CASE WHEN attempt_number = 2 AND status = 'success' THEN 1 ELSE 0 END) AS retry_success,
+//          SUM(CASE WHEN attempt_number = 2 AND status = 'failed'  THEN 1 ELSE 0 END) AS retry_failed,
+//          SUM(CASE WHEN attempt_number >= 3 AND status = 'success' THEN 1 ELSE 0 END) AS second_retry_success
+//        FROM match_generation_log
+//        WHERE match_id = ?`,
+//       [match_id]
+//     );
+
+//     const [failures] = await db.execute(
+//       `SELECT
+//          COALESCE(failure_reason, 'unknown')   AS failure_reason,
+//          failure_description,
+//          SUM(CASE WHEN attempt_number = 1 THEN 1 ELSE 0 END) AS first_try_fails,
+//          SUM(CASE WHEN attempt_number = 2 THEN 1 ELSE 0 END) AS retry_fails,
+//          COUNT(*)                                              AS total
+//        FROM match_generation_log
+//        WHERE match_id = ? AND status = 'failed'
+//        GROUP BY failure_reason, failure_description
+//        ORDER BY total DESC`,
+//       [match_id]
+//     );
+
+//     const totalFailed = failures.reduce((s, r) => s + Number(r.total), 0);
+//     const uniqueUsersGotUct = Number(funnel.first_try_success) + Number(funnel.retry_success) + Number(funnel.second_retry_success);
+
+//     const funnelSteps = [
+//       { label: "All requests submitted", count: Number(funnel.total_requests), pct: "100%", type: "total" },
+//       { label: "Succeed on first attempt", count: Number(funnel.first_try_success), pct: funnel.total_requests > 0 ? `${((funnel.first_try_success / funnel.total_requests) * 100).toFixed(1)}%` : "0%", type: "success" },
+//       { label: "Fail on first attempt · auto-retry kicks in within 2s", count: Number(funnel.first_try_failed), pct: funnel.total_requests > 0 ? `${((funnel.first_try_failed / funnel.total_requests) * 100).toFixed(1)}%` : "0%", type: "fail" },
+//       { label: "Succeed on first retry", count: Number(funnel.retry_success), pct: funnel.retriggers > 0 ? `${((funnel.retry_success / funnel.retriggers) * 100).toFixed(1)}%` : "0%", type: "success" },
+//       { label: "Fail on first retry · second retry triggers", count: Number(funnel.retry_failed), pct: funnel.retriggers > 0 ? `${((funnel.retry_failed / funnel.retriggers) * 100).toFixed(1)}%` : "0%", type: "fail" },
+//       { label: "Succeed on second retry", count: Number(funnel.second_retry_success), pct: funnel.retry_failed > 0 ? `${((funnel.second_retry_success / funnel.retry_failed) * 100).toFixed(1)}%` : "0%", type: "success" },
+//     ];
+
+//     /* ════════════════════════════════
+//        TAB 5 — CAPACITY PLANNING
+//     ════════════════════════════════ */
+//     const [peakLoads] = await db.execute(
+//       `SELECT
+//          mgl.match_id,
+//          m.hometeamname, m.awayteamname, m.start_time,
+//          COUNT(DISTINCT mgl.id) AS total_ucts,
+//          MAX(per_min.cnt)       AS peak_per_min
+//        FROM match_generation_log mgl
+//        JOIN matches m ON m.id = mgl.match_id
+//        JOIN (
+//          SELECT match_id,
+//            DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') AS bucket,
+//            COUNT(*) AS cnt
+//          FROM match_generation_log
+//          WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+//          GROUP BY match_id, bucket
+//        ) per_min ON per_min.match_id = mgl.match_id
+//        WHERE mgl.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+//        GROUP BY mgl.match_id, m.hometeamname, m.awayteamname, m.start_time
+//        ORDER BY peak_per_min DESC
+//        LIMIT 20`
+//     );
+
+//     const [hourlyLoad] = await db.execute(
+//       `SELECT
+//          DATE_FORMAT(created_at, '%Y-%m-%d %H:00') AS hour_bucket,
+//          COUNT(*)                                   AS requests,
+//          COUNT(DISTINCT user_id)                    AS users
+//        FROM match_generation_log
+//        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+//        GROUP BY hour_bucket
+//        ORDER BY hour_bucket ASC`
+//     );
+
+//     /* ════════════════════════════════
+//        TAB 6 — MATCH HISTORY
+//     ════════════════════════════════ */
+//     const [matchHistory] = await db.execute(
+//       `SELECT
+//          m.id, m.hometeamname, m.awayteamname, m.start_time, m.status,
+//          s.name                                                AS series_name,
+//          COUNT(DISTINCT mgl.user_id)                          AS unique_users,
+//          COUNT(DISTINCT mgl.id)                               AS total_ucts,
+//          ROUND(AVG(mgl.generation_time_ms) / 1000, 2)        AS avg_gen_sec,
+//          SUM(CASE WHEN mgl.status = 'failed'  THEN 1 ELSE 0 END) AS failed_ucts,
+//          SUM(CASE WHEN mgl.status = 'success' THEN 1 ELSE 0 END) AS success_ucts
+//        FROM matches m
+//        LEFT JOIN series s                ON s.seriesid    = m.series_id
+//        LEFT JOIN match_generation_log mgl ON mgl.match_id  = m.id
+//        WHERE m.is_active   = 1
+//          AND m.start_time >= DATE_SUB(NOW(), INTERVAL ? DAY)
+//        GROUP BY m.id, m.hometeamname, m.awayteamname, m.start_time, m.status, s.name
+//        ORDER BY m.start_time DESC
+//        LIMIT 50`,
+//       [daysNum]
+//     );
+
+//     /* ════════════════════════════════
+//        FINAL RESPONSE
+//     ════════════════════════════════ */
+//     return res.status(200).json({
+//       success: true,
+
+//       match: match
+//         ? {
+//           id: Number(match_id),
+//           home_team: match.hometeamname,
+//           away_team: match.awayteamname,
+//           series: match.series_name,
+//           start_time: match.start_time,
+//           status: match.status,
+//         }
+//         : null,
+
+//       /* ── Tab 1 ── */
+//       match_activity: {
+//         kpis: {
+//           total_users: Number(kpi.total_users),
+//           total_ucts: Number(kpi.total_ucts),
+//           avg_gen_time_sec: Number(kpi.avg_gen_time_sec),
+//           uct_success_rate_pct: kpi.total_requests > 0
+//             ? Number(((kpi.success_count / kpi.total_requests) * 100).toFixed(1))
+//             : 0,
+//           peak_activity_mins_before_kickoff: peakMinsBeforeKickoff,
+//         },
+//         generation_time_distribution: {
+//           p10_fastest: pct(times, 10),
+//           p50_median: pct(times, 50),
+//           mean_average: mean,
+//           p95_slow: pct(times, 95),
+//           p99_worst: pct(times, 99),
+//           target_sec: 2.0,
+//         },
+//         pack_tier_breakdown: packTiers,
+//         time_series: timeSeries,
+//       },
+
+//       /* ── Tab 2 ── */
+//       live_stream: {
+//         rolling_60s: {
+//           active_users: Number(rolling.active_users),
+//           ucts_last_60s: Number(rolling.ucts_last_60s),
+//           avg_gen_sec: Number(rolling.avg_gen_sec),
+//         },
+//         feed: liveFeed.map((f) => ({
+//           id: f.id,
+//           user_id: f.user_id,
+//           fullname: f.fullname,
+//           country: f.country,
+//           plan_name: f.plan_name,
+//           is_free: f.plan_name === "Free",
+//           total_teams: f.total_teams,
+//           gen_time_sec: f.generation_time_ms
+//             ? Number((f.generation_time_ms / 1000).toFixed(2))
+//             : null,
+//           status: f.status,
+//           seconds_ago: Math.round((new Date() - new Date(f.created_at)) / 1000),
+//           created_at: f.created_at,
+//         })),
+//       },
+
+//       /* ── Tab 3 ── */
+//       peak_analysis: {
+//         window_mins: windowNum,
+//         peak_minute: peakMinute,
+//         per_minute: perMinute,
+//         by_country: byCountry,
+//       },
+
+//       /* ── Tab 4 ── */
+//       engine_performance: {
+//         kpis: {
+//           total_requests: Number(funnel.total_requests),
+//           first_try_success: Number(funnel.first_try_success),
+//           first_try_failed: Number(funnel.first_try_failed),
+//           retriggers: Number(funnel.retriggers),
+//           retry_success: Number(funnel.retry_success),
+//           retry_failed: Number(funnel.retry_failed),
+//           second_retry_success: Number(funnel.second_retry_success),
+//           final_success_rate: funnel.total_requests > 0
+//             ? `${((uniqueUsersGotUct / funnel.total_requests) * 100).toFixed(1)}%`
+//             : "0%",
+//         },
+//         funnel: funnelSteps,
+//         failure_breakdown: failures.map((f) => ({
+//           failure_reason: f.failure_reason,
+//           failure_description: f.failure_description,
+//           first_try_fails: Number(f.first_try_fails),
+//           retry_fails: Number(f.retry_fails),
+//           total: Number(f.total),
+//           pct_of_failures: totalFailed > 0
+//             ? `${((Number(f.total) / totalFailed) * 100).toFixed(1)}%`
+//             : "0%",
+//         })),
+//       },
+
+//       /* ── Tab 5 ── */
+//       capacity_planning: {
+//         peak_matches: peakLoads.map((r) => ({
+//           match_id: r.match_id,
+//           home_team: r.hometeamname,
+//           away_team: r.awayteamname,
+//           start_time: r.start_time,
+//           total_ucts: Number(r.total_ucts),
+//           peak_per_min: Number(r.peak_per_min),
+//         })),
+//         hourly_load: hourlyLoad,
+//       },
+
+//       /* ── Tab 6 ── */
+//       match_history: matchHistory.map((m) => ({
+//         id: m.id,
+//         home_team: m.hometeamname,
+//         away_team: m.awayteamname,
+//         series: m.series_name,
+//         start_time: m.start_time,
+//         status: m.status,
+//         unique_users: Number(m.unique_users),
+//         total_ucts: Number(m.total_ucts),
+//         success_ucts: Number(m.success_ucts),
+//         failed_ucts: Number(m.failed_ucts),
+//         avg_gen_sec: Number(m.avg_gen_sec),
+//         success_rate: m.total_ucts > 0
+//           ? `${((m.success_ucts / m.total_ucts) * 100).toFixed(1)}%`
+//           : "0%",
+//       })),
+//     });
+
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
+export const getEnginePerformance = async (req, res) => {
   try {
-    const { match_id, window_mins = 60, days = 30 } = req.query;
-    if (!match_id) return res.status(400).json({ success: false, message: "match_id required" });
+    const { match_id } = req.query;
 
-    const windowNum = Number(window_mins);
-    const daysNum = Number(days);
+    if (!match_id) {
+      return res.status(400).json({
+        success: false,
+        message: "match_id required",
+      });
+    }
 
-    /* ════════════════════════════════
-       MATCH INFO
-    ════════════════════════════════ */
+    /* ── 1. Match info ── */
     const [[match]] = await db.execute(
-      `SELECT m.id, m.hometeamname, m.awayteamname, m.start_time, m.status,
-              s.name AS series_name
+      `SELECT
+         m.id,
+         m.hometeamname,
+         m.awayteamname,
+         m.start_time,
+         m.status,
+         s.name AS series_name
        FROM matches m
-       LEFT JOIN series s ON s.seriesid = m.series_id
+       LEFT JOIN series s ON s.id = m.series_id
        WHERE m.id = ?`,
       [match_id]
     );
 
-    /* ════════════════════════════════
-       TAB 1 — MATCH ACTIVITY (KPIs)
-    ════════════════════════════════ */
-    const [[kpi]] = await db.execute(
+    if (!match) {
+      return res.status(404).json({ success: false, message: "Match not found" });
+    }
+
+    /* ── 2. Summary stats ── */
+    const [[summary]] = await db.execute(
       `SELECT
-         COUNT(DISTINCT mgl.user_id)                               AS total_users,
-         COUNT(DISTINCT mgl.id)                                    AS total_ucts,
-         ROUND(AVG(mgl.generation_time_ms) / 1000, 1)             AS avg_gen_time_sec,
-         SUM(CASE WHEN mgl.status = 'success' THEN 1 ELSE 0 END)  AS success_count,
-         COUNT(mgl.id)                                             AS total_requests,
-         MIN(mgl.created_at)                                       AS first_uct_at
-       FROM match_generation_log mgl
-       WHERE mgl.match_id = ?`,
-      [match_id]
-    );
+         COUNT(DISTINCT user_id)                                AS total_users,
+         COUNT(*)                                               AS total_requests,
+         COUNT(DISTINCT CASE WHEN status = 'success' THEN user_id END) AS successful_users,
+         SUM(total_teams)                                       AS total_teams_generated,
 
-    /* Generation time percentiles */
-    const [genTimes] = await db.execute(
-      `SELECT generation_time_ms FROM match_generation_log
-       WHERE match_id = ? AND generation_time_ms IS NOT NULL
-       ORDER BY generation_time_ms ASC`,
-      [match_id]
-    );
-    const times = genTimes.map((r) => r.generation_time_ms / 1000);
-    const pct = (arr, p) => {
-      if (!arr.length) return 0;
-      const idx = Math.ceil((p / 100) * arr.length) - 1;
-      return Number(arr[Math.max(0, idx)].toFixed(1));
-    };
-    const mean = times.length
-      ? Number((times.reduce((a, b) => a + b, 0) / times.length).toFixed(1))
-      : 0;
+         MIN(generation_time_ms)                                AS fastest_ms,
+         MAX(generation_time_ms)                                AS slowest_ms,
+         ROUND(AVG(generation_time_ms), 0)                     AS avg_ms,
 
-    /* Pack tier breakdown */
-    const [packTiers] = await db.execute(
-      `SELECT
-         COALESCE(sp.name, 'Free') AS tier,
-         COUNT(DISTINCT mgl.user_id) AS users,
-         COUNT(DISTINCT mgl.id)      AS ucts
-       FROM match_generation_log mgl
-       LEFT JOIN (
-         SELECT us1.user_id, sp.name
-         FROM user_subscriptions us1
-         JOIN subscription_plans sp ON sp.id = us1.plan_id
-         INNER JOIN (
-           SELECT user_id, MAX(id) AS max_id
-           FROM user_subscriptions
-           WHERE status = 'active' AND expiry_date > NOW()
-           GROUP BY user_id
-         ) us2 ON us2.user_id = us1.user_id AND us2.max_id = us1.id
-       ) sp ON sp.user_id = mgl.user_id
-       WHERE mgl.match_id = ?
-       GROUP BY COALESCE(sp.name, 'Free')
-       ORDER BY ucts DESC`,
-      [match_id]
-    );
-
-    /* Time-series (10-min buckets) */
-    const [timeSeries] = await db.execute(
-      `SELECT
-         DATE_FORMAT(
-           DATE_SUB(mgl.created_at, INTERVAL MOD(MINUTE(mgl.created_at), 10) MINUTE),
-           '%Y-%m-%d %H:%i'
-         )                            AS bucket,
-         COUNT(DISTINCT mgl.user_id) AS users,
-         COUNT(DISTINCT mgl.id)      AS ucts
-       FROM match_generation_log mgl
-       WHERE mgl.match_id = ?
-       GROUP BY bucket
-       ORDER BY bucket ASC`,
-      [match_id]
-    );
-
-    const peakMinsBeforeKickoff = kpi.first_uct_at && match?.start_time
-      ? Math.round((new Date(match.start_time) - new Date(kpi.first_uct_at)) / (1000 * 60))
-      : null;
-
-    /* ════════════════════════════════
-       TAB 2 — LIVE STREAM (last 60s)
-    ════════════════════════════════ */
-    const [[rolling]] = await db.execute(
-      `SELECT
-         COUNT(DISTINCT mgl.user_id)                        AS active_users,
-         COUNT(DISTINCT mgl.id)                             AS ucts_last_60s,
-         ROUND(AVG(mgl.generation_time_ms) / 1000, 2)      AS avg_gen_sec
-       FROM match_generation_log mgl
-       WHERE mgl.match_id   = ?
-         AND mgl.created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND)`,
-      [match_id]
-    );
-
-    const [liveFeed] = await db.execute(
-      `SELECT
-         mgl.id, mgl.user_id, mgl.total_teams,
-         mgl.generation_time_ms, mgl.status, mgl.created_at,
-         u.fullname, u.country,
-         COALESCE(sp.name, 'Free') AS plan_name
-       FROM match_generation_log mgl
-       JOIN users u ON u.id = mgl.user_id
-       LEFT JOIN (
-         SELECT us1.user_id, sp.name
-         FROM user_subscriptions us1
-         JOIN subscription_plans sp ON sp.id = us1.plan_id
-         INNER JOIN (
-           SELECT user_id, MAX(id) AS max_id
-           FROM user_subscriptions
-           WHERE status = 'active' AND expiry_date > NOW()
-           GROUP BY user_id
-         ) us2 ON us2.user_id = us1.user_id AND us2.max_id = us1.id
-       ) sp ON sp.user_id = mgl.user_id
-       WHERE mgl.match_id   = ?
-         AND mgl.created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND)
-       ORDER BY mgl.created_at DESC
-       LIMIT 50`,
-      [match_id]
-    );
-
-    /* ════════════════════════════════
-       TAB 3 — PEAK ANALYSIS
-    ════════════════════════════════ */
-    const [perMinute] = await db.execute(
-      `SELECT
-         DATE_FORMAT(mgl.created_at, '%Y-%m-%d %H:%i')      AS minute_bucket,
-         COUNT(DISTINCT mgl.user_id)                         AS users,
-         COUNT(DISTINCT mgl.id)                              AS ucts,
-         ROUND(AVG(mgl.generation_time_ms) / 1000, 2)       AS avg_gen_sec
-       FROM match_generation_log mgl
-       WHERE mgl.match_id   = ?
-         AND mgl.created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
-       GROUP BY minute_bucket
-       ORDER BY minute_bucket ASC`,
-      [match_id, windowNum]
-    );
-
-    const peakMinute = perMinute.reduce(
-      (max, r) => (Number(r.ucts) > Number(max.ucts || 0) ? r : max),
-      {}
-    );
-
-    const [byCountry] = await db.execute(
-      `SELECT
-         u.country,
-         COUNT(DISTINCT mgl.user_id) AS users,
-         COUNT(DISTINCT mgl.id)      AS ucts
-       FROM match_generation_log mgl
-       JOIN users u ON u.id = mgl.user_id
-       WHERE mgl.match_id   = ?
-         AND mgl.created_at >= DATE_SUB(NOW(), INTERVAL ? MINUTE)
-       GROUP BY u.country
-       ORDER BY ucts DESC
-       LIMIT 10`,
-      [match_id, windowNum]
-    );
-
-    /* ════════════════════════════════
-       TAB 4 — ENGINE PERFORMANCE
-    ════════════════════════════════ */
-    const [[funnel]] = await db.execute(
-      `SELECT
-         COUNT(*)                                                                   AS total_requests,
          SUM(CASE WHEN attempt_number = 1 AND status = 'success' THEN 1 ELSE 0 END) AS first_try_success,
-         SUM(CASE WHEN attempt_number = 1 AND status = 'failed'  THEN 1 ELSE 0 END) AS first_try_failed,
-         SUM(CASE WHEN attempt_number = 2                         THEN 1 ELSE 0 END) AS retriggers,
+         SUM(CASE WHEN attempt_number = 1 AND status != 'success' THEN 1 ELSE 0 END) AS first_try_failed,
+         SUM(CASE WHEN attempt_number = 2 THEN 1 ELSE 0 END)   AS retriggers,
          SUM(CASE WHEN attempt_number = 2 AND status = 'success' THEN 1 ELSE 0 END) AS retry_success,
-         SUM(CASE WHEN attempt_number = 2 AND status = 'failed'  THEN 1 ELSE 0 END) AS retry_failed,
-         SUM(CASE WHEN attempt_number >= 3 AND status = 'success' THEN 1 ELSE 0 END) AS second_retry_success
+         SUM(CASE WHEN attempt_number = 2 AND status != 'success' THEN 1 ELSE 0 END) AS retry_failed,
+         SUM(CASE WHEN attempt_number > 2 AND status = 'success' THEN 1 ELSE 0 END) AS second_retry_success,
+
+         MIN(created_at)                                        AS first_generation,
+         MAX(created_at)                                        AS last_generation
        FROM match_generation_log
        WHERE match_id = ?`,
       [match_id]
     );
 
+    /* ── 3. Percentiles (p10, p50, p95, p99) ── */
+    const [timings] = await db.execute(
+      `SELECT generation_time_ms
+       FROM match_generation_log
+       WHERE match_id = ?
+         AND generation_time_ms IS NOT NULL
+       ORDER BY generation_time_ms ASC`,
+      [match_id]
+    );
+
+    const times = timings.map((t) => Number(t.generation_time_ms));
+    const getPercentile = (arr, p) => {
+      if (!arr.length) return 0;
+      const idx = Math.ceil((p / 100) * arr.length) - 1;
+      return arr[Math.max(0, idx)];
+    };
+
+    const p10 = getPercentile(times, 10);
+    const p50 = getPercentile(times, 50);
+    const p95 = getPercentile(times, 95);
+    const p99 = getPercentile(times, 99);
+
+    /* ── 4. Peak activity — which minute had most generations ── */
+    const [[peak]] = await db.execute(
+      `SELECT
+         DATE_FORMAT(created_at, '%H:%i') AS peak_minute,
+         COUNT(*)                          AS count
+       FROM match_generation_log
+       WHERE match_id = ?
+       GROUP BY DATE_FORMAT(created_at, '%H:%i')
+       ORDER BY count DESC
+       LIMIT 1`,
+      [match_id]
+    );
+
+    /* ── 5. Failure reason breakdown ── */
     const [failures] = await db.execute(
       `SELECT
-         COALESCE(failure_reason, 'unknown')   AS failure_reason,
+         failure_reason,
          failure_description,
          SUM(CASE WHEN attempt_number = 1 THEN 1 ELSE 0 END) AS first_try_fails,
          SUM(CASE WHEN attempt_number = 2 THEN 1 ELSE 0 END) AS retry_fails,
          COUNT(*)                                              AS total
        FROM match_generation_log
-       WHERE match_id = ? AND status = 'failed'
+       WHERE match_id  = ?
+         AND status   != 'success'
+         AND failure_reason IS NOT NULL
        GROUP BY failure_reason, failure_description
        ORDER BY total DESC`,
       [match_id]
     );
 
-    const totalFailed = failures.reduce((s, r) => s + Number(r.total), 0);
-    const uniqueUsersGotUct = Number(funnel.first_try_success) + Number(funnel.retry_success) + Number(funnel.second_retry_success);
+    /* ── 6. Calculations ── */
+    const totalRequests   = Number(summary.total_requests)    || 0;
+    const firstTrySuccess = Number(summary.first_try_success) || 0;
+    const firstTryFailed  = Number(summary.first_try_failed)  || 0;
+    const retriggers      = Number(summary.retriggers)        || 0;
+    const retrySuccess    = Number(summary.retry_success)     || 0;
+    const retryFailed     = Number(summary.retry_failed)      || 0;
+    const secondRetry     = Number(summary.second_retry_success) || 0;
+    const totalUsers      = Number(summary.total_users)       || 0;
+    const successUsers    = Number(summary.successful_users)  || 0;
 
-    const funnelSteps = [
-      { label: "All requests submitted", count: Number(funnel.total_requests), pct: "100%", type: "total" },
-      { label: "Succeed on first attempt", count: Number(funnel.first_try_success), pct: funnel.total_requests > 0 ? `${((funnel.first_try_success / funnel.total_requests) * 100).toFixed(1)}%` : "0%", type: "success" },
-      { label: "Fail on first attempt · auto-retry kicks in within 2s", count: Number(funnel.first_try_failed), pct: funnel.total_requests > 0 ? `${((funnel.first_try_failed / funnel.total_requests) * 100).toFixed(1)}%` : "0%", type: "fail" },
-      { label: "Succeed on first retry", count: Number(funnel.retry_success), pct: funnel.retriggers > 0 ? `${((funnel.retry_success / funnel.retriggers) * 100).toFixed(1)}%` : "0%", type: "success" },
-      { label: "Fail on first retry · second retry triggers", count: Number(funnel.retry_failed), pct: funnel.retriggers > 0 ? `${((funnel.retry_failed / funnel.retriggers) * 100).toFixed(1)}%` : "0%", type: "fail" },
-      { label: "Succeed on second retry", count: Number(funnel.second_retry_success), pct: funnel.retry_failed > 0 ? `${((funnel.second_retry_success / funnel.retry_failed) * 100).toFixed(1)}%` : "0%", type: "success" },
-    ];
+    const totalFailures   = failures.reduce((a, f) => a + Number(f.total), 0);
 
-    /* ════════════════════════════════
-       TAB 5 — CAPACITY PLANNING
-    ════════════════════════════════ */
-    const [peakLoads] = await db.execute(
-      `SELECT
-         mgl.match_id,
-         m.hometeamname, m.awayteamname, m.start_time,
-         COUNT(DISTINCT mgl.id) AS total_ucts,
-         MAX(per_min.cnt)       AS peak_per_min
-       FROM match_generation_log mgl
-       JOIN matches m ON m.id = mgl.match_id
-       JOIN (
-         SELECT match_id,
-           DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') AS bucket,
-           COUNT(*) AS cnt
-         FROM match_generation_log
-         WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-         GROUP BY match_id, bucket
-       ) per_min ON per_min.match_id = mgl.match_id
-       WHERE mgl.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-       GROUP BY mgl.match_id, m.hometeamname, m.awayteamname, m.start_time
-       ORDER BY peak_per_min DESC
-       LIMIT 20`
-    );
+    /* peak activity — mins before kickoff */
+    const kickoffTime    = new Date(match.start_time);
+    const peakTime       = peak?.peak_minute
+      ? new Date(`${match.start_time.toISOString().split("T")[0]}T${peak.peak_minute}:00`)
+      : null;
+    const minsBeforeKickoff = peakTime
+      ? Math.round((kickoffTime - peakTime) / (1000 * 60))
+      : null;
 
-    const [hourlyLoad] = await db.execute(
-      `SELECT
-         DATE_FORMAT(created_at, '%Y-%m-%d %H:00') AS hour_bucket,
-         COUNT(*)                                   AS requests,
-         COUNT(DISTINCT user_id)                    AS users
-       FROM match_generation_log
-       WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-       GROUP BY hour_bucket
-       ORDER BY hour_bucket ASC`
-    );
-
-    /* ════════════════════════════════
-       TAB 6 — MATCH HISTORY
-    ════════════════════════════════ */
-    const [matchHistory] = await db.execute(
-      `SELECT
-         m.id, m.hometeamname, m.awayteamname, m.start_time, m.status,
-         s.name                                                AS series_name,
-         COUNT(DISTINCT mgl.user_id)                          AS unique_users,
-         COUNT(DISTINCT mgl.id)                               AS total_ucts,
-         ROUND(AVG(mgl.generation_time_ms) / 1000, 2)        AS avg_gen_sec,
-         SUM(CASE WHEN mgl.status = 'failed'  THEN 1 ELSE 0 END) AS failed_ucts,
-         SUM(CASE WHEN mgl.status = 'success' THEN 1 ELSE 0 END) AS success_ucts
-       FROM matches m
-       LEFT JOIN series s                ON s.seriesid    = m.series_id
-       LEFT JOIN match_generation_log mgl ON mgl.match_id  = m.id
-       WHERE m.is_active   = 1
-         AND m.start_time >= DATE_SUB(NOW(), INTERVAL ? DAY)
-       GROUP BY m.id, m.hometeamname, m.awayteamname, m.start_time, m.status, s.name
-       ORDER BY m.start_time DESC
-       LIMIT 50`,
-      [daysNum]
-    );
-
-    /* ════════════════════════════════
-       FINAL RESPONSE
-    ════════════════════════════════ */
     return res.status(200).json({
       success: true,
 
-      match: match
-        ? {
-          id: Number(match_id),
-          home_team: match.hometeamname,
-          away_team: match.awayteamname,
-          series: match.series_name,
-          start_time: match.start_time,
-          status: match.status,
-        }
-        : null,
+      match: {
+        id:         match.id,
+        home_team:  match.hometeamname,
+        away_team:  match.awayteamname,
+        series:     match.series_name,
+        start_time: match.start_time,
+        status:     match.status,
+      },
 
-      /* ── Tab 1 ── */
-      match_activity: {
-        kpis: {
-          total_users: Number(kpi.total_users),
-          total_ucts: Number(kpi.total_ucts),
-          avg_gen_time_sec: Number(kpi.avg_gen_time_sec),
-          uct_success_rate_pct: kpi.total_requests > 0
-            ? Number(((kpi.success_count / kpi.total_requests) * 100).toFixed(1))
-            : 0,
-          peak_activity_mins_before_kickoff: peakMinsBeforeKickoff,
+      summary: {
+        total_users:           totalUsers,
+        total_teams_generated: Number(summary.total_teams_generated) || 0,
+        success_rate_pct:      totalUsers > 0
+          ? ((successUsers / totalUsers) * 100).toFixed(1)
+          : "0.0",
+        peak_activity: {
+          time:               peak?.peak_minute    || null,
+          count:              Number(peak?.count)  || 0,
+          mins_before_kickoff: minsBeforeKickoff,
         },
-        generation_time_distribution: {
-          p10_fastest: pct(times, 10),
-          p50_median: pct(times, 50),
-          mean_average: mean,
-          p95_slow: pct(times, 95),
-          p99_worst: pct(times, 99),
-          target_sec: 2.0,
+      },
+
+      generation_time: {
+        fastest_ms:  Number(summary.fastest_ms) || 0,
+        p10_ms:      p10,
+        p50_ms:      p50,
+        avg_ms:      Number(summary.avg_ms)     || 0,
+        p95_ms:      p95,
+        p99_ms:      p99,
+        slowest_ms:  Number(summary.slowest_ms) || 0,
+      },
+
+      reliability: {
+        total_requests:    totalRequests,
+        first_try_success: firstTrySuccess,
+        first_try_failed:  firstTryFailed,
+        retriggers:        retriggers,
+        retry_success:     retrySuccess,
+        retry_failed:      retryFailed,
+        second_retry_success: secondRetry,
+        first_try_success_pct: totalRequests > 0
+          ? ((firstTrySuccess / totalRequests) * 100).toFixed(1)
+          : "0.0",
+        retry_recovery_pct: retriggers > 0
+          ? ((retrySuccess / retriggers) * 100).toFixed(1)
+          : "0.0",
+      },
+
+      failure_breakdown: failures.map((f) => ({
+        reason:       f.failure_reason,
+        description:  f.failure_description,
+        first_try:    Number(f.first_try_fails),
+        retry:        Number(f.retry_fails),
+        total:        Number(f.total),
+        pct_of_failures: totalFailures > 0
+          ? ((Number(f.total) / totalFailures) * 100).toFixed(1)
+          : "0.0",
+      })),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+export const getLiveStream = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+
+    /* ── 1. Today's stats ── */
+    const [[todayStats]] = await db.execute(
+      `SELECT
+         COUNT(DISTINCT mgl.match_id)  AS matches_today,
+         COUNT(DISTINCT mgl.id)        AS ucts_today,
+         COUNT(DISTINCT mgl.user_id)   AS unique_users_today,
+         COALESCE(SUM(ABS(ct.coins)), 0) AS coins_consumed_today
+       FROM match_generation_log mgl
+       LEFT JOIN coins_transactions ct
+         ON ct.user_id    = mgl.user_id
+        AND ct.coins      < 0
+        AND ct.status     = 'success'
+        AND DATE(ct.created_at) = ?
+       WHERE DATE(mgl.created_at) = ?`,
+      [today, today]
+    );
+
+    /* ── 2. P95 latency — last 30 days ── */
+    const [latencies] = await db.execute(
+      `SELECT generation_time_ms
+       FROM match_generation_log
+       WHERE generation_time_ms IS NOT NULL
+         AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+       ORDER BY generation_time_ms ASC`
+    );
+
+    const times = latencies.map((l) => Number(l.generation_time_ms));
+    const getPercentile = (arr, p) => {
+      if (!arr.length) return 0;
+      const idx = Math.ceil((p / 100) * arr.length) - 1;
+      return arr[Math.max(0, idx)];
+    };
+    const p95 = getPercentile(times, 95);
+
+    /* ── 3. Engine uptime — success rate last 30 days ── */
+    const [[uptime]] = await db.execute(
+      `SELECT
+         COUNT(*)                                              AS total,
+         SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success
+       FROM match_generation_log
+       WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)`
+    );
+
+    const uptimePct = Number(uptime.total) > 0
+      ? ((Number(uptime.success) / Number(uptime.total)) * 100).toFixed(2)
+      : "100.00";
+
+    /* ── 4. Coin balance ledger ── */
+    const [[coinsIssued]] = await db.execute(
+      `SELECT COALESCE(SUM(coins), 0) AS total
+       FROM coins_transactions
+       WHERE coins > 0 AND status = 'success'`
+    );
+
+    const [[freeUcts]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM users
+       WHERE free_trial_used = 1`
+    );
+
+    const [[coinsConsumed]] = await db.execute(
+      `SELECT COALESCE(SUM(ABS(coins)), 0) AS total
+       FROM coins_transactions
+       WHERE coins < 0 AND status = 'success'`
+    );
+
+    const [[walletBalance]] = await db.execute(
+      `SELECT COALESCE(SUM(available_coins), 0) AS total,
+              COUNT(DISTINCT user_id)            AS buyers_with_balance
+       FROM user_coins
+       WHERE available_coins > 0`
+    );
+
+    /* ── 5. Today's coin delta ── */
+    const [[todayCoinsIssued]] = await db.execute(
+      `SELECT COALESCE(SUM(coins), 0) AS total
+       FROM coins_transactions
+       WHERE coins > 0 AND status = 'success'
+         AND DATE(created_at) = ?`,
+      [today]
+    );
+
+    const [[todayCoinsConsumed]] = await db.execute(
+      `SELECT COALESCE(SUM(ABS(coins)), 0) AS total
+       FROM coins_transactions
+       WHERE coins < 0 AND status = 'success'
+         AND DATE(created_at) = ?`,
+      [today]
+    );
+
+    /* ── 6. Live UCT stream — last 20 ── */
+    const [stream] = await db.execute(
+      `SELECT
+         mgl.id,
+         mgl.user_id,
+         mgl.match_id,
+         mgl.total_teams,
+         mgl.generation_time_ms,
+         mgl.created_at,
+         u.fullname,
+         u.country,
+         u.free_trial_used,
+         m.hometeamname,
+         m.awayteamname,
+         us.plan_name
+       FROM match_generation_log mgl
+       JOIN users   u ON u.id = mgl.user_id
+       JOIN matches m ON m.id = mgl.match_id
+       LEFT JOIN (
+         SELECT us1.user_id, sp.name AS plan_name
+         FROM user_subscriptions us1
+         JOIN subscription_plans sp ON sp.id = us1.plan_id
+         INNER JOIN (
+           SELECT user_id, MAX(id) AS max_id
+           FROM user_subscriptions
+           WHERE status = 'active' AND expiry_date > NOW()
+           GROUP BY user_id
+         ) us2 ON us2.user_id = us1.user_id AND us2.max_id = us1.id
+       ) us ON us.user_id = mgl.user_id
+       ORDER BY mgl.created_at DESC
+       LIMIT 20`
+    );
+
+    const fromPurchases  = Number(coinsIssued.total);
+    const freeUctCount   = Number(freeUcts.total);
+    const totalIssued    = fromPurchases + freeUctCount;
+    const totalConsumed  = Number(coinsConsumed.total);
+    const remaining      = Number(walletBalance.total);
+    const buyersWithBal  = Number(walletBalance.buyers_with_balance);
+
+    return res.status(200).json({
+      success: true,
+
+      today: {
+        matches_today:       Number(todayStats.matches_today),
+        ucts_today:          Number(todayStats.ucts_today),
+        unique_users_today:  Number(todayStats.unique_users_today),
+        coins_consumed_today: Number(todayStats.coins_consumed_today),
+        engine_uptime_pct:   uptimePct,
+        p95_latency_ms:      p95,
+      },
+
+      coin_ledger: {
+        issued: {
+          from_purchases:   fromPurchases,
+          free_ucts:        freeUctCount,
+          total_issued:     totalIssued,
         },
-        pack_tier_breakdown: packTiers,
-        time_series: timeSeries,
-      },
-
-      /* ── Tab 2 ── */
-      live_stream: {
-        rolling_60s: {
-          active_users: Number(rolling.active_users),
-          ucts_last_60s: Number(rolling.ucts_last_60s),
-          avg_gen_sec: Number(rolling.avg_gen_sec),
+        disposition: {
+          consumed_paid:    totalConsumed - freeUctCount,
+          consumed_free:    freeUctCount,
+          total_ucts:       totalConsumed,
+          remaining:        remaining,
+          avg_per_buyer:    buyersWithBal > 0
+            ? (remaining / buyersWithBal).toFixed(1)
+            : "0.0",
+          buyers_with_balance: buyersWithBal,
         },
-        feed: liveFeed.map((f) => ({
-          id: f.id,
-          user_id: f.user_id,
-          fullname: f.fullname,
-          country: f.country,
-          plan_name: f.plan_name,
-          is_free: f.plan_name === "Free",
-          total_teams: f.total_teams,
-          gen_time_sec: f.generation_time_ms
-            ? Number((f.generation_time_ms / 1000).toFixed(2))
-            : null,
-          status: f.status,
-          seconds_ago: Math.round((new Date() - new Date(f.created_at)) / 1000),
-          created_at: f.created_at,
-        })),
-      },
-
-      /* ── Tab 3 ── */
-      peak_analysis: {
-        window_mins: windowNum,
-        peak_minute: peakMinute,
-        per_minute: perMinute,
-        by_country: byCountry,
-      },
-
-      /* ── Tab 4 ── */
-      engine_performance: {
-        kpis: {
-          total_requests: Number(funnel.total_requests),
-          first_try_success: Number(funnel.first_try_success),
-          first_try_failed: Number(funnel.first_try_failed),
-          retriggers: Number(funnel.retriggers),
-          retry_success: Number(funnel.retry_success),
-          retry_failed: Number(funnel.retry_failed),
-          second_retry_success: Number(funnel.second_retry_success),
-          final_success_rate: funnel.total_requests > 0
-            ? `${((uniqueUsersGotUct / funnel.total_requests) * 100).toFixed(1)}%`
-            : "0%",
+        reconciles: totalConsumed + remaining === totalIssued,
+        today_delta: {
+          coins_issued:    Number(todayCoinsIssued.total),
+          coins_consumed:  Number(todayCoinsConsumed.total),
+          net_change:      Number(todayCoinsIssued.total) - Number(todayCoinsConsumed.total),
         },
-        funnel: funnelSteps,
-        failure_breakdown: failures.map((f) => ({
-          failure_reason: f.failure_reason,
-          failure_description: f.failure_description,
-          first_try_fails: Number(f.first_try_fails),
-          retry_fails: Number(f.retry_fails),
-          total: Number(f.total),
-          pct_of_failures: totalFailed > 0
-            ? `${((Number(f.total) / totalFailed) * 100).toFixed(1)}%`
-            : "0%",
-        })),
       },
 
-      /* ── Tab 5 ── */
-      capacity_planning: {
-        peak_matches: peakLoads.map((r) => ({
-          match_id: r.match_id,
-          home_team: r.hometeamname,
-          away_team: r.awayteamname,
-          start_time: r.start_time,
-          total_ucts: Number(r.total_ucts),
-          peak_per_min: Number(r.peak_per_min),
-        })),
-        hourly_load: hourlyLoad,
-      },
-
-      /* ── Tab 6 ── */
-      match_history: matchHistory.map((m) => ({
-        id: m.id,
-        home_team: m.hometeamname,
-        away_team: m.awayteamname,
-        series: m.series_name,
-        start_time: m.start_time,
-        status: m.status,
-        unique_users: Number(m.unique_users),
-        total_ucts: Number(m.total_ucts),
-        success_ucts: Number(m.success_ucts),
-        failed_ucts: Number(m.failed_ucts),
-        avg_gen_sec: Number(m.avg_gen_sec),
-        success_rate: m.total_ucts > 0
-          ? `${((m.success_ucts / m.total_ucts) * 100).toFixed(1)}%`
-          : "0%",
+      live_stream: stream.map((s) => ({
+        id:                 s.id,
+        user_id:            s.user_id,
+        fullname:           s.fullname,
+        country:            s.country,
+        match:              `${s.hometeamname} vs ${s.awayteamname}`,
+        total_teams:        s.total_teams,
+        generation_time_ms: s.generation_time_ms,
+        plan_name:          s.plan_name,
+        is_free:            !s.plan_name,
+        created_at:         s.created_at,
       })),
     });
 
