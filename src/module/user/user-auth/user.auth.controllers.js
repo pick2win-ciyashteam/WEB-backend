@@ -121,11 +121,12 @@ export const getProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    /* ── 2. Coins Wallet ── */
-    const [[wallet]] = await db.execute(
-      `SELECT coins FROM user_coins WHERE user_id = ?`,
-      [req.user.id]
-    );
+   /* ── 2. Coins Wallet ── */
+const [[wallet]] = await db.execute(
+  `SELECT available_coins, used_coins, total_coins
+   FROM user_coins WHERE user_id = ?`,
+  [req.user.id]
+);
 
     /* ── 3. Total purchased coins ── */
     const [[purchased]] = await db.execute(
@@ -145,9 +146,9 @@ export const getProfile = async (req, res) => {
 
  
 
-    const availableCoins = wallet    ? Number(wallet.coins)      : 0;
-    const totalCoins     = purchased ? Number(purchased.total)   : 0;
-    const usedCoins      = spent     ? Number(spent.total)       : 0;
+  const availableCoins = wallet ? Number(wallet.available_coins) : 0;
+const totalCoins     = wallet ? Number(wallet.total_coins)     : 0;
+const usedCoins      = wallet ? Number(wallet.used_coins)      : 0;
 
     res.status(200).json({
       success: true,
