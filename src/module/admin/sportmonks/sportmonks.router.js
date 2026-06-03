@@ -6,7 +6,8 @@ import {
   getAvailableMatches,
   toggleMatches,
   getMatches,
-  syncPlayingXI,
+//   syncPlayingXI,
+manualSyncPlayingXI,
   getFixturesByDateRange,
   
      
@@ -31,7 +32,10 @@ router.get("/matches/:seriesid",           getMatches);
 /* ══════════════════════════════════════════
    SYNC
 ══════════════════════════════════════════ */
-router.get("/sync-playingxi/:match_id",    syncPlayingXI);
+// router.get("/sync-playingxi/:match_id",    syncPlayingXI);
+
+router.get("/sync-playingxi/:match_id", manualSyncPlayingXI);
+
 
 router.post("/fixtures", getFixturesByDateRange);
 
