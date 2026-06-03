@@ -131,8 +131,7 @@ export const getAllSeries = async (req, res) => {
                 WHEN mgl.id IS NOT NULL THEN 1
                 ELSE 0
               END                  AS teams_generated,
-
-              mgl.total_teams      AS generated_teams_count,
+ 
               mgl.created_at       AS generated_at
 
            FROM matches m
@@ -176,7 +175,7 @@ export const getAllSeries = async (req, res) => {
           matches: matches.map((m) => ({
             ...m,
             teams_generated:      Boolean(m.teams_generated),
-            generated_teams_count: m.generated_teams_count || 0,
+         
             generated_at:         m.generated_at || null,
           })),
         };

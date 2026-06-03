@@ -701,19 +701,35 @@ export const getMyTeams = async (req, res) => {
       return res.status(400).json({ success: false, message: "matchId is required" });
     }
 
-    const [players] = await db.execute(
-      `SELECT id, match_id, dt_no, name, original_name, role, cap
-       FROM user_teams
-       WHERE match_id = ? AND user_id = ?
-       ORDER BY dt_no, role`,
-      [matchId, userId]
-    );
+  const [players] = await db.execute(
+  `SELECT
+     ut.id,
+     ut.match_id,
+     ut.dt_no,
+     ut.name,
+     ut.original_name,
+     ut.role,
+     ut.cap,
+
+     mp.logo  AS player_image
+
+   FROM user_teams ut
+
+   LEFT JOIN match_players mp
+          ON mp.match_id    = ut.match_id
+         AND mp.player_name = ut.original_name
+
+   WHERE ut.match_id = ? AND ut.user_id = ?
+   ORDER BY ut.dt_no, ut.role`,
+  [matchId, userId]
+);
+
 
     if (!players.length) {
       return res.status(404).json({ success: false, message: "No teams found for this match" });
     }
 
-    // dt_no బట్టి teams గా group చేయి
+   
     const teamsMap = {};
     for (const player of players) {
       if (!teamsMap[player.dt_no]) teamsMap[player.dt_no] = [];
