@@ -398,7 +398,23 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    /* ── 2. Match exists + status check ── */
+    /* ── 2. Remove duplicates (same name) ── */
+    const uniqueTeamA = team_a.filter(
+      (p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx
+    );
+    const uniqueTeamB = team_b.filter(
+      (p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx
+    );
+
+    /* ── 3. Exactly 11 players per team ── */
+    if (uniqueTeamA.length !== 11 || uniqueTeamB.length !== 11) {
+      return res.status(400).json({
+        success: false,
+        message: `Each team must have exactly 11 players. Got team_a: ${uniqueTeamA.length}, team_b: ${uniqueTeamB.length}`,
+      });
+    }
+
+    /* ── 4. Match exists + status check ── */
     const [[match]] = await db.execute(
       `SELECT id, status, lineupavailable, lineup_status, start_time
        FROM matches WHERE id = ?`,
@@ -428,7 +444,7 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    /* ── 3. Check already generated ── */
+    /* ── 5. Check already generated ── */
     const [[existing]] = await db.execute(
       `SELECT id FROM match_generation_log
        WHERE match_id = ? AND user_id = ?`,
@@ -442,7 +458,7 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    /* ── 4. Check coins ── */
+    /* ── 6. Check coins ── */
     const [[wallet]] = await db.execute(
       `SELECT available_coins, used_coins, total_coins
        FROM user_coins WHERE user_id = ?`,
@@ -456,7 +472,7 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    /* ── 5. Check free trial ── */
+    /* ── 7. Check free trial ── */
     const [[userRow]] = await db.execute(
       `SELECT free_trial_used FROM users WHERE id = ?`,
       [userId]
@@ -464,7 +480,7 @@ export const generateTeams = async (req, res) => {
 
     const isFreeTrial = userRow && userRow.free_trial_used === 0;
 
-    /* ── 6. Subscription check — skip if free trial ── */
+    /* ── 8. Subscription check — skip if free trial ── */
     if (!isFreeTrial) {
       const [[subscription]] = await db.execute(
         `SELECT id, plan_name, expiry_date, matches_allowed, matches_used
@@ -491,7 +507,7 @@ export const generateTeams = async (req, res) => {
       }
     }
 
-    /* ── 7. Convert real names → coded names for UCT API ── */
+    /* ── 9. Convert real names → coded names for UCT API ── */
     const toUCT = (players, side) => {
       const counters = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
       return players.map((p) => {
@@ -511,18 +527,18 @@ export const generateTeams = async (req, res) => {
         return {
           name:          codedName,
           role:          p.role,
-          ...(apiCaptain  && { captain: apiCaptain }),
-          ...(p.mandate   && { mandate: p.mandate  }),
+          ...(apiCaptain && { captain: apiCaptain }),
+          ...(p.mandate  && { mandate: p.mandate  }),
           _original:     p.name,
-          _cap_original: p.captain || null, // "C" | "VC" | "CVC" | null
+          _cap_original: p.captain || null,
         };
       });
     };
 
-    const uctTeamA = toUCT(team_a, "A");
-    const uctTeamB = toUCT(team_b, "B");
+    const uctTeamA = toUCT(uniqueTeamA, "A");
+    const uctTeamB = toUCT(uniqueTeamB, "B");
 
-    /* ── 8. Validate C / VC / CVC ── */
+    /* ── 10. Validate C / VC / CVC ── */
     const allPlayers = [...uctTeamA, ...uctTeamB];
 
     const captains = allPlayers.filter(
@@ -546,26 +562,21 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    /* ── 9. Call UCT API — coded names, strip internal fields ── */
-    const startTime = Date.now();
-    let uctTeams = [];
+    /* ── 11. Call UCT API ── */
+    const startTime  = Date.now();
+    let   uctTeams   = [];
 
-    // ↓ ఇక్కడ add చేయి
-const uctPayload = {
-  team_a: uctTeamA.map(({ _original, _cap_original, ...p }) => p),
-  team_b: uctTeamB.map(({ _original, _cap_original, ...p }) => p),
-};
-console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
+    const uctPayload = {
+      team_a: uctTeamA.map(({ _original, _cap_original, ...p }) => p),
+      team_b: uctTeamB.map(({ _original, _cap_original, ...p }) => p),
+    };
 
+    console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
 
     try {
       const response = await axios.post(
         `${process.env.UCT_API}/football/teams`,
-            uctPayload,   // ← ఇది కూడా మార్చు, duplicate map చేయకుండా
-        {
-          team_a: uctTeamA.map(({ _original, _cap_original, ...p }) => p),
-          team_b: uctTeamB.map(({ _original, _cap_original, ...p }) => p),
-        },
+        uctPayload,
         { headers: { "Content-Type": "application/json" }, timeout: 30000 }
       );
 
@@ -589,19 +600,19 @@ console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
       });
     }
 
-    /* ── 10. Build coded name → real name map + cap map ── */
+    /* ── 12. Build coded name → real name map + cap map ── */
     const nameMap = {};
     const capMap  = {};
 
     [...uctTeamA, ...uctTeamB].forEach((p) => {
       nameMap[p.name] = p._original      || p.name;
-      capMap[p.name]  = p._cap_original;           // original "C"|"VC"|"CVC"|null
+      capMap[p.name]  = p._cap_original;
     });
 
     console.log("📋 Name map:", nameMap);
     console.log("🎖️  Cap map:",  capMap);
 
-    /* ── 11. Transaction — deduct coin + store teams ── */
+    /* ── 13. Transaction — deduct coin + store teams ── */
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
@@ -660,9 +671,7 @@ console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
       for (const player of uctTeams) {
         const realName    = nameMap[player.name] || player.name;
         const originalCap = capMap[player.name]  ?? player.cap ?? null;
-
-        // empty string → null
-        const capValue = originalCap === "" ? null : originalCap;
+        const capValue    = originalCap === "" ? null : originalCap;
 
         await conn.query(
           `INSERT INTO user_teams
@@ -697,12 +706,12 @@ console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
       await conn.commit();
 
       return res.status(200).json({
-        success:          true,
-        message:          `${totalTeams} teams generated successfully`,
-        total_teams:      totalTeams,
-        coins_used:       1,
-        coins_remaining:  Number(currentWallet.available_coins) - 1,
-        free_trial_used:  isFreeTrial,
+        success:         true,
+        message:         `${totalTeams} teams generated successfully`,
+        total_teams:     totalTeams,
+        coins_used:      1,
+        coins_remaining: Number(currentWallet.available_coins) - 1,
+        free_trial_used: isFreeTrial,
       });
 
     } catch (err) {
