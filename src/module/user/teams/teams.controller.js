@@ -550,9 +550,18 @@ export const generateTeams = async (req, res) => {
     const startTime = Date.now();
     let uctTeams = [];
 
+    // ↓ ఇక్కడ add చేయి
+const uctPayload = {
+  team_a: uctTeamA.map(({ _original, _cap_original, ...p }) => p),
+  team_b: uctTeamB.map(({ _original, _cap_original, ...p }) => p),
+};
+console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
+
+
     try {
       const response = await axios.post(
         `${process.env.UCT_API}/football/teams`,
+            uctPayload,   // ← ఇది కూడా మార్చు, duplicate map చేయకుండా
         {
           team_a: uctTeamA.map(({ _original, _cap_original, ...p }) => p),
           team_b: uctTeamB.map(({ _original, _cap_original, ...p }) => p),
