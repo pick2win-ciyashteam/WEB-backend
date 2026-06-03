@@ -12,7 +12,7 @@ const router = Router();
 router.post("/buy-coins",      authenticate, createCoinsPayment);
 
 router.get ("/stripe/config",   authenticate, getStripeConfig);
-
+  
 router.get ("/my-coins",       authenticate, getMyCoins);
 
 router.get ("/my-transactions", authenticate, getMyTransactions);

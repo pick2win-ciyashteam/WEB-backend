@@ -63,30 +63,15 @@ export const getStripeConfig = async (req, res) => {
 export const getMyCoins = async (req, res) => {
   try {
     const [[wallet]] = await db.execute(
-      `SELECT coins FROM user_coins WHERE user_id = ?`,
+      `SELECT available_coins, used_coins, total_coins
+       FROM user_coins WHERE user_id = ?`,
       [req.user.id]
     );
-
-    /* ── spent coins calculate చేయి ── */
-    const [[spent]] = await db.execute(
-      `SELECT COALESCE(SUM(ABS(coins)), 0) AS spent
-       FROM coins_transactions
-       WHERE user_id = ? AND coins < 0 AND status = 'success'`,
-      [req.user.id]
-    );
-
-    /* ── total purchased ── */
-    const [[purchased]] = await db.execute(
-      `SELECT COALESCE(SUM(coins), 0) AS total
-       FROM coins_transactions
-       WHERE user_id = ? AND coins > 0 AND status = 'success'`,
-      [req.user.id]
-    );
-
-    const availableCoins = wallet ? Number(wallet.coins) : 0;
-    const usedCoins      = spent  ? Number(spent.spent)  : 0;
-    const totalCoins     = purchased ? Number(purchased.total) : 0;
-
+ 
+    const availableCoins = wallet ? Number(wallet.available_coins) : 0;
+    const usedCoins      = wallet ? Number(wallet.used_coins)      : 0;
+    const totalCoins     = wallet ? Number(wallet.total_coins)     : 0;
+ 
     res.status(200).json({
       success: true,
       wallet: {
@@ -95,7 +80,7 @@ export const getMyCoins = async (req, res) => {
         available_coins: availableCoins,
       },
     });
-
+ 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
