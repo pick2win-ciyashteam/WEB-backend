@@ -13,7 +13,7 @@ router.post("/resend-otp",        v.resendOtp,       c.resendOtp);
 router.post("/login",             v.login,           c.login);
 
 /* ── Protected routes ── */
-router.post  ("/logout",  authenticate,              c.logout); 
+router.post  ("/logout",  authenticate,              c.logout);   
 router.get   ("/profile", authenticate,              c.getProfile);
 router.patch ("/update",  authenticate, v.updateProfile, c.updateProfile);
 // router.delete("/delete",  authenticate,              c.deleteAccount);
