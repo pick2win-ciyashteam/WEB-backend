@@ -4,7 +4,7 @@ import db from "../../../config/db.js";
 export const getAllSeries = async (req, res) => {
   try {
     const [seriesRows] = await db.execute(
-      `SELECT id, seriesid, name, season,
+      `SELECT id, seriesid, name, 
               start_date, end_date, created_at,
               status, is_selected
        FROM series

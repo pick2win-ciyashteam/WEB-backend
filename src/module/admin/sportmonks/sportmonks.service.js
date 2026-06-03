@@ -76,146 +76,7 @@ const getDateRange = (days = 60) => {
 ══════════════════════════════════════════ */
 
    
-// export const syncPlayingXIService = async (matchId) => {
-
-//   /* ── 1. Match fetch ── */
-//   const [[matchRow]] = await db.query(
-//     `SELECT id, provider_match_id, home_team_id, away_team_id
-//      FROM matches WHERE provider_match_id = ? LIMIT 1`,
-//     [matchId]
-//   );
-//   if (!matchRow) throw new Error("Match not found: " + matchId);
-
-//   /* ── 2. API call ── */
-//   const data    = await apiGet(`/fixtures/${matchId}`, {
-//     include: "lineups.player;participants"
-//   });
-//   const fixture = data?.data;
- 
-//   const lineups = fixture?.lineups || [];
-
-// // ✅ ADD THIS
-// console.log("Total lineups:", lineups.length);
-// console.log("All type_ids:", lineups.map(l => ({ 
-//   name: l.player?.display_name, 
-//   type_id: l.type_id 
-// })));
-
-//   if (!lineups.length) {
-//     await db.query(
-//       `UPDATE matches SET lineupavailable = 0, lineup_status = 'not_available' WHERE id = ?`,
-//       [matchRow.id]
-//     );
-//     return { count: 0, reason: "Lineup not published yet" };
-//   }
-
-//   /* ── 3. Teams map — provider_team_id → db team_id ── */
-//   const [teamRows] = await db.query(
-//     `SELECT id, provider_team_id FROM teams
-//      WHERE id IN (?, ?)`,
-//     [matchRow.home_team_id, matchRow.away_team_id]
-//   );
-//   const teamMap = new Map(teamRows.map((t) => [String(t.provider_team_id), t.id]));
-
-//   /* ── 4. Clean slate ── */
-//   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
-
-//   /* ── 5. Insert directly from API data ── */
-//   let count = 0;
-
-//   for (const lineup of lineups) {
-//     const player          = lineup.player;
-//     const providerPlayerId = String(lineup.player_id);
-//     const providerTeamId   = String(lineup.team_id);
-//     const isSubstitute     = lineup.type_id === 12 ? 1 : 0;
-//     const isPlaying        = isSubstitute === 0 ? 1 : 0;
-
-//     /* ── team_id DB లో find చేయి ── */
-//     const dbTeamId = teamMap.get(providerTeamId);
-//     if (!dbTeamId) {
-//       console.warn(`Team not found: provider_team_id=${providerTeamId}`);
-//       continue;
-//     }
-
   
-// const positionMap = {
-//   // Standard
-//   "Goalkeeper":        "GK",
-//   "Defender":          "DEF",
-//   "Midfielder":        "MID",
-//   "Attacker":          "FWD",
-//   "Forward":           "FWD",
-//   // Detailed positions
-//   "Centre-Back":       "DEF",
-//   "Left-Back":         "DEF",
-//   "Right-Back":        "DEF",
-//   "Left Wingback":     "DEF",
-//   "Right Wingback":    "DEF",
-//   "Defensive Midfielder": "MID",
-//   "Central Midfielder":   "MID",
-//   "Attacking Midfielder": "MID",
-//   "Left Winger":       "FWD",
-//   "Right Winger":      "FWD",
-//   "Centre-Forward":    "FWD",
-//   "Second Striker":    "FWD",
-// };
-
-// // position_id map — Sportmonks standard IDs
-// const positionIdMap = {
-//   24: "GK",
-//   25: "DEF",
-//   26: "MID",
-//   27: "FWD",
-// };
-// const rawPosition = player?.position?.name ||  player?.detailed_position?.name ||  null;
-
-// const positionById = positionIdMap[lineup?.position_id] || null;
-
-// const position = positionMap[rawPosition] || positionById || "MID";
-
-//     // const rawPosition = player?.position?.name || player?.detailed_position?.name || "";
-//     // const position    = positionMap[rawPosition] || "MID";
-
-//     await db.query(
-//       `INSERT INTO match_players
-//          (match_id, team_id, player_name, position,
-//           is_playing, is_substitute, is_pre_squad,
-//           provider_player_id, logo)
-//        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
-//        ON DUPLICATE KEY UPDATE
-//          is_playing         = VALUES(is_playing),
-//          is_substitute      = VALUES(is_substitute),
-//          is_pre_squad       = 0,
-//          player_name        = VALUES(player_name),
-//          position           = VALUES(position),
-//          logo               = VALUES(logo)`,
-//       [
-//         matchRow.id,
-//         dbTeamId,
-//         player?.display_name || player?.name || `Player ${providerPlayerId}`,
-//         position,
-//         isPlaying,
-//         isSubstitute,
-//         providerPlayerId,
-//         player?.image_path || null,
-//       ]
-//     );
-//     count++;
-//   }
-
-//   /* ── 6. Update match status ── */
-//   await db.query(
-//     `UPDATE matches
-//      SET lineupavailable = 1,
-//          lineup_status   = 'confirmed'
-//      WHERE id = ?`,
-//     [matchRow.id]
-//   );
-
-//   console.log(`✅ Playing XI synced: ${count} players for match ${matchId}`);
-//   return { count, reason: null, type: "lineup" };
-// };
-
 
  export const syncPlayingXIService = async (matchId) => {
 
@@ -315,7 +176,93 @@ const getDateRange = (days = 60) => {
   return { count: allLineups.length, reason: null, type: "lineup" };
 };
 
-/* ══════════════════════════════════════════
+
+// export const syncPlayingXIService = async (matchId) => {
+ 
+//   // 1. Get match from DB (by provider_match_id)
+//   const [[matchRow]] = await db.query(
+//     `SELECT id, provider_match_id, status FROM matches
+//      WHERE provider_match_id = ? LIMIT 1`,
+//     [matchId]
+//   );
+ 
+//   if (!matchRow) throw new Error("Match not found: " + matchId);
+ 
+//   console.log(` Syncing lineup for match ${matchId} (status: ${matchRow.status})`);
+ 
+//   // 2. Fetch lineups from Sportmonks — no status restriction
+//   const data    = await apiGet(`/fixtures/${matchId}`, { include: "lineups.player" });
+//   const fixture = data?.data;
+//   const lineups = fixture?.lineups || [];
+ 
+//   if (!lineups.length) {
+//     await db.query(
+//       `UPDATE matches SET lineupavailable = 0, lineup_status = 'not_available' WHERE id = ?`,
+//       [matchRow.id]
+//     );
+//     return { count: 0, reason: "Lineup not published yet", type: "lineup" };
+//   }
+ 
+//   // 3. Map lineup players
+//   const allLineupPlayers = lineups.map((l) => ({
+//     pid:             String(l.player_id),
+//     is_substitute:   l.type_id === 12 ? 1 : 0,
+//     provider_team_id: String(l.team_id),
+//   }));
+ 
+//   const pids = [...new Set(allLineupPlayers.map((l) => l.pid))];
+ 
+//   // 4. Resolve internal player IDs
+//   const [playerRows] = await db.query(
+//     `SELECT id, provider_player_id, team_id FROM players
+//      WHERE provider_player_id IN (?)`,
+//     [pids]
+//   );
+//   const playerMap = new Map(playerRows.map((r) => [String(r.provider_player_id), r]));
+ 
+//   // 5. Clean slate — fresh insert
+//   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
+ 
+//   let count = 0;
+//   for (const l of allLineupPlayers) {
+//     const player = playerMap.get(l.pid);
+//     if (!player) {
+//       console.warn(`  Player not in DB: pid=${l.pid}`);
+//       continue;
+//     }
+ 
+//     await db.query(
+//       `INSERT INTO match_players
+//          (match_id, player_id, team_id, is_playing, is_substitute, is_pre_squad)
+//        VALUES (?, ?, ?, ?, ?, 0)
+//        ON DUPLICATE KEY UPDATE
+//          is_playing    = VALUES(is_playing),
+//          is_substitute = VALUES(is_substitute),
+//          is_pre_squad  = 0`,
+//       [
+//         matchRow.id,
+//         player.id,
+//         player.team_id,
+//         l.is_substitute === 0 ? 1 : 0,
+//         l.is_substitute,
+//       ]
+//     );
+//     count++;
+//   }
+ 
+//   // 6. Update match lineup status
+//   await db.query(
+//     `UPDATE matches SET lineupavailable = 1, lineup_status = 'confirmed' WHERE id = ?`,
+//     [matchRow.id]
+//   );
+ 
+//   console.log(` Playing XI synced: ${count} players for match ${matchId} (status: ${matchRow.status})`);
+//   return { count, reason: null, type: "lineup" };
+// };
+
+ 
+
+/* ══════════════════════════════════════════  
    SERIES
 ══════════════════════════════════════════ */
 
@@ -419,7 +366,7 @@ export const toggleSeriesService = async (seriesIds, isActive) => {
     }
 
     if (!isActive) {
-      results.push({ seriesid, error: "Series not in DB — toggle ON చేయి ముందు" });
+      results.push({ seriesid, error: "Series not in DB — toggle ON " });
       continue;
     }
 
@@ -439,8 +386,8 @@ export const toggleSeriesService = async (seriesIds, isActive) => {
 
     await db.query(
       `INSERT INTO series
-         (seriesid, name, season, start_date, end_date, status, is_selected, created_at)
-       VALUES (?, ?, ?, ?, ?, 'active', 1, NOW())
+         (seriesid, name,  start_date, end_date, status, is_selected, created_at)
+       VALUES (?, ?, ?, ?,  'active', 1, NOW())
        ON DUPLICATE KEY UPDATE
          name        = VALUES(name),
          status      = 'active',
@@ -454,79 +401,101 @@ export const toggleSeriesService = async (seriesIds, isActive) => {
   return results;
 };
 
+
+
 // export const getActiveSeriesService = async () => {
-//   const [series] = await db.query(
-//     `SELECT id, seriesid, name, season, start_date, end_date, status, is_selected, created_at
-//      FROM series WHERE is_selected = 1 ORDER BY created_at DESC`
-//   );
+//   const [series] = await db.query(`
+//     SELECT
+//       id,
+//       seriesid,
+//       name,
+//       season,
+//       start_date,
+//       end_date,
+//       status,
+//       is_selected,
+//       created_at
+//     FROM series
+//     WHERE is_selected = 1
+//     ORDER BY created_at DESC
+//   `);
 
-//   if (!series.length) return { success: true, data: [] };
-
-//   const { today, future } = getDateRange(60);
-
-//   const seriesIds   = series.map((s) => String(s.seriesid));
-//   let allFixtures   = [];
-//   let page          = 1;
-//   let hasMore       = true;
-
-//   while (hasMore && page <= 10) {
-//     const data = await apiGet(`/fixtures/between/${today}/${future}`, {
-//       include:    "participants",
-//       per_page:   100,
-//       page,
-//     });
-
-//     const filtered = (data.data || []).filter((f) =>
-//       seriesIds.includes(String(f.league_id))
-//     );
-//     allFixtures.push(...filtered);
-//     hasMore = data.pagination?.has_more || false;
-//     page++;
+//   if (!series.length) {
+//     return { success: true, data: [] };
 //   }
 
-//   // Nearest upcoming fixture per league
-//   const leagueNearestMap = new Map();
-//   for (const f of allFixtures) {
-//     const lid = String(f.league_id);
-//     if (!leagueNearestMap.has(lid)) {
-//       leagueNearestMap.set(lid, f);
-//     } else {
-//       const ex = leagueNearestMap.get(lid);
-//       if (f.starting_at_timestamp < ex.starting_at_timestamp) {
-//         leagueNearestMap.set(lid, f);
-//       }
+//   const seriesIds = series.map((s) => String(s.seriesid));
+//   const placeholders = seriesIds.map(() => "?").join(",");
+
+//   // ✅ Fix 1: JOIN teams table for correct names + logos
+//   // ✅ Fix 2: Filter only LIVE or future UPCOMING matches
+//   const [matches] = await db.query(
+//     `SELECT
+//        m.provider_match_id,
+//        m.series_id,
+//        m.start_time,
+//        m.status,
+
+//        COALESCE(ht.short_name, ht.name, 'TBA') AS hometeamname,
+//        COALESCE(awt.short_name, awt.name, 'TBA') AS awayteamname,
+//        ht.logo  AS home_image,
+//        awt.logo AS away_image
+
+//      FROM matches m
+//      LEFT JOIN teams ht  ON m.home_team_id = ht.id
+//      LEFT JOIN teams awt ON m.away_team_id = awt.id
+
+//      WHERE m.series_id IN (${placeholders})
+//        AND m.is_active = 1
+//        AND (
+//          m.status = 'LIVE'
+//          OR (m.status = 'UPCOMING' AND m.start_time >= NOW())
+//        )
+//      ORDER BY
+//        CASE WHEN m.status = 'LIVE' THEN 1 ELSE 2 END,
+//        m.start_time ASC`,
+//     seriesIds
+//   );
+
+//   // ✅ Fix 3: nearestMatchMap — LIVE first, then nearest UPCOMING
+//   const nearestMatchMap = new Map();
+//   for (const match of matches) {
+//     const seriesId = String(match.series_id);
+//     if (!nearestMatchMap.has(seriesId)) {
+//       nearestMatchMap.set(seriesId, match);
 //     }
 //   }
 
 //   const result = series.map((s) => {
-//     const nearest = leagueNearestMap.get(String(s.seriesid));
-//     const home    = nearest?.participants?.find((p) => p.meta?.location === "home");
-//     const away    = nearest?.participants?.find((p) => p.meta?.location === "away");
+//     const nearest = nearestMatchMap.get(String(s.seriesid));
 
 //     return {
 //       ...s,
-//       match_id:     nearest ? String(nearest.id)         : null,
-//       match_name:   nearest ? nearest.name                : null,
-//       match_date:   nearest ? nearest.starting_at         : null,
-//       match_status: nearest ? mapStatus(nearest.state_id) : null,
-//       home:         home?.name        || null,
-//       home_image:   home?.image_path  || null,
-//       away:         away?.name        || null,
-//       away_image:   away?.image_path  || null,
+//       match_id:     nearest?.provider_match_id || null,
+//       match_name:   nearest ? `${nearest.hometeamname} vs ${nearest.awayteamname}` : null,
+//       match_date:   nearest?.start_time || null,
+//       start_time:   nearest?.start_time || null,
+//       match_status: nearest?.status || null,
+//       home:         nearest?.hometeamname || null,
+//       home_image:   nearest?.home_image || null,   // ✅ real logo now
+//       away:         nearest?.awayteamname || null,
+//       away_image:   nearest?.away_image || null,   // ✅ real logo now
 //     };
 //   });
 
 //   return { success: true, data: result };
 // };
 
-
- export const getActiveSeriesService = async () => {
+export const getActiveSeriesService = async () => {
   const [series] = await db.query(`
     SELECT
       id,
       seriesid,
       name,
-      season,
+      country_name ,
+      
+      logo         ,
+       
       start_date,
       end_date,
       status,
@@ -538,66 +507,70 @@ export const toggleSeriesService = async (seriesIds, isActive) => {
   `);
 
   if (!series.length) {
-    return {
-      success: true,
-      data: [],
-    };
+    return { success: true, data: [] };
   }
 
   const seriesIds = series.map((s) => String(s.seriesid));
-
   const placeholders = seriesIds.map(() => "?").join(",");
 
+  // ✅ Fetch ALL LIVE + future UPCOMING matches with team details
   const [matches] = await db.query(
-    `
-    SELECT
-      provider_match_id,
-      series_id,
-      hometeamname,
-      awayteamname,
-      start_time,
-      status
-    FROM matches
-    WHERE series_id IN (${placeholders})
-    ORDER BY start_time ASC
-    `,
+    `SELECT
+       m.id,
+       m.provider_match_id,
+       m.series_id,
+       m.start_time,
+       m.status,
+       m.lineupavailable,
+       m.lineup_status,
+       m.is_active,
+
+       COALESCE(ht.short_name, ht.name, 'TBA')  AS home_team_name,
+       COALESCE(awt.short_name, awt.name, 'TBA') AS away_team_name,
+       ht.logo  AS home_team_logo,
+       awt.logo AS away_team_logo
+
+     FROM matches m
+     LEFT JOIN teams ht  ON m.home_team_id = ht.id
+     LEFT JOIN teams awt ON m.away_team_id = awt.id
+
+     WHERE m.series_id IN (${placeholders})
+       AND m.is_active = 1
+       AND (
+         m.status = 'LIVE'
+         OR (m.status = 'UPCOMING' AND m.start_time >= NOW())
+       )
+     ORDER BY
+       CASE WHEN m.status = 'LIVE' THEN 1 ELSE 2 END,
+       m.start_time ASC`,
     seriesIds
   );
 
-  const nearestMatchMap = new Map();
-
+  // ✅ Group all matches under their series (not just first one)
+  const matchesBySeriesId = new Map();
   for (const match of matches) {
-    const seriesId = String(match.series_id);
-
-    if (!nearestMatchMap.has(seriesId)) {
-      nearestMatchMap.set(seriesId, match);
+    const key = String(match.series_id);
+    if (!matchesBySeriesId.has(key)) {
+      matchesBySeriesId.set(key, []);
     }
+    matchesBySeriesId.get(key).push(match);
   }
 
-  const result = series.map((s) => {
-    const nearest = nearestMatchMap.get(String(s.seriesid));
+  // ✅ Filter out series with no active matches
+  const result = series
+    .map((s) => {
+      const seriesMatches = matchesBySeriesId.get(String(s.seriesid)) || [];
+      return {
+        ...s,
+        total_matches: seriesMatches.length,
+        matches: seriesMatches,
+      };
+    })
+    .filter((s) => s.total_matches > 0);
 
-    return {
-      ...s,
-      match_id: nearest?.provider_match_id || null,
-      match_name: nearest
-        ? `${nearest.hometeamname} vs ${nearest.awayteamname}`
-        : null,
-      match_date: nearest?.start_time || null,
-      start_time: nearest?.start_time || null,
-      match_status: nearest?.status || null,
-      home: nearest?.hometeamname || null,
-      home_image: null,
-      away: nearest?.awayteamname || null,
-      away_image: null,
-    };
-  });
-
-  return {
-    success: true,
-    data: result,
-  };
+  return { success: true, data: result };
 };
+
 /* ══════════════════════════════════════════
    MATCHES
 ══════════════════════════════════════════ */
@@ -654,7 +627,7 @@ export const getAvailableMatchesService = async (seriesid) => {
       is_active:  activeSet.has(String(f.id)),
     };
   });
-};
+};   
 
 export const getMatchesService = async (seriesid) => {
   const [matches] = await db.query(
@@ -855,7 +828,7 @@ const toUTCDateTime = (timestamp, fallback) => {
 // };
 
 
-export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
+ export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
   const results   = [];
   const uniqueIds = [...new Set(matchIds.map(String))];
 
@@ -891,7 +864,10 @@ export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
       continue;
     }
 
-    const data    = await apiGet(`/fixtures/${matchId}`, { include: "participants;league" });
+    // ✅ Single API call — season removed from include
+    const data    = await apiGet(`/fixtures/${matchId}`, {
+      include: "participants;league;league.country",
+    });
     const fixture = data?.data;
 
     if (!fixture) {
@@ -904,151 +880,78 @@ export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
     const lookupCid = seriesId ? String(seriesId) : String(fixture.league_id);
 
     // ── Series upsert ──────────────────────────────
-   // ── Series upsert ──────────────────────────────
-let [[seriesRow]] = await db.query(
-  `SELECT id, seriesid
-   FROM series
-   WHERE seriesid = ?
-   LIMIT 1`,
-  [lookupCid]
-);
+    let seriesRow = null;
 
-if (!seriesRow) {
-  let leagueData = fixture.league || null;
+    const [[existingSeries]] = await db.query(
+      `SELECT id, seriesid FROM series WHERE seriesid = ? LIMIT 1`,
+      [lookupCid]
+    );
 
-  if (!leagueData) {
-    try {
-      const res = await apiGet(`/leagues/${lookupCid}`);
-      leagueData = res?.data ?? null;
-    } catch (e) {
-      console.warn(`League fetch failed for ${lookupCid}:`, e.message);
-    }
-  }
-
-  await db.query(
-    `INSERT INTO series
-    (
-      seriesid,
-      name,
-      short_code,
-      league_image,
-      type,
-      sub_type,
-      category,
-      last_played,
-      season,
-      start_date,
-      end_date,
-      status,
-      is_selected,
-      created_at
-    )
-    VALUES
-    (
-      ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-      'active', 1, NOW()
-    )
-    ON DUPLICATE KEY UPDATE
-      name          = VALUES(name),
-      short_code    = VALUES(short_code),
-      league_image  = VALUES(league_image),
-      type          = VALUES(type),
-      sub_type      = VALUES(sub_type),
-      category      = VALUES(category),
-      last_played   = VALUES(last_played),
-      season        = VALUES(season),
-      start_date    = VALUES(start_date),
-      end_date      = VALUES(end_date),
-      status        = 'active',
-      is_selected   = 1`,
-    [
-      lookupCid,
-      leagueData?.name || `Series ${lookupCid}`,
-      leagueData?.short_code || null,
-      leagueData?.image_path || null,
-      leagueData?.type || null,
-      leagueData?.sub_type || null,
-      leagueData?.category
-        ? String(leagueData.category)
-        : null,
-      leagueData?.last_played_at || null,
-
-      // season
-      fixture?.season_id
-        ? String(fixture.season_id)
-        : null,
-
-      // start_date
-      fixture?.starting_at
-        ? fixture.starting_at.split(" ")[0]
-        : null,
-
-      // end_date
-      null
-    ]
-  );
-
-  console.log(
-    `✅ Series auto-created: ${lookupCid} (${leagueData?.name})`
-  );
-
-  [[seriesRow]] = await db.query(
-    `SELECT id, seriesid
-     FROM series
-     WHERE seriesid = ?
-     LIMIT 1`,
-    [lookupCid]
-  );
-} else {
-  await db.query(
-    `UPDATE series
-     SET
-       is_selected = 1,
-       status = 'active',
-       updated_at = NOW()
-     WHERE seriesid = ?`,
-    [lookupCid]
-  );
-
-  console.log(
-    ` Series already exists, updated: ${lookupCid}`
-  );
-}
-
- 
-
-    if (!seriesRow) {
-      let leagueData = null;
-      try {
-        const res  = await apiGet(`/leagues/${lookupCid}`);
-        leagueData = res?.data ?? null;
-      } catch (e) {
-        console.warn(`League fetch failed for ${lookupCid}:`, e.message);
-      }
+    if (!existingSeries) {
+      // ✅ No country_code, no season
+      const leagueName  = fixture.league?.name           || `Series ${lookupCid}`;
+      const leagueLogo  = fixture.league?.image_path     || null;
+      const shortCode   = fixture.league?.short_code     || null;
+      const type        = fixture.league?.type           || null;
+      const subType     = fixture.league?.sub_type       || null;
+      const category    = fixture.league?.category       || null;
+      const lastPlayed  = fixture.league?.last_played_at || null;
+      const countryName = fixture.league?.country?.name  || null;
 
       await db.query(
         `INSERT INTO series
-           (seriesid, name, season, start_date, end_date, status, is_selected, created_at)
-         VALUES (?, ?, ?, ?, ?, 'active', 1, NOW())
+           (seriesid, name, short_code, start_date, end_date,
+            country_name, logo, league_image,
+            type, sub_type, category, last_played,
+            status, is_selected, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, NOW())
          ON DUPLICATE KEY UPDATE
-           name        = VALUES(name),
-           status      = 'active',
-           is_selected = 1`,
-        [lookupCid, leagueData?.name || `Series ${lookupCid}`, null, null, null]
+           name         = VALUES(name),
+           short_code   = VALUES(short_code),
+           start_date   = VALUES(start_date),
+           end_date     = VALUES(end_date),
+           country_name = VALUES(country_name),
+           logo         = VALUES(logo),
+           league_image = VALUES(league_image),
+           type         = VALUES(type),
+           sub_type     = VALUES(sub_type),
+           category     = VALUES(category),
+           last_played  = VALUES(last_played),
+           status       = 'active',
+           is_selected  = 1`,
+        [
+          lookupCid,
+          leagueName,
+          shortCode,
+          null,         // start_date
+          null,         // end_date
+          countryName,
+          leagueLogo,
+          leagueLogo,   // league_image same as logo
+          type,
+          subType,
+          category,
+          lastPlayed,
+        ]
       );
 
-      console.log(`✅ Series auto-inserted: ${lookupCid} — ${leagueData?.name}`);
+      console.log(
+        `✅ Series inserted: ${lookupCid} — ${leagueName} | ${countryName} | type: ${type}`
+      );
 
-      [[seriesRow]] = await db.query(
+      const [[refetched]] = await db.query(
         `SELECT id, seriesid FROM series WHERE seriesid = ? LIMIT 1`,
         [lookupCid]
       );
+      seriesRow = refetched;
+
     } else {
       await db.query(
         `UPDATE series SET status = 'active', is_selected = 1 WHERE seriesid = ?`,
         [lookupCid]
       );
       console.log(`✅ Series already exists, updated: ${lookupCid}`);
+      seriesRow = existingSeries;
     }
 
     if (!seriesRow) {
@@ -1120,8 +1023,6 @@ if (!seriesRow) {
       ]
     );
 
-    // ── Squad sync removed ─────────────────────────
-
     results.push({
       match_id:   matchId,
       home:       home?.name,
@@ -1134,6 +1035,8 @@ if (!seriesRow) {
 
   return results;
 };
+
+
 
 
 
