@@ -8,6 +8,7 @@ import {
   syncPlayingXIService,
   getAllFixturesBetween,
   getMatchesByDateRangeService,
+  manualSyncPlayingXIService,
     
 } from "./sportmonks.service.js";
 
@@ -104,22 +105,22 @@ export const getMatches = async (req, res) => {
 /* ══════════════════════════════════════════
    SYNC
 ══════════════════════════════════════════ */
-export const syncPlayingXI = async (req, res) => {
-  try {
-    const { match_id } = req.params;  
-    if (!match_id)
-      return res.status(400).json({ success: false, message: "match_id required" });
+// export const syncPlayingXI = async (req, res) => {
+//   try {
+//     const { match_id } = req.params;  
+//     if (!match_id)
+//       return res.status(400).json({ success: false, message: "match_id required" });
 
-    const result = await syncPlayingXIService(match_id);
-    if (result.reason)
-      return res.status(202).json({ success: false, message: result.reason, count: 0 });
+//     const result = await syncPlayingXIService(match_id);
+//     if (result.reason)
+//       return res.status(202).json({ success: false, message: result.reason, count: 0 });
 
-    res.json({ success: true, message: `${result.count} playing XI synced`, count: result.count });
-  } catch (err) {
-    console.error("syncPlayingXI error:", err.message);
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
+//     res.json({ success: true, message: `${result.count} playing XI synced`, count: result.count });
+//   } catch (err) {
+//     console.error("syncPlayingXI error:", err.message);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
 
 
 
@@ -289,6 +290,35 @@ export const getMatchesByDateRange = async (req, res) => {
 };
 
 //===================================================================================
+
+
+export const manualSyncPlayingXI = async (req, res) => {
+  try {
+    const { match_id } = req.params;
+ 
+    if (!match_id)
+      return res.status(400).json({ success: false, message: "match_id required" });
+ 
+    const result = await manualSyncPlayingXIService(match_id);
+ 
+    if (result.reason)
+      return res.status(202).json({
+        success: false,
+        message: result.reason,
+        count:   0,
+      });
+ 
+    res.json({
+      success: true,
+      message: `${result.count} players synced successfully`,
+      count:   result.count,
+    });
+ 
+  } catch (err) {
+    console.error("syncPlayingXI error:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
  
 
