@@ -407,12 +407,12 @@ export const generateTeams = async (req, res) => {
     );
 
     /* ── 3. Exactly 11 players per team ── */
-    if (uniqueTeamA.length !== 11 || uniqueTeamB.length !== 11) {
-      return res.status(400).json({
-        success: false,
-        message: `Each team must have exactly 11 players. Got team_a: ${uniqueTeamA.length}, team_b: ${uniqueTeamB.length}`,
-      });
-    }
+    // if (uniqueTeamA.length !== 11 || uniqueTeamB.length !== 11) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: `Each team must have exactly 11 players. Got team_a: ${uniqueTeamA.length}, team_b: ${uniqueTeamB.length}`,
+    //   });
+    // }
 
     /* ── 4. Match exists + status check ── */
     const [[match]] = await db.execute(
