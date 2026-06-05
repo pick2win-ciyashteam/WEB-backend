@@ -508,23 +508,44 @@ export const generateTeams = async (req, res) => {
     const uctTeamB = toUCT(uniqueTeamB, "B");
     const allMapped = [...uctTeamA, ...uctTeamB];
  
-    /* ── 9. Resolve C / VC from CVC ──
-       Rules:
-       - CVC player acts as BOTH C and VC candidate
-       - UCT API needs exactly 1 C and 1 VC
-       - If someone is "C"   → send captain: "C"
-       - If someone is "VC"  → send captain: "VC"
-       - If someone is "CVC" → send captain: "C" (they cover both slots)
-       - Multiple VCs allowed in input — UCT API handles selection
-    ── */
-    const resolveCapForUCT = (capValue) => {
-      if (!capValue) return undefined;
-      if (capValue === "C")   return "C";
-      if (capValue === "VC")  return "VC";
-      if (capValue === "CVC") return "C";  // CVC → C for UCT
-      return undefined;
-    };
+    // /* ── 9. Resolve C / VC from CVC ──
+    //    Rules:
+    //    - CVC player acts as BOTH C and VC candidate
+    //    - UCT API needs exactly 1 C and 1 VC
+    //    - If someone is "C"   → send captain: "C"
+    //    - If someone is "VC"  → send captain: "VC"
+    //    - If someone is "CVC" → send captain: "C" (they cover both slots)
+    //    - Multiple VCs allowed in input — UCT API handles selection
+    // ── */
+    // const resolveCapForUCT = (capValue) => {
+    //   if (!capValue) return undefined;
+    //   if (capValue === "C")   return "C";
+    //   if (capValue === "VC")  return "VC";
+    //   if (capValue === "CVC") return "C";  // CVC → C for UCT
+    //   return undefined;
+    // };
  
+
+/* ── 9. Resolve C / VC from CVC ── */
+const resolveCapForUCT = (capValue) => {
+  if (!capValue) return undefined;
+
+  if (capValue === "C") {
+    return "C";
+  }
+
+  if (capValue === "VC") {
+    return "VC";
+  }
+
+  if (capValue === "CVC") {
+    return "CVC";
+  }
+
+  return undefined;
+};
+
+
     /* ── 10. Validate at least 1 C candidate and 1 VC candidate ── */
     const cCandidates  = allMapped.filter(p =>
       p.captain === "C" || p.captain === "CVC"
