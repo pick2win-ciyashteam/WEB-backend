@@ -27,12 +27,14 @@ export const getAllMatches = async (req, res) => {
         ) AS start_time_ist,
 
         m.status,
+        m.lineupavailable,
+        m.lineup_status,
         m.created_at,
 
-        ht.id AS home_team_id,
+        ht.id   AS home_team_id,
         ht.name AS home_team_name,
 
-        at.id AS away_team_id,
+        at.id   AS away_team_id,
         at.name AS away_team_name
 
       FROM matches m
@@ -45,14 +47,14 @@ export const getAllMatches = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      count: rows.length,
-      data: rows
+      count:   rows.length,
+      data:    rows,
     });
 
   } catch (error) {
     return res.status(500).json({
       success: false,
-      error: error.message
+      error:   error.message,
     });
   }
 };
