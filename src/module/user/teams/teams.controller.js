@@ -561,39 +561,81 @@ export const generateTeams = async (req, res) => {
       team_b: uctTeamB.map(buildUCTPlayer),
     };
  
+    console.log("Team A Count:", uctPayload.team_a.length);
+console.log("Team B Count:", uctPayload.team_b.length);
+console.log(
+  "Total Players:",
+  uctPayload.team_a.length + uctPayload.team_b.length
+);
     console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
  
-    /* ── 12. Call UCT API ── */
-    const startTime = Date.now();
-    let uctTeams    = [];
- 
-    try {
-      const response = await axios.post(
-        `${process.env.UCT_API}/football/teams`,
-        uctPayload,
-        {
-          headers: { "Content-Type": "application/json" },
-          timeout: 30000,
-        }
-      );
- 
-      uctTeams = response.data || [];
-      console.log(`✅ UCT API — ${uctTeams.length} player entries across teams`);
- 
-    } catch (apiError) {
-      console.error("❌ UCT API Error:",
-        apiError.response?.status,
-        JSON.stringify(apiError.response?.data)
-      );
-      return res.status(500).json({
-        success: false,
-        message: "UCT API failed: " + apiError.message,
-        details: apiError.response?.data,
-      });
+   /* ── 12. Call UCT API ── */
+const startTime = Date.now();
+let uctTeams = [];
+
+try {
+  console.log("========================================");
+  console.log("🚀 UCT URL:", `${process.env.UCT_API}/football/teams`);
+  console.log("🚀 UCT Payload:");
+  console.log(JSON.stringify(uctPayload, null, 2));
+  console.log("========================================");
+
+  const response = await axios.post(
+    `${process.env.UCT_API}/football/teams`,
+    uctPayload,
+    {
+      headers: {
+        "Content-Type": "application/json",
+      },
+      timeout: 60000,
     }
- 
-    const generationTimeMs = Date.now() - startTime;
- 
+  );
+
+  console.log("✅ UCT Response Status:", response.status);
+  console.log(
+    "✅ UCT Response Data:",
+    JSON.stringify(response.data, null, 2)
+  );
+
+  uctTeams = response.data || [];
+
+  console.log(
+    `✅ UCT API Success — ${Array.isArray(uctTeams) ? uctTeams.length : 0
+    } records received`
+  );
+
+} catch (apiError) {
+
+  console.error("========================================");
+  console.error("❌ UCT API FAILED");
+  console.error("URL:", `${process.env.UCT_API}/football/teams`);
+  console.error("Status:", apiError.response?.status);
+  console.error("Status Text:", apiError.response?.statusText);
+
+  console.error(
+    "Response Data:",
+    JSON.stringify(apiError.response?.data, null, 2)
+  );
+
+  console.error(
+    "Request Payload:",
+    JSON.stringify(uctPayload, null, 2)
+  );
+
+  console.error("Message:", apiError.message);
+  console.error("Stack:", apiError.stack);
+  console.error("========================================");
+
+  return res.status(500).json({
+    success: false,
+    message: "UCT API failed",
+    error: apiError.message,
+    status: apiError.response?.status || null,
+    details: apiError.response?.data || null,
+  });
+}
+
+const generationTimeMs = Date.now() - startTime;
     if (!uctTeams.length) {
       return res.status(400).json({
         success: false,
