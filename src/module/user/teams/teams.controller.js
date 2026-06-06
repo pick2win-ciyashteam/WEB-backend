@@ -665,14 +665,16 @@ const generationTimeMs = Date.now() - startTime;
     }
  
     /* ── 13. Build name map + cap map ── */
-    const nameMap = {};
-    const capMap  = {};
- 
-    allMapped.forEach((p) => {
-      nameMap[p.name] = p._original || p.name;
-      capMap[p.name]  = p.captain   || null;
-    });
- 
+     
+
+
+const nameMap = {};
+
+allMapped.forEach((p) => {
+  nameMap[p.name] = p._original || p.name;
+});
+
+
     /* ── 14. Transaction ── */
     const conn = await db.getConnection();
     try {
@@ -727,28 +729,36 @@ const generationTimeMs = Date.now() - startTime;
         `DELETE FROM user_teams WHERE match_id = ? AND user_id = ?`,
         [match_id, userId]
       );
- 
+    
       /* Store teams */
-      for (const player of uctTeams) {
-        const realName    = nameMap[player.name] || player.name;
-        const originalCap = capMap[player.name]  ?? player.cap ?? null;
-        const capValue    = originalCap === "" ? null : originalCap;
- 
-        await conn.query(
-          `INSERT INTO user_teams
-             (match_id, user_id, dt_no, name, role, cap, original_name)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            match_id,
-            userId,
-            player.dt_no,
-            player.name,
-            player.role,
-            capValue,
-            realName,
-          ]
-        );
-      }
+for (const player of uctTeams) {
+  const realName = nameMap[player.name] || player.name;
+
+  // UCT generated captain/vice-captain ni save cheyyali
+  const capValue =
+    player.cap && player.cap !== ""
+      ? player.cap
+      : null;
+
+  console.log(
+    `Saving Team ${player.dt_no} | ${player.name} | UCT CAP: ${player.cap}`
+  );
+
+  await conn.query(
+    `INSERT INTO user_teams
+       (match_id, user_id, dt_no, name, role, cap, original_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      match_id,
+      userId,
+      player.dt_no,
+      player.name,
+      player.role,
+      capValue,
+      realName,
+    ]
+  );
+}
  
       /* Generation log */
       const totalTeams = [...new Set(uctTeams.map((p) => p.dt_no))].length;
