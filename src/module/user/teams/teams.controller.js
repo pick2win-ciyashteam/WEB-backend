@@ -418,8 +418,8 @@ export const generateTeams = async (req, res) => {
         message: "Playing XI not announced yet. Please wait for lineup confirmation.",
       });
     }
- 
-    /* ── 4. Check already generated ── */
+   
+    /* ── 4. Check already generate ── */
     const [[existing]] = await db.execute(
       `SELECT id FROM match_generation_log WHERE match_id = ? AND user_id = ?`,
       [match_id, userId]
