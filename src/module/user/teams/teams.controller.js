@@ -412,7 +412,7 @@ export const generateTeams = async (req, res) => {
       });
     }
  
-    if (!match.lineupavailable || match.lineup_status !== "confirmed") {
+   if (Number(match.lineupavailable) !== 1) {
       return res.status(400).json({
         success: false,
         message: "Playing XI not announced yet. Please wait for lineup confirmation.",
