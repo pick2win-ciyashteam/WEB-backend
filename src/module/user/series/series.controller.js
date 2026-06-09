@@ -117,7 +117,7 @@ export const getAllSeries = async (req, res) => {
       m.start_time,
       m.status,
       m.lineupavailable,
-      m.lineup_status,
+      
       m.is_active,
 
       COALESCE(ht.short_name, ht.name, 'TBA')  AS home_team_name,
@@ -227,7 +227,7 @@ export const getMatchesBySeriesId = async (req, res) => {
           m.status,
           m.matchdate,
           m.lineupavailable,
-          m.lineup_status,
+          
           m.is_active,
           ht.short_name AS home_team_name,
           awt.short_name AS away_team_name,
