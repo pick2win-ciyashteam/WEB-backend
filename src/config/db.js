@@ -11,7 +11,7 @@ const __dirname  = path.dirname(__filename);
 const caPath = path.join(__dirname, "../certs/ca.pem");
 
 if (!fs.existsSync(caPath)) {
-  console.error(`❌ SSL certificate not found at: ${caPath}`);
+  console.error(`❌ SSL certificate not found at: ${caPath}`);   
   process.exit(1);
 }
 
@@ -34,7 +34,8 @@ const pool = mysql.createPool({
     rejectUnauthorized: true,
   },
 });
-
+console.log("DB_HOST:", process.env.DB_HOST);
+console.log("DB_PORT:", process.env.DB_PORT);
 // ✅ Test connection on startup
 const verifyConnection = async () => {
   try {
@@ -62,3 +63,7 @@ pool.on("connection", (connection) => {
 });
 
 export default pool;
+
+
+
+

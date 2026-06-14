@@ -14,8 +14,8 @@ import {
   deleteAccountService,
   confirmDeleteAccountService,
 } from "./user.auth.services.js"
-
-import db from "../../../config/db.js";
+  
+import db from "../../../config/db.js";  
 
 /* ================= SIGNUP ================= */
 export const signup = async (req, res) => {
@@ -325,8 +325,6 @@ export const resetPassword = async (req, res) => {
 };
 
 
- 
-
 /* ================= DELETE ACCOUNT ================= */
 export const deleteAccount = async (req, res) => {
   try {
@@ -349,4 +347,4 @@ export const confirmDeleteAccount = async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-};
+};  

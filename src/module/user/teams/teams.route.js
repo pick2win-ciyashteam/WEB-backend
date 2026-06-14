@@ -15,4 +15,4 @@ router.get("/user-my-teams/:matchId", getMyTeams);
 
 router.get ("/team-players/:teamId",     getTeamPlayers);
 
-export default router;
+export default router;   
