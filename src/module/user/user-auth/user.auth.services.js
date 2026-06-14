@@ -994,7 +994,7 @@ const completeRegistration = async (sessionId) => {
   const newUserId = result.insertId;
 
   /* ── Gift welcome coin ── */
-  await db.execute(
+  await db.execute(    
     `INSERT INTO user_coins
        (user_id, coins, total_coins, used_coins, available_coins, updated_at)
      VALUES (?, 1, 1, 0, 1, NOW())`,
@@ -1069,7 +1069,7 @@ export const logoutService = async (userId) => {
   return { success: true, message: "Logged out successfully" };
 };
 
-/* ══════════════════════════════════════════
+/* ══════════════════════════════════════════  
    REQUEST MOBILE CHANGE
 ══════════════════════════════════════════ */
 export const requestMobileChangeService = async (userId, { new_mobile }) => {
@@ -1092,7 +1092,7 @@ export const requestMobileChangeService = async (userId, { new_mobile }) => {
     [normalizedMobile, otp, expiry, userId]
   );
 
-  return {
+  return {  
     success: true,
     message: "OTP sent to your new mobile number",
     ...(process.env.NODE_ENV !== "production" && { otp }),
