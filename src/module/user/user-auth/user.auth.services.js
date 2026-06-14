@@ -1062,7 +1062,7 @@ export const loginService = async ({ email, password }) => {
 };
 
 /* ══════════════════════════════════════════
-   LOGOUT
+   LOGOUT  
 ══════════════════════════════════════════ */
 export const logoutService = async (userId) => {
   await db.execute(`UPDATE users SET updated_at = NOW() WHERE id = ?`, [userId]);

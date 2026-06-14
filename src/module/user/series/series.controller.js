@@ -127,7 +127,7 @@ export const getAllSeries = async (req, res) => {
 
               /* ── Full match name ── */
               m.seriesname,
-              m.hometeamname,
+              m.hometeamname,      
               m.awayteamname,
               CONCAT(m.hometeamname, ' vs ', m.awayteamname) AS match_name,
 
