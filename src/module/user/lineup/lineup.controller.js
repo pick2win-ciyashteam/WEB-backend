@@ -20,7 +20,7 @@ export const getTodayLineupStatus = async (req, res) => {
        LEFT JOIN teams ht  ON m.home_team_id = ht.id
        LEFT JOIN teams awt ON m.away_team_id = awt.id
        WHERE m.is_active        = 1
-         AND m.status           IN ('UPCOMING', 'LIVE')
+         AND m.status           IN ('UPCOMING')
          AND m.lineupavailable  = 1
          AND DATE(m.start_time) = CURDATE()
        ORDER BY m.start_time ASC`
