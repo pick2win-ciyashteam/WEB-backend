@@ -36,16 +36,16 @@ export const verifyMobileOtp = async (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 };
-
+  
 /* ================= VERIFY EMAIL OTP ================= */
-export const verifyEmailOtp = async (req, res) => {
+export const verifyEmailOtp = async (req, res) => {    
   try {
     const result = await verifyEmailOtpService(req.body);
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-};
+};    
 
 /* ================= RESEND OTP ================= */
 export const resendOtp = async (req, res) => {
@@ -55,7 +55,7 @@ export const resendOtp = async (req, res) => {
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-};
+};  
 
 /* ================= LOGIN ================= */
 export const login = async (req, res) => {
@@ -75,8 +75,8 @@ export const logout = async (req, res) => {
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-};
-
+};    
+  
  
 /* ================= GET PROFILE ================= */
 export const getProfile = async (req, res) => {
@@ -251,7 +251,7 @@ export const updateProfile = async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-};
+}; 
 
 /* ================= DELETE ACCOUNT ================= */
 

@@ -279,11 +279,10 @@ export const getUserQuestions = async (req, res) => {
   }
 };
 
+ 
 export const submitAnswers = async (req, res) => {
-  try {
-    const result = await s.submitAnswersService(req.user.id, req.body);
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-};  
+  const userId = req.user.id; // JWT token నుండి
+  const data = req.body;
+  const result = await s.submitAnswersService(userId, data);
+  res.json(result);
+};    

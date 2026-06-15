@@ -1325,4 +1325,6 @@ export const confirmDeleteAccountService = async (userId, otp) => {
   } finally {
     conn.release();
   }
-};     
+};       
+
+   

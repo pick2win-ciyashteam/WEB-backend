@@ -16,7 +16,7 @@ import {
   submitAnswers,
 } from "./feedback.controller.js";   
 
-const router = Router();
+const router = Router();  
 
 //   ──────────────────────────
 
@@ -38,17 +38,24 @@ router.patch ("/feedback-post/:id",   adminLimiter, adminAuth(["super_admin", "a
 router.delete("/feedback-post/:id",   adminLimiter, adminAuth(["super_admin", "admin"]), deleteFeedbackPost);
 
 
-
+  
 // uct questions
 
 router.post  ("/question",     adminLimiter, adminAuth(["super_admin", "admin"]), createQuestion);
 router.get   ("/question",     adminLimiter, adminAuth(["super_admin", "admin"]), getAdminQuestions);
+router.get ("/user-question", authenticate, getUserQuestions);
+
+
+router.post("/user-answers",   authenticate, submitAnswers);
+
 router.patch ("/question/:id", adminLimiter, adminAuth(["super_admin", "admin"]), updateQuestion);
 router.delete("/question/:id", adminLimiter, adminAuth(["super_admin", "admin"]), deleteQuestion);
 router.get   ("/answers",      adminLimiter, adminAuth(["super_admin", "admin"]), getAdminAnswers);
 
 // ── USER ───────────────────────────────────────────────────────
-router.get ("/user-questions", authenticate, getUserQuestions);
-router.post("/user-answers",   authenticate, submitAnswers);
 
-export default router;
+
+
+export default router;              
+       
+           
