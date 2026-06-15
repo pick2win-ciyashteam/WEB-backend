@@ -229,7 +229,7 @@ export const createQuestion = async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
-  }
+  }  
 };
 
 export const getAdminQuestions = async (req, res) => {
