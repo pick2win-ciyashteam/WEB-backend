@@ -270,16 +270,25 @@ export const getAdminAnswers = async (req, res) => {
 
 // ── USER controllers ───────────────────────────────────────────
 
+// export const getUserQuestions = async (req, res) => {
+//   try {
+//     const result = await s.getUserQuestionsService();
+//     res.json(result);
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
 export const getUserQuestions = async (req, res) => {
   try {
-    const result = await s.getUserQuestionsService();
+    const userId = req.user.id;
+    const result = await s.getUserQuestionsService(userId);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
- 
  export const submitAnswers = async (req, res) => {
   try {
     const userId = req.user.id;
