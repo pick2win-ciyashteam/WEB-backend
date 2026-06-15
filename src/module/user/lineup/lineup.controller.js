@@ -25,7 +25,7 @@ export const getTodayLineupStatus = async (req, res) => {
          AND DATE(m.start_time) = CURDATE()
        ORDER BY m.start_time ASC`
     );
-
+  
     if (!matches.length)
       return res.json({
         success:          true,
