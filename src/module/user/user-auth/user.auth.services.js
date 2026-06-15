@@ -879,14 +879,20 @@ export const verifyMobileOtpService = async ({ mobile, otp }) => {
 ══════════════════════════════════════════ */
 export const verifyEmailOtpService = async ({ email, otp }) => {
   const [[session]] = await db.execute(
-    `SELECT id, email_otp, email_otp_expiry,
-            mobile_verified, email_verified, expires_at
-     FROM signup_sessions WHERE email = ?`,
-    [email.trim().toLowerCase()]
-  );
+  `SELECT id, email_otp, email_otp_expiry,
+          mobile_verified, email_verified, expires_at
+   FROM signup_sessions 
+   WHERE LOWER(email) = LOWER(?)
+   ORDER BY id DESC LIMIT 1`,  // ← latest session తీసుకో
+  [email.trim().toLowerCase()]
+);
 
   if (!session)                                         throw new Error("Session not found. Please signup again.");
-  if (new Date(session.expires_at) < new Date())        throw new Error("Session expired. Please signup again.");
+  // if (new Date(session.expires_at) < new Date())        throw new Error("Session expired. Please signup again.");
+
+  if (new Date(session.expires_at).getTime() < Date.now())
+  throw new Error("Session expired. Please signup again.");
+
   if (session.email_verified === 1)                     throw new Error("Email already verified.");
   if (!session.email_otp)                               throw new Error("OTP expired. Please request again.");
   if (String(session.email_otp) !== String(otp))        throw new Error("Invalid OTP");
@@ -907,7 +913,7 @@ export const verifyEmailOtpService = async ({ email, otp }) => {
   return { success: true, message: "Email verified. Please verify your mobile OTP too.", registered: false };
 };
 
-/* ══════════════════════════════════════════
+/* ══════════════════════════════════════════   
    RESEND OTP
 ══════════════════════════════════════════ */
 export const resendOtpService = async ({ mobile, email, type }) => {
@@ -1319,4 +1325,4 @@ export const confirmDeleteAccountService = async (userId, otp) => {
   } finally {
     conn.release();
   }
-};
+};     
