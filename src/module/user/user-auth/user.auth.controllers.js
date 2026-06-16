@@ -308,7 +308,7 @@ export const forgotPassword = async (req, res) => {
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-};
+};  
 
 /* ================= RESET PASSWORD ================= */
 export const resetPassword = async (req, res) => {
