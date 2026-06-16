@@ -47,10 +47,10 @@ const syncLineups = async () => {
     );
 
     if (!matches.length) {
-      console.log("✅ [CRON] No matches needing lineup sync");
+      console.log("✅ [CRON] No matches needing lineup sync");  
       return;
     }
-
+   
     console.log(`📋 [CRON] Lineup check for ${matches.length} match(es)`);
 
     for (const match of matches) {
@@ -234,3 +234,5 @@ export const startCronJobs = () => {
 
   console.log("✅ [CRON] All jobs registered");
 };   
+
+
