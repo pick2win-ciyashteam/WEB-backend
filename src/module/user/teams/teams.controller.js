@@ -423,12 +423,7 @@ try {
   );
 
   const [[matchInfo]] = await db.execute(
-    `SELECT
-        seriesname,
-        hometeam,
-        awayteam,
-        matchdate,
-        start_time
+    `SELECT *
      FROM matches
      WHERE id = ?`,
     [match_id]
@@ -437,12 +432,12 @@ try {
   if (user?.email && matchInfo) {
     await sendNoreplyMail({
       to: user.email,
-      subject: `UCT Teams Generated - ${matchInfo.hometeam} vs ${matchInfo.awayteam}`,
+      subject: "UCT Teams Generated Successfully",
       html: uctTeamsGeneratedEmailHtml({
         fullname: user.fullname || "User",
         leagueName: matchInfo.seriesname || "-",
-        homeTeam: matchInfo.hometeam || "-",
-        awayTeam: matchInfo.awayteam || "-",
+        homeTeam: "-",
+        awayTeam: "-",
         matchDate: matchInfo.matchdate
           ? new Date(matchInfo.matchdate).toLocaleDateString("en-IN")
           : "-",
@@ -452,8 +447,7 @@ try {
         teamsGenerated: totalTeams,
         coinsConsumed: 1,
         generatedOn: new Date().toLocaleString("en-IN"),
-        attachmentFileName:
-          `PICK2WIN_UCT_${matchInfo.hometeam}_vs_${matchInfo.awayteam}.txt`,
+        attachmentFileName: `PICK2WIN_UCT_${match_id}.txt`,
       }),
     });
 
