@@ -393,4 +393,584 @@ export const coinPurchaseEmailHtml = (data) => `
 </html>
 `;
 
+
+export const paymentFailedEmailHtml = ({
+  fullname,
+  packageName,
+  amount,
+  transactionDateTime,
+  transactionReference,
+}) => `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Payment Failed</title>
+</head>
+
+<body style="margin:0;padding:0;background:#ece7df;font-family:Arial,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;">
+<tr>
+<td align="center">
+
+<table width="700" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:12px;overflow:hidden;">
+
+  <!-- Header -->
+  <tr>
+    <td style="background:#082b4c;padding:45px;text-align:center;">
+      <div style="font-size:58px;font-weight:900;">
+        <span style="color:#ff6b35;">PICK</span>
+        <span style="color:#f4b400;">2</span>
+        <span style="color:#ff6b35;">WIN</span>
+      </div>
+
+      <div style="
+        color:#f4b400;
+        font-size:14px;
+        font-weight:700;
+        letter-spacing:2px;
+        margin-top:10px;">
+        WHERE SKILL MATTERS MORE
+      </div>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="height:6px;background:#f4b400;"></td>
+  </tr>
+
+  <!-- Content -->
+  <tr>
+    <td style="padding:50px;">
+
+      <div style="font-size:14px;color:#555;">
+        ⚠ Payment unsuccessful
+      </div>
+
+      <h1 style="
+        margin:20px 0;
+        font-size:54px;
+        line-height:72px;
+        color:#0d2741;">
+        Your payment could not be completed.
+      </h1>
+
+      <p style="font-size:18px;color:#222;">
+        Hello <strong>${fullname}</strong>,
+      </p>
+
+      <p style="
+        font-size:18px;
+        line-height:32px;
+        color:#444;">
+        Unfortunately, your recent payment could not be completed.
+      </p>
+
+      <!-- Payment Details -->
+      <table width="100%"
+      style="
+        margin-top:40px;
+        border:1px solid #ececec;
+        border-radius:12px;
+        background:#faf8f7;
+        padding:30px;">
+        <tr>
+          <td colspan="2"
+          style="
+            font-size:28px;
+            font-weight:700;
+            color:#243447;
+            padding-bottom:25px;">
+            💳 Payment Details
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:15px 0;color:#666;">
+            📦 Package
+          </td>
+          <td align="right">
+            ${packageName}
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:15px 0;color:#666;">
+            💰 Amount
+          </td>
+          <td align="right">
+            ₹${amount}
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:15px 0;color:#666;">
+            📅 Attempted On
+          </td>
+          <td align="right">
+            ${transactionDateTime}
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:15px 0;color:#666;">
+            🆔 Reference ID
+          </td>
+          <td align="right">
+            ${transactionReference}
+          </td>
+        </tr>
+      </table>
+
+      <!-- What This Means -->
+      <table width="100%"
+      style="
+        margin-top:35px;
+        border:1px solid #ececec;
+        border-radius:12px;
+        background:#faf8f7;
+        padding:30px;">
+        <tr>
+          <td>
+            <h3 style="
+              margin-top:0;
+              color:#243447;">
+              📌 What This Means
+            </h3>
+
+            <ul style="
+              color:#444;
+              line-height:35px;
+              padding-left:22px;">
+              <li>No payment has been successfully processed.</li>
+              <li>No coins have been added to your account.</li>
+              <li>Your existing coin balance remains unchanged.</li>
+            </ul>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Next Steps -->
+      <table width="100%"
+      style="
+        margin-top:35px;
+        border:1px solid #f4d27c;
+        border-radius:12px;
+        background:#fffdf6;
+        padding:30px;">
+        <tr>
+          <td>
+            <h3 style="
+              margin-top:0;
+              color:#243447;">
+              🔄 What You Can Do Next
+            </h3>
+
+            <ul style="
+              color:#444;
+              line-height:35px;
+              padding-left:22px;">
+              <li>Verify your payment information.</li>
+              <li>Ensure sufficient funds are available.</li>
+              <li>Try again using the same or another payment method.</li>
+              <li>Contact your payment provider if the issue persists.</li>
+            </ul>
+          </td>
+        </tr>
+      </table>
+
+      <p style="
+        margin-top:40px;
+        font-size:17px;
+        line-height:32px;
+        color:#444;">
+        If you believe the payment was successfully charged but coins were not added,
+        please contact support and provide your payment reference details.
+      </p>
+
+      <div style="margin-top:40px;">
+        <strong style="font-size:20px;">
+          PICK2WIN Team
+        </strong>
+
+        <p style="margin:12px 0;color:#444;">
+          Where SKILL Matters More.
+        </p>
+      </div>
+
+      <hr style="
+        border:none;
+        border-top:1px solid #eee;
+        margin:45px 0;">
+
+      <div style="color:#444;line-height:35px;">
+        <strong style="font-size:22px;">
+          PICK2WIN Technologies Private Limited
+        </strong>
+
+        <div>Bengaluru, India</div>
+
+        <div>
+          Support:
+          <a href="mailto:support@pick2win.io"
+             style="color:#082b4c;text-decoration:none;">
+            support@pick2win.io
+          </a>
+        </div>
+
+        <p style="
+          margin-top:25px;
+          color:#999;
+          font-size:13px;">
+          © 2026 PICK2WIN Technologies Pvt Ltd.
+          All rights reserved.
+        </p>
+      </div>
+
+    </td>
+  </tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+`;
+
+
+export const uctTeamsGeneratedEmailHtml = ({
+  fullname,
+  leagueName,
+  homeTeam,
+  awayTeam,
+  matchDate,
+  kickoffTime,
+  teamsGenerated = 20,
+  coinsConsumed = 1,
+  generatedOn,
+  attachmentFileName,
+}) => `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UCT Teams Generated</title>
+</head>
+
+<body style="margin:0;padding:40px 0;background:#ece8e0;font-family:Arial,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr>
+<td align="center">
+
+<table width="700" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:14px;overflow:hidden;">
+
+  <!-- Header -->
+  <tr>
+    <td style="background:#082b4c;padding:40px;text-align:center;">
+      <div style="font-size:58px;font-weight:900;">
+        <span style="color:#ff6b35;">PICK</span>
+        <span style="color:#f5b301;">2</span>
+        <span style="color:#ff6b35;">WIN</span>
+      </div>
+
+      <div style="
+        color:#f5b301;
+        font-size:13px;
+        font-weight:700;
+        letter-spacing:2px;
+        margin-top:10px;">
+        WHERE SKILL MATTERS MORE
+      </div>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="height:6px;background:#f5b301;"></td>
+  </tr>
+
+  <!-- Body -->
+  <tr>
+    <td style="padding:50px;">
+
+      <p style="margin:0;color:#666;font-size:14px;">
+        UCT generation complete
+      </p>
+
+      <h1 style="
+        margin:20px 0 35px;
+        font-size:54px;
+        line-height:65px;
+        color:#0d2741;">
+        ${teamsGenerated} teams generated successfully.
+      </h1>
+
+      <p style="font-size:18px;color:#222;">
+        Hello <strong>${fullname}</strong>,
+      </p>
+
+      <p style="
+        font-size:18px;
+        color:#444;
+        line-height:32px;">
+        Your UCT generation has been completed successfully.
+      </p>
+
+      <!-- Match Details -->
+      <table width="100%"
+      style="
+        margin-top:40px;
+        background:#faf8f7;
+        border:1px solid #ece7e2;
+        border-radius:12px;
+        padding:30px;">
+
+        <tr>
+          <td colspan="2"
+          style="
+            font-size:28px;
+            font-weight:700;
+            color:#243447;
+            padding-bottom:25px;">
+            ⚽ Match Details
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            🏆 League
+          </td>
+          <td align="right">
+            ${leagueName}
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            🆚 Match
+          </td>
+          <td align="right">
+            ${homeTeam} vs ${awayTeam}
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            📅 Match Date
+          </td>
+          <td align="right">
+            ${matchDate}
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            ⏰ Kickoff Time
+          </td>
+          <td align="right">
+            ${kickoffTime}
+          </td>
+        </tr>
+      </table>
+
+      <!-- Summary -->
+      <table width="100%"
+      style="
+        margin-top:35px;
+        background:#faf8f7;
+        border:1px solid #ece7e2;
+        border-radius:12px;
+        padding:30px;">
+
+        <tr>
+          <td colspan="2"
+          style="
+            font-size:28px;
+            font-weight:700;
+            color:#243447;
+            padding-bottom:25px;">
+            ⚙ Generation Summary
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            ⚡ Teams Generated
+          </td>
+          <td align="right">
+            <strong>${teamsGenerated}</strong>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            🪙 Coins Consumed
+          </td>
+          <td align="right">
+            <strong>${coinsConsumed}</strong>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            📅 Generated On
+          </td>
+          <td align="right">
+            ${generatedOn}
+          </td>
+        </tr>
+      </table>
+
+      <!-- Attachment -->
+      <table width="100%"
+      style="
+        margin-top:35px;
+        background:#f2faf4;
+        border:1px solid #cfe7d4;
+        border-radius:12px;
+        padding:30px;">
+
+        <tr>
+          <td>
+            <h3 style="
+              margin-top:0;
+              color:#243447;">
+              📎 ATTACHMENT INCLUDED
+            </h3>
+
+            <p style="
+              color:#444;
+              font-size:16px;
+              line-height:30px;">
+              The generated UCT file containing all
+              ${teamsGenerated} structured football virtual teams
+              has been attached to this email.
+            </p>
+
+            <div style="
+              background:#ffffff;
+              border:1px solid #e8e8e8;
+              border-radius:8px;
+              padding:18px;
+              margin-top:20px;">
+              📄 ${attachmentFileName}
+            </div>
+          </td>
+        </tr>
+      </table>
+
+      <!-- My Teams -->
+      <div style="margin-top:40px;">
+        <h3 style="color:#243447;">
+          📁 My Teams
+        </h3>
+
+        <p style="
+          color:#444;
+          line-height:32px;
+          font-size:17px;">
+          The same generated teams are also available
+          under <strong>My Teams</strong> within your
+          PICK2WIN account.
+        </p>
+      </div>
+
+      <!-- Information -->
+      <table width="100%"
+      style="
+        margin-top:35px;
+        background:#faf8f7;
+        border:1px solid #ece7e2;
+        border-radius:12px;
+        padding:30px;">
+
+        <tr>
+          <td>
+            <h3 style="
+              margin-top:0;
+              color:#243447;">
+              📌 Important Information
+            </h3>
+
+            <ul style="
+              padding-left:25px;
+              color:#444;
+              line-height:36px;">
+              <li>Teams are generated strictly based on your selected configuration.</li>
+              <li>UCT generation for this match has been completed successfully.</li>
+              <li>One coin has been consumed for this generation.</li>
+            </ul>
+          </td>
+        </tr>
+      </table>
+
+      <p style="
+        margin-top:45px;
+        font-size:18px;
+        color:#444;">
+        Thank you for using PICK2WIN.
+      </p>
+
+      <div style="margin-top:35px;">
+        <strong style="font-size:22px;">
+          PICK2WIN Team
+        </strong>
+
+        <p style="margin:12px 0;color:#444;">
+          Where SKILL Matters More.
+        </p>
+      </div>
+
+      <hr style="
+        border:none;
+        border-top:1px solid #eee;
+        margin:45px 0;">
+
+      <div style="line-height:35px;color:#444;">
+        <strong style="font-size:22px;">
+          PICK2WIN Technologies Private Limited
+        </strong>
+
+        <div>Bengaluru, India</div>
+
+        <div>
+          Support:
+          <a href="mailto:support@pick2win.io"
+          style="color:#082b4c;text-decoration:none;">
+            support@pick2win.io
+          </a>
+        </div>
+
+        <p style="
+          color:#999;
+          font-size:13px;
+          margin-top:25px;">
+          © 2026 PICK2WIN Technologies Pvt Ltd.
+          All rights reserved.
+        </p>
+      </div>
+
+    </td>
+  </tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+`;
+
+
+
 export default noreplyTransporter;  
