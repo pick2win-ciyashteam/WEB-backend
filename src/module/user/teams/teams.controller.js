@@ -2,7 +2,7 @@
 import db from "../../../config/db.js";
 
 import axios from "axios";
-
+import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mailer.js";
 
 // export const generateTeams = async (req, res) => {
 //   try {
@@ -24,7 +24,14 @@ import axios from "axios";
 //       });
 //     }
 
-//     /* ── 2. Remove duplicates (same name) ── */
+//     if (team_a.length < 1 || team_b.length < 1) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "team_a and team_b must have at least 1 player each",
+//       });
+//     }
+
+//     /* ── 2. Remove duplicates by name ── */
 //     const uniqueTeamA = team_a.filter(
 //       (p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx
 //     );
@@ -32,15 +39,7 @@ import axios from "axios";
 //       (p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx
 //     );
 
-//     /* ── 3. Exactly 11 players per team ── */
-//     // if (uniqueTeamA.length !== 11 || uniqueTeamB.length !== 11) {
-//     //   return res.status(400).json({
-//     //     success: false,
-//     //     message: `Each team must have exactly 11 players. Got team_a: ${uniqueTeamA.length}, team_b: ${uniqueTeamB.length}`,
-//     //   });
-//     // }
-
-//     /* ── 4. Match exists + status check ── */
+//     /* ── 3. Match exists + status check ── */
 //     const [[match]] = await db.execute(
 //       `SELECT id, status, lineupavailable, lineup_status, start_time
 //        FROM matches WHERE id = ?`,
@@ -63,17 +62,16 @@ import axios from "axios";
 //       });
 //     }
 
-//     if (!match.lineupavailable || match.lineup_status !== "confirmed") {
+//     if (Number(match.lineupavailable) !== 1) {
 //       return res.status(400).json({
 //         success: false,
 //         message: "Playing XI not announced yet. Please wait for lineup confirmation.",
 //       });
 //     }
 
-//     /* ── 5. Check already generated ── */
+//     /* ── 4. Check already generate ── */
 //     const [[existing]] = await db.execute(
-//       `SELECT id FROM match_generation_log
-//        WHERE match_id = ? AND user_id = ?`,
+//       `SELECT id FROM match_generation_log WHERE match_id = ? AND user_id = ?`,
 //       [match_id, userId]
 //     );
 
@@ -84,7 +82,7 @@ import axios from "axios";
 //       });
 //     }
 
-//     /* ── 6. Check coins ── */
+//     /* ── 5. Check coins ── */
 //     const [[wallet]] = await db.execute(
 //       `SELECT available_coins, used_coins, total_coins
 //        FROM user_coins WHERE user_id = ?`,
@@ -98,15 +96,14 @@ import axios from "axios";
 //       });
 //     }
 
-//     /* ── 7. Check free trial ── */
+//     /* ── 6. Check free trial ── */
 //     const [[userRow]] = await db.execute(
 //       `SELECT free_trial_used FROM users WHERE id = ?`,
 //       [userId]
 //     );
-
 //     const isFreeTrial = userRow && userRow.free_trial_used === 0;
 
-//     /* ── 8. Subscription check — skip if free trial ── */
+//     /* ── 7. Subscription check — skip if free trial ── */
 //     if (!isFreeTrial) {
 //       const [[subscription]] = await db.execute(
 //         `SELECT id, plan_name, expiry_date, matches_allowed, matches_used
@@ -133,92 +130,166 @@ import axios from "axios";
 //       }
 //     }
 
-//     /* ── 9. Convert real names → coded names for UCT API ── */
+//     /* ── 8. Convert real names → coded names for UCT API ── */
 //     const toUCT = (players, side) => {
 //       const counters = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
 //       return players.map((p) => {
-//         counters[p.role] = (counters[p.role] || 0) + 1;
-//         const prefix =
-//           p.role === "GK"  ? "GK" :
-//           p.role === "DEF" ? "D"  :
-//           p.role === "MID" ? "M"  : "F";
-//         const codedName = `${prefix}${counters[p.role]}_${side}`;
+//         const role = p.role || "MID";
+//         counters[role] = (counters[role] || 0) + 1;
 
-//         // CVC → UCT API కి "C" గా పంపు, DB లో original store చేయి
-//         const apiCaptain =
-//           p.captain === "CVC" ? "C"  :
-//           p.captain === "C"   ? "C"  :
-//           p.captain === "VC"  ? "VC" : undefined;
+//         const prefix =
+//           role === "GK" ? "GK" :
+//             role === "DEF" ? "D" :
+//               role === "MID" ? "M" : "F";
+
+//         const codedName = `${prefix}${counters[role]}_${side}`;
 
 //         return {
-//           name:          codedName,
-//           role:          p.role,
-//           ...(apiCaptain && { captain: apiCaptain }),
-//           ...(p.mandate  && { mandate: p.mandate  }),
-//           _original:     p.name,
-//           _cap_original: p.captain || null,
+//           name: codedName,
+//           role,
+//           captain: p.captain || null,   // C / VC / CVC — as-is, resolved below
+//           mandate: p.mandate || null,
+//           _original: p.name,
 //         };
 //       });
 //     };
 
 //     const uctTeamA = toUCT(uniqueTeamA, "A");
 //     const uctTeamB = toUCT(uniqueTeamB, "B");
+//     const allMapped = [...uctTeamA, ...uctTeamB];
 
-//     /* ── 10. Validate C / VC / CVC ── */
-//     const allPlayers = [...uctTeamA, ...uctTeamB];
 
-//     const captains = allPlayers.filter(
-//       (p) => p._cap_original === "C" || p._cap_original === "CVC"
-//     );
-//     const vcs = allPlayers.filter(
-//       (p) => p._cap_original === "VC" || p._cap_original === "CVC"
-//     );
+//     /* ── 9. Resolve C / VC from CVC ── */
+//     const resolveCapForUCT = (capValue) => {
+//       if (!capValue) return undefined;
 
-//     if (captains.length < 1) {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Minimum 1 Captain required, got ${captains.length}`,
-//       });
-//     }
+//       if (capValue === "C") {
+//         return "C";
+//       }
 
-//     if (vcs.length < 1) {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Minimum 1 Vice-Captain required, got ${vcs.length}`,
-//       });
-//     }
+//       if (capValue === "VC") {
+//         return "VC";
+//       }
 
-//     /* ── 11. Call UCT API ── */
-//     const startTime  = Date.now();
-//     let   uctTeams   = [];
+//       if (capValue === "CVC") {
+//         return "CVC";
+//       }
 
-//     const uctPayload = {
-//       team_a: uctTeamA.map(({ _original, _cap_original, ...p }) => p),
-//       team_b: uctTeamB.map(({ _original, _cap_original, ...p }) => p),
+//       return undefined;
 //     };
 
+
+//     /* ── 10. Validate at least 1 C candidate and 1 VC candidate ── */
+//     const cCandidates = allMapped.filter(p =>
+//       p.captain === "C" || p.captain === "CVC"
+//     );
+//     const vcCandidates = allMapped.filter(p =>
+//       p.captain === "VC" || p.captain === "CVC"
+//     );
+
+//     if (cCandidates.length < 1) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "At least 1 Captain (C or CVC) required",
+//       });
+//     }
+
+//     if (vcCandidates.length < 1) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "At least 1 Vice-Captain (VC or CVC) required",
+//       });
+//     }
+
+//     /* ── 11. Build UCT payload ── */
+//     const buildUCTPlayer = (p) => {
+//       const obj = { name: p.name, role: p.role };
+//       const cap = resolveCapForUCT(p.captain);
+//       if (cap) obj.captain = cap;
+//       if (p.mandate) obj.mandate = p.mandate;
+//       return obj;
+//     };
+
+//     const uctPayload = {
+//       team_a: uctTeamA.map(buildUCTPlayer),
+//       team_b: uctTeamB.map(buildUCTPlayer),
+//     };
+
+//     console.log("Team A Count:", uctPayload.team_a.length);
+//     console.log("Team B Count:", uctPayload.team_b.length);
+//     console.log(
+//       "Total Players:",
+//       uctPayload.team_a.length + uctPayload.team_b.length
+//     );
 //     console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
 
+//     /* ── 12. Call UCT API ── */
+//     const startTime = Date.now();
+//     let uctTeams = [];
+
 //     try {
+//       console.log("========================================");
+//       console.log("🚀 UCT URL:", `${process.env.UCT_API}/football/teams`);
+//       console.log("🚀 UCT Payload:");
+//       console.log(JSON.stringify(uctPayload, null, 2));
+//       console.log("========================================");
+
 //       const response = await axios.post(
 //         `${process.env.UCT_API}/football/teams`,
 //         uctPayload,
-//         { headers: { "Content-Type": "application/json" }, timeout: 30000 }
+//         {
+//           headers: {
+//             "Content-Type": "application/json",
+//           },
+//           timeout: 60000,
+//         }
+//       );
+
+//       console.log("✅ UCT Response Status:", response.status);
+//       console.log(
+//         "✅ UCT Response Data:",
+//         JSON.stringify(response.data, null, 2)
 //       );
 
 //       uctTeams = response.data || [];
-//       console.log(`✅ UCT API — ${uctTeams.length} player entries across 20 teams`);
+
+//       console.log(
+//         `✅ UCT API Success — ${Array.isArray(uctTeams) ? uctTeams.length : 0
+//         } records received`
+//       );
+
 //     } catch (apiError) {
-//       console.error("❌ UCT API Error:", apiError.response?.data || apiError.message);
+
+//       console.error("========================================");
+//       console.error("❌ UCT API FAILED");
+//       console.error("URL:", `${process.env.UCT_API}/football/teams`);
+//       console.error("Status:", apiError.response?.status);
+//       console.error("Status Text:", apiError.response?.statusText);
+
+//       console.error(
+//         "Response Data:",
+//         JSON.stringify(apiError.response?.data, null, 2)
+//       );
+
+//       console.error(
+//         "Request Payload:",
+//         JSON.stringify(uctPayload, null, 2)
+//       );
+
+//       console.error("Message:", apiError.message);
+//       console.error("Stack:", apiError.stack);
+//       console.error("========================================");
+
 //       return res.status(500).json({
 //         success: false,
-//         message: "UCT API failed: " + apiError.message,
-//         details: apiError.response?.data,
+//         message: "UCT API failed",
+//         error: apiError.message,
+//         status: apiError.response?.status || null,
+//         details: apiError.response?.data || null,
 //       });
 //     }
 
 //     const generationTimeMs = Date.now() - startTime;
-
 //     if (!uctTeams.length) {
 //       return res.status(400).json({
 //         success: false,
@@ -226,24 +297,23 @@ import axios from "axios";
 //       });
 //     }
 
-//     /* ── 12. Build coded name → real name map + cap map ── */
-//     const nameMap = {};
-//     const capMap  = {};
+//     /* ── 13. Build name map + cap mapss ── */
 
-//     [...uctTeamA, ...uctTeamB].forEach((p) => {
-//       nameMap[p.name] = p._original      || p.name;
-//       capMap[p.name]  = p._cap_original;
+
+
+//     const nameMap = {};
+
+//     allMapped.forEach((p) => {
+//       nameMap[p.name] = p._original || p.name;
 //     });
 
-//     console.log("📋 Name map:", nameMap);
-//     console.log("🎖️  Cap map:",  capMap);
 
-//     /* ── 13. Transaction — deduct coin + store teams ── */
+//     /* ── 14. Transaction ── */
 //     const conn = await db.getConnection();
 //     try {
 //       await conn.beginTransaction();
 
-//       /* ── Re-check coins inside transaction ── */
+//       /* Re-check coins */
 //       const [[currentWallet]] = await conn.query(
 //         `SELECT available_coins, used_coins, total_coins
 //          FROM user_coins WHERE user_id = ? FOR UPDATE`,
@@ -256,7 +326,7 @@ import axios from "axios";
 //         return res.status(400).json({ success: false, message: "Insufficient coins" });
 //       }
 
-//       /* ── Deduct 1 coin ── */
+//       /* Deduct 1 coin */
 //       await conn.query(
 //         `UPDATE user_coins
 //          SET available_coins = available_coins - 1,
@@ -265,7 +335,7 @@ import axios from "axios";
 //         [userId]
 //       );
 
-//       /* ── Free trial mark ── */
+//       /* Free trial mark */
 //       if (isFreeTrial) {
 //         await conn.query(
 //           `UPDATE users SET free_trial_used = 1 WHERE id = ?`,
@@ -273,7 +343,7 @@ import axios from "axios";
 //         );
 //       }
 
-//       /* ── Coin transaction log ── */
+//       /* Coin transaction log */
 //       await conn.query(
 //         `INSERT INTO coins_transactions
 //            (user_id, coins, amount, transaction_type,
@@ -287,22 +357,30 @@ import axios from "axios";
 //         ]
 //       );
 
-//       /* ── Delete old teams if any ── */
+//       /* Delete old teams */
 //       await conn.query(
 //         `DELETE FROM user_teams WHERE match_id = ? AND user_id = ?`,
 //         [match_id, userId]
 //       );
 
-//       /* ── Store 20 teams ── */
+//       /* Store teams */
 //       for (const player of uctTeams) {
-//         const realName    = nameMap[player.name] || player.name;
-//         const originalCap = capMap[player.name]  ?? player.cap ?? null;
-//         const capValue    = originalCap === "" ? null : originalCap;
+//         const realName = nameMap[player.name] || player.name;
+
+//         // UCT generated captain/vice-captain ni save cheyyali
+//         const capValue =
+//           player.cap && player.cap !== ""
+//             ? player.cap
+//             : null;
+
+//         console.log(
+//           `Saving Team ${player.dt_no} | ${player.name} | UCT CAP: ${player.cap}`
+//         );
 
 //         await conn.query(
 //           `INSERT INTO user_teams
-//              (match_id, user_id, dt_no, name, role, cap, original_name)
-//            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+//        (match_id, user_id, dt_no, name, role, cap, original_name)
+//      VALUES (?, ?, ?, ?, ?, ?, ?)`,
 //           [
 //             match_id,
 //             userId,
@@ -315,7 +393,7 @@ import axios from "axios";
 //         );
 //       }
 
-//       /* ── Generation log ── */
+//       /* Generation log */
 //       const totalTeams = [...new Set(uctTeams.map((p) => p.dt_no))].length;
 
 //       await conn.query(
@@ -332,10 +410,10 @@ import axios from "axios";
 //       await conn.commit();
 
 //       return res.status(200).json({
-//         success:         true,
-//         message:         `${totalTeams} teams generated successfully`,
-//         total_teams:     totalTeams,
-//         coins_used:      1,
+//         success: true,
+//         message: `${totalTeams} teams generated successfully`,
+//         total_teams: totalTeams,
+//         coins_used: 1,
 //         coins_remaining: Number(currentWallet.available_coins) - 1,
 //         free_trial_used: isFreeTrial,
 //       });
@@ -757,16 +835,71 @@ export const generateTeams = async (req, res) => {
         [match_id, userId, totalTeams, generationTimeMs]
       );
 
-      await conn.commit();
+    await conn.commit();
 
-      return res.status(200).json({
-        success: true,
-        message: `${totalTeams} teams generated successfully`,
-        total_teams: totalTeams,
-        coins_used: 1,
-        coins_remaining: Number(currentWallet.available_coins) - 1,
-        free_trial_used: isFreeTrial,
-      });
+/* ── SEND UCT SUCCESS EMAIL ── */
+try {
+  const [[user]] = await db.execute(
+    `SELECT fullname, email
+     FROM users
+     WHERE id = ?`,
+    [userId]
+  );
+
+  const [[matchInfo]] = await db.execute(
+    `SELECT
+        seriesname,
+        hometeam,
+        awayteam,
+        matchdate,
+        start_time
+     FROM matches
+     WHERE id = ?`,
+    [match_id]
+  );
+
+  if (user?.email && matchInfo) {
+    await sendNoreplyMail({
+      to: user.email,
+      subject: `UCT Teams Generated - ${matchInfo.hometeam} vs ${matchInfo.awayteam}`,
+      html: uctTeamsGeneratedEmailHtml({
+        fullname: user.fullname || "User",
+        leagueName: matchInfo.seriesname || "-",
+        homeTeam: matchInfo.hometeam || "-",
+        awayTeam: matchInfo.awayteam || "-",
+        matchDate: matchInfo.matchdate
+          ? new Date(matchInfo.matchdate).toLocaleDateString("en-IN")
+          : "-",
+        kickoffTime: matchInfo.start_time
+          ? new Date(matchInfo.start_time).toLocaleTimeString("en-IN")
+          : "-",
+        teamsGenerated: totalTeams,
+        coinsConsumed: 1,
+        generatedOn: new Date().toLocaleString("en-IN"),
+        attachmentFileName: `PICK2WIN_UCT_${matchInfo.hometeam}_vs_${matchInfo.awayteam}.txt`,
+      }),
+    });
+
+    console.log(
+      `✅ UCT success email sent to ${user.email}`
+    );
+  }
+} catch (mailErr) {
+  console.error(
+    "❌ UCT success email failed:",
+    mailErr.message
+  );
+}
+
+return res.status(200).json({
+  success: true,
+  message: `${totalTeams} teams generated successfully`,
+  total_teams: totalTeams,
+  coins_used: 1,
+  coins_remaining:
+    Number(currentWallet.available_coins) - 1,
+  free_trial_used: isFreeTrial,
+});
 
     } catch (err) {
       await conn.rollback();
@@ -780,7 +913,6 @@ export const generateTeams = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
-
 
 export const getMyTeams = async (req, res) => {
   try {
