@@ -412,8 +412,8 @@ export const generateTeams = async (req, res) => {
     await conn.commit();
 
  let emailSent = false;
+let emailError = null;
 
-/* ── SEND UCT SUCCESS EMAIL ── */
 try {
   const [[user]] = await db.execute(
     `SELECT fullname, email
@@ -458,10 +458,11 @@ try {
     });
 
     emailSent = true;
-    console.log(`✅ UCT success email sent to ${user.email}`);
+  } else {
+    emailError = "User email or match data not found";
   }
-} catch (mailErr) {
-  console.error("❌ UCT success email failed:", mailErr);
+} catch (err) {
+  emailError = err.message;
 }
 
 return res.status(200).json({
@@ -475,6 +476,7 @@ return res.status(200).json({
     Number(currentWallet.available_coins) - 1,
   free_trial_used: isFreeTrial,
   email_sent: emailSent,
+  email_error: emailError,
 });
 
     } catch (err) {
