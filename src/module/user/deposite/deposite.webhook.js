@@ -1,5 +1,9 @@
 import Stripe from "stripe";
 import db from "../../../config/db.js";
+import { sendBillingMail, coinPurchaseEmailHtml } from "../../../utils/mailer.js";
+
+
+
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -10,7 +14,7 @@ export const stripeWebhook = async (req, res) => {
   try {
     event = stripe.webhooks.constructEvent(
       req.body,
-      sig,
+      sig,  
       process.env.STRIPE_WEBHOOK_SECRET
     );
   } catch (err) {
@@ -193,4 +197,4 @@ try {
   } finally {
     conn.release();
   }
-};
+};  
