@@ -149,6 +149,7 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
           name: codedName,
           role,
           captain: p.captain || null,
+          mandate: p.mandate || null, // ✅ mandate కావాలి
           _original: p.name,
         };
       });
@@ -194,6 +195,7 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
       const obj = { name: p.name, role: p.role };
       const cap = resolveCapForUCT(p.captain);
       if (cap) obj.captain = cap;
+      if (p.mandate) obj.mandate = p.mandate; // ✅ mandate UCT కి పంపాలి
       return obj;
     };
 
@@ -271,7 +273,10 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
 
     allMapped.forEach((p) => {
       nameMap[p.name] = p._original || p.name;
-      selectedMap[p.name] = 1; // ✅ user పంపిన అందరూ selected = 1
+
+      // ✅ mandate: "yes" పంపిన players కి మాత్రమే selected = 1
+      selectedMap[p.name] =
+        String(p.mandate || "").trim().toLowerCase() === "yes" ? 1 : 0;
     });
 
     /* ── 14. Transaction ── */
@@ -333,7 +338,9 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
       for (const player of uctTeams) {
         const realName = nameMap[player.name] || player.name;
         const capValue = player.cap && player.cap !== "" ? player.cap : null;
-        const selected = selectedMap[player.name] || 0; // ✅ user పంపిన players కి 1, లేకపోతే 0
+
+        // ✅ mandate: "yes" పంపిన players కి selected = 1, మిగతావాళ్ళకి 0
+        const selected = selectedMap[player.name] || 0;
 
         console.log(
           `Saving Team ${player.dt_no} | ${realName} | CAP: ${capValue} | SELECTED: ${selected}`
