@@ -5,8 +5,7 @@ import axios from "axios";
 import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mailer.js";
 
 
-
-export const generateTeams = async (req, res) => {
+ export const generateTeams = async (req, res) => {
   try {
     const userId = req.user.id;
     const { match_id, team_a, team_b } = req.body;
@@ -71,7 +70,7 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    /* ── 4. Check already generate ── */
+    /* ── 4. Check already generated ── */
     const [[existing]] = await db.execute(
       `SELECT id FROM match_generation_log WHERE match_id = ? AND user_id = ?`,
       [match_id, userId]
@@ -149,8 +148,7 @@ export const generateTeams = async (req, res) => {
         return {
           name: codedName,
           role,
-          captain: p.captain || null,   // C / VC / CVC — as-is, resolved below
-          mandate: p.mandate || null,
+          captain: p.captain || null,
           _original: p.name,
         };
       });
@@ -160,33 +158,21 @@ export const generateTeams = async (req, res) => {
     const uctTeamB = toUCT(uniqueTeamB, "B");
     const allMapped = [...uctTeamA, ...uctTeamB];
 
-
     /* ── 9. Resolve C / VC from CVC ── */
     const resolveCapForUCT = (capValue) => {
       if (!capValue) return undefined;
-
-      if (capValue === "C") {
-        return "C";
-      }
-
-      if (capValue === "VC") {
-        return "VC";
-      }
-
-      if (capValue === "CVC") {
-        return "CVC";
-      }
-
+      if (capValue === "C") return "C";
+      if (capValue === "VC") return "VC";
+      if (capValue === "CVC") return "CVC";
       return undefined;
     };
 
-
     /* ── 10. Validate at least 1 C candidate and 1 VC candidate ── */
-    const cCandidates = allMapped.filter(p =>
-      p.captain === "C" || p.captain === "CVC"
+    const cCandidates = allMapped.filter(
+      (p) => p.captain === "C" || p.captain === "CVC"
     );
-    const vcCandidates = allMapped.filter(p =>
-      p.captain === "VC" || p.captain === "CVC"
+    const vcCandidates = allMapped.filter(
+      (p) => p.captain === "VC" || p.captain === "CVC"
     );
 
     if (cCandidates.length < 1) {
@@ -208,7 +194,6 @@ export const generateTeams = async (req, res) => {
       const obj = { name: p.name, role: p.role };
       const cap = resolveCapForUCT(p.captain);
       if (cap) obj.captain = cap;
-      if (p.mandate) obj.mandate = p.mandate;
       return obj;
     };
 
@@ -219,10 +204,7 @@ export const generateTeams = async (req, res) => {
 
     console.log("Team A Count:", uctPayload.team_a.length);
     console.log("Team B Count:", uctPayload.team_b.length);
-    console.log(
-      "Total Players:",
-      uctPayload.team_a.length + uctPayload.team_b.length
-    );
+    console.log("Total Players:", uctPayload.team_a.length + uctPayload.team_b.length);
     console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
 
     /* ── 12. Call UCT API ── */
@@ -240,44 +222,27 @@ export const generateTeams = async (req, res) => {
         `${process.env.UCT_API}/football/teams`,
         uctPayload,
         {
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           timeout: 60000,
         }
       );
 
       console.log("✅ UCT Response Status:", response.status);
-      console.log(
-        "✅ UCT Response Data:",
-        JSON.stringify(response.data, null, 2)
-      );
+      console.log("✅ UCT Response Data:", JSON.stringify(response.data, null, 2));
 
       uctTeams = response.data || [];
 
       console.log(
-        `✅ UCT API Success — ${Array.isArray(uctTeams) ? uctTeams.length : 0
-        } records received`
+        `✅ UCT API Success — ${Array.isArray(uctTeams) ? uctTeams.length : 0} records received`
       );
-
     } catch (apiError) {
-
       console.error("========================================");
       console.error("❌ UCT API FAILED");
       console.error("URL:", `${process.env.UCT_API}/football/teams`);
       console.error("Status:", apiError.response?.status);
       console.error("Status Text:", apiError.response?.statusText);
-
-      console.error(
-        "Response Data:",
-        JSON.stringify(apiError.response?.data, null, 2)
-      );
-
-      console.error(
-        "Request Payload:",
-        JSON.stringify(uctPayload, null, 2)
-      );
-
+      console.error("Response Data:", JSON.stringify(apiError.response?.data, null, 2));
+      console.error("Request Payload:", JSON.stringify(uctPayload, null, 2));
       console.error("Message:", apiError.message);
       console.error("Stack:", apiError.stack);
       console.error("========================================");
@@ -292,6 +257,7 @@ export const generateTeams = async (req, res) => {
     }
 
     const generationTimeMs = Date.now() - startTime;
+
     if (!uctTeams.length) {
       return res.status(400).json({
         success: false,
@@ -299,23 +265,14 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    /* ── 13. Build name map + cap mapss ── */
+    /* ── 13. Build name map + selected map ── */
+    const nameMap = {};
+    const selectedMap = {};
 
-
-
- const nameMap = {};
-const mandateMap = {};
-
-allMapped.forEach((p) => {
-  nameMap[p.name] = p._original || p.name;
-
-  mandateMap[p.name] =
-    String(p.mandate || "")
-      .trim()
-      .toLowerCase() === "yes"
-      ? 1
-      : 0;
-});
+    allMapped.forEach((p) => {
+      nameMap[p.name] = p._original || p.name;
+      selectedMap[p.name] = 1; // ✅ user పంపిన అందరూ selected = 1
+    });
 
     /* ── 14. Transaction ── */
     const conn = await db.getConnection();
@@ -372,53 +329,23 @@ allMapped.forEach((p) => {
         [match_id, userId]
       );
 
-    
       /* Store teams */
-for (const player of uctTeams) {
-  const realName =
-    nameMap[player.name] || player.name;
+      for (const player of uctTeams) {
+        const realName = nameMap[player.name] || player.name;
+        const capValue = player.cap && player.cap !== "" ? player.cap : null;
+        const selected = selectedMap[player.name] || 0; // ✅ user పంపిన players కి 1, లేకపోతే 0
 
-  const capValue =
-    player.cap && player.cap !== ""
-      ? player.cap
-      : null;
+        console.log(
+          `Saving Team ${player.dt_no} | ${realName} | CAP: ${capValue} | SELECTED: ${selected}`
+        );
 
-  const selected =
-    mandateMap[player.name] || 0;
-
-  console.log(
-    `Saving Team ${player.dt_no}
-     | ${realName}
-     | CAP: ${capValue}
-     | SELECTED: ${selected}`
-  );
-
-  await conn.query(
-    `INSERT INTO user_teams
-     (
-       match_id,
-       user_id,
-       dt_no,
-       name,
-       role,
-       cap,
-       original_name,
-       selected
-     )
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      match_id,
-      userId,
-      player.dt_no,
-      player.name,
-      player.role,
-      capValue,
-      realName,
-      selected,
-    ]
-  );
-}
-    
+        await conn.query(
+          `INSERT INTO user_teams
+           (match_id, user_id, dt_no, name, role, cap, original_name, selected)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [match_id, userId, player.dt_no, player.name, player.role, capValue, realName, selected]
+        );
+      }
 
       /* Generation log */
       const totalTeams = [...new Set(uctTeams.map((p) => p.dt_no))].length;
@@ -434,77 +361,70 @@ for (const player of uctTeams) {
         [match_id, userId, totalTeams, generationTimeMs]
       );
 
-    await conn.commit();
+      await conn.commit();
 
- let emailSent = false;
-let emailError = null;
+      /* Email */
+      let emailSent = false;
+      let emailError = null;
 
-try {
-  const [[user]] = await db.execute(
-    `SELECT fullname, email
-     FROM users
-     WHERE id = ?`,
-    [userId]
-  );
+      try {
+        const [[user]] = await db.execute(
+          `SELECT fullname, email FROM users WHERE id = ?`,
+          [userId]
+        );
 
-  const [[matchInfo]] = await db.execute(
-    `SELECT *
-     FROM matches
-     WHERE id = ?`,
-    [match_id]
-  );
+        const [[matchInfo]] = await db.execute(
+          `SELECT * FROM matches WHERE id = ?`,
+          [match_id]
+        );
 
-  if (user?.email && matchInfo) {
-    await sendNoreplyMail({
-      to: user.email,
-      subject: "UCT Teams Generated Successfully",
-      html: uctTeamsGeneratedEmailHtml({
-        fullname: user.fullname || "User",
-        leagueName: matchInfo.seriesname || "-",
-        homeTeam: "-",
-        awayTeam: "-",
-        matchDate: matchInfo.matchdate
-          ? new Date(matchInfo.matchdate).toLocaleDateString("en-IN")
-          : "-",
-        kickoffTime: matchInfo.start_time
-          ? new Date(matchInfo.start_time).toLocaleTimeString("en-IN")
-          : "-",
-        teamsGenerated: totalTeams,
-        coinsConsumed: 1,
-        generatedOn: new Date().toLocaleString("en-IN"),
-        attachmentFileName: `PICK2WIN_UCT_${match_id}.txt`,
-      }),
-    });
+        if (user?.email && matchInfo) {
+          await sendNoreplyMail({
+            to: user.email,
+            subject: "UCT Teams Generated Successfully",
+            html: uctTeamsGeneratedEmailHtml({
+              fullname: user.fullname || "User",
+              leagueName: matchInfo.seriesname || "-",
+              homeTeam: "-",
+              awayTeam: "-",
+              matchDate: matchInfo.matchdate
+                ? new Date(matchInfo.matchdate).toLocaleDateString("en-IN")
+                : "-",
+              kickoffTime: matchInfo.start_time
+                ? new Date(matchInfo.start_time).toLocaleTimeString("en-IN")
+                : "-",
+              teamsGenerated: totalTeams,
+              coinsConsumed: 1,
+              generatedOn: new Date().toLocaleString("en-IN"),
+              attachmentFileName: `PICK2WIN_UCT_${match_id}.txt`,
+            }),
+          });
+          emailSent = true;
+        } else {
+          emailError = "User email or match data not found";
+        }
+      } catch (err) {
+        emailError = err.message;
+      }
 
-    emailSent = true;
-  } else {
-    emailError = "User email or match data not found";
-  }
-} catch (err) {
-  emailError = err.message;
-}
-
-return res.status(200).json({
-  success: true,
-  message: emailSent
-    ? `${totalTeams} teams generated successfully and email sent successfully`
-    : `${totalTeams} teams generated successfully but email could not be sent`,
-  total_teams: totalTeams,
-  coins_used: 1,
-  coins_remaining:
-    Number(currentWallet.available_coins) - 1,
-  free_trial_used: isFreeTrial,
-  email_sent: emailSent,
-  email_error: emailError,
-});
-
+      return res.status(200).json({
+        success: true,
+        message: emailSent
+          ? `${totalTeams} teams generated successfully and email sent successfully`
+          : `${totalTeams} teams generated successfully but email could not be sent`,
+        total_teams: totalTeams,
+        coins_used: 1,
+        coins_remaining: Number(currentWallet.available_coins) - 1,
+        free_trial_used: isFreeTrial,
+        email_sent: emailSent,
+        email_error: emailError,
+      });
     } catch (err) {
       await conn.rollback();
       throw err;
     } finally {
       conn.release();
     }
-
   } catch (err) {
     console.error("generateTeams error:", err.message);
     return res.status(500).json({ success: false, message: err.message });
@@ -939,55 +859,137 @@ return res.status(200).json({
 // };
 
 
+// export const getMyTeams = async (req, res) => {
+//   try {
+//     const { matchId } = req.params;
+//     const userId = req.user.id;
+
+//     if (!matchId) {
+//       return res.status(400).json({ success: false, message: "matchId is required" });
+//     }
+
+//     const [players] = await db.execute(
+//       `SELECT
+//      ut.id,
+//      ut.match_id,
+//      ut.dt_no,
+//      ut.name,
+//      ut.original_name,
+//      ut.role,
+//      ut.cap,
+
+//      mp.logo  AS player_image
+
+//    FROM user_teams ut
+
+//    LEFT JOIN match_players mp
+//           ON mp.match_id    = ut.match_id
+//          AND mp.player_name = ut.original_name
+
+//    WHERE ut.match_id = ? AND ut.user_id = ?
+//    ORDER BY ut.dt_no, ut.role`,
+//       [matchId, userId]
+//     );
+
+
+//     if (!players.length) {
+//       return res.status(404).json({ success: false, message: "No teams found for this match" });
+//     }
+
+
+//     const teamsMap = {};
+//     for (const player of players) {
+//       if (!teamsMap[player.dt_no]) teamsMap[player.dt_no] = [];
+//       teamsMap[player.dt_no].push(player);
+//     }
+
+//     const teams = Object.entries(teamsMap).map(([dt_no, players]) => ({
+//       team_no: Number(dt_no),
+//       captain: players.find((p) => p.cap === "C")?.original_name || null,
+//       vice_captain: players.find((p) => p.cap === "VC")?.original_name || null,
+//       players,
+//     }));
+
+//     return res.status(200).json({
+//       success: true,
+//       match_id: Number(matchId),
+//       total_teams: teams.length,
+//       teams,
+//     });
+
+//   } catch (error) {
+//     console.error("getMyTeams Error:", error);
+//     return res.status(500).json({ success: false, message: error.message });
+//   }
+// };
+
+
 export const getMyTeams = async (req, res) => {
   try {
     const { matchId } = req.params;
     const userId = req.user.id;
 
     if (!matchId) {
-      return res.status(400).json({ success: false, message: "matchId is required" });
+      return res.status(400).json({
+        success: false,
+        message: "matchId is required",
+      });
     }
 
     const [players] = await db.execute(
       `SELECT
-     ut.id,
-     ut.match_id,
-     ut.dt_no,
-     ut.name,
-     ut.original_name,
-     ut.role,
-     ut.cap,
-
-     mp.logo  AS player_image
-
-   FROM user_teams ut
-
-   LEFT JOIN match_players mp
-          ON mp.match_id    = ut.match_id
-         AND mp.player_name = ut.original_name
-
-   WHERE ut.match_id = ? AND ut.user_id = ?
-   ORDER BY ut.dt_no, ut.role`,
+         ut.id,
+         ut.match_id,
+         ut.dt_no,
+         ut.name,
+         ut.original_name,
+         ut.role,
+         ut.cap,
+         ut.selected,
+         mp.logo AS player_image
+       FROM user_teams ut
+       LEFT JOIN match_players mp
+              ON mp.match_id = ut.match_id
+             AND mp.player_name = ut.original_name
+       WHERE ut.match_id = ?
+         AND ut.user_id = ?
+       ORDER BY ut.dt_no, ut.role`,
       [matchId, userId]
     );
 
-
     if (!players.length) {
-      return res.status(404).json({ success: false, message: "No teams found for this match" });
+      return res.status(404).json({
+        success: false,
+        message: "No teams found for this match",
+      });
     }
 
-
     const teamsMap = {};
+
     for (const player of players) {
-      if (!teamsMap[player.dt_no]) teamsMap[player.dt_no] = [];
+      if (!teamsMap[player.dt_no]) {
+        teamsMap[player.dt_no] = [];
+      }
       teamsMap[player.dt_no].push(player);
     }
 
     const teams = Object.entries(teamsMap).map(([dt_no, players]) => ({
       team_no: Number(dt_no),
-      captain: players.find((p) => p.cap === "C")?.original_name || null,
-      vice_captain: players.find((p) => p.cap === "VC")?.original_name || null,
-      players,
+      captain:
+        players.find((p) => p.cap === "C")?.original_name || null,
+      vice_captain:
+        players.find((p) => p.cap === "VC")?.original_name || null,
+      players: players.map((p) => ({
+        id: p.id,
+        match_id: p.match_id,
+        dt_no: p.dt_no,
+        name: p.name,
+        original_name: p.original_name,
+        role: p.role,
+        cap: p.cap,
+        selected: p.selected === 1,
+        player_image: p.player_image || null,
+      })),
     }));
 
     return res.status(200).json({
@@ -996,13 +998,14 @@ export const getMyTeams = async (req, res) => {
       total_teams: teams.length,
       teams,
     });
-
   } catch (error) {
     console.error("getMyTeams Error:", error);
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
   }
 };
-
 /* ================= GET MY GENERATED MATCHES ================= */
 
 export const getMyGeneratedMatches = async (req, res) => {
@@ -1098,129 +1101,52 @@ export const getMyGeneratedTeams = async (req, res) => {
 };
 
 
-// export const getTeamPlayers = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const { teamId } = req.params;
-
-//     const [[team]] = await db.execute(
-//       `SELECT id, name AS team_name, match_id, team_side, created_at
-//    FROM user_teams
-//    WHERE id = ?
-//    LIMIT 1`,
-//       [teamId]
-//     );
-
-//     if (!team)
-//       return res.status(404).json({ success: false, message: "Team not found" });
-
-//     const latestAt = team.created_at;
-
-//     const [players] = await db.execute(
-//       `SELECT id, name, role, mandate, captain, team_side
-//        FROM user_teams
-//        WHERE match_id  = ?
-//          AND team_side = ?
-//          AND created_at = (
-//            SELECT MAX(created_at) FROM user_teams
-//            WHERE match_id = ? AND team_side = ?
-//          )
-//        ORDER BY FIELD(role, 'GK', 'DEF', 'MID', 'FWD')`,
-//       [team.match_id, team.team_side, team.match_id, team.team_side]
-//     );
-
-//     res.json({
-//       success: true,
-//       team_id: team.id,
-//       team_name: team.team_name,
-//       match_id: team.match_id,
-//       team_side: team.team_side,
-//       total: players.length,
-//       captain: players.find((p) => p.captain === "C") || null,
-//       vc: players.find((p) => p.captain === "VC") || null,
-//       players,
-//     });
-
-//   } catch (err) {
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// };
-
 export const getTeamPlayers = async (req, res) => {
   try {
-    const { matchId } = req.params;
     const userId = req.user.id;
+    const { teamId } = req.params;
 
-    if (!matchId) {
-      return res.status(400).json({
-        success: false,
-        message: "matchId is required",
-      });
-    }
+    const [[team]] = await db.execute(
+      `SELECT id, name AS team_name, match_id, team_side, created_at
+   FROM user_teams
+   WHERE id = ?
+   LIMIT 1`,
+      [teamId]
+    );
+
+    if (!team)
+      return res.status(404).json({ success: false, message: "Team not found" });
+
+    const latestAt = team.created_at;
 
     const [players] = await db.execute(
-      `SELECT
-         ut.id,
-         ut.match_id,
-         ut.dt_no,
-         ut.name,
-         ut.original_name,
-         ut.role,
-         ut.cap,
-         ut.selected,
-         mp.logo AS player_image
-       FROM user_teams ut
-       LEFT JOIN match_players mp
-              ON mp.match_id = ut.match_id
-             AND mp.player_name = ut.original_name
-       WHERE ut.match_id = ?
-         AND ut.user_id = ?
-       ORDER BY ut.dt_no, ut.role`,
-      [matchId, userId]
+      `SELECT id, name, role, mandate, captain, team_side
+       FROM user_teams
+       WHERE match_id  = ?
+         AND team_side = ?
+         AND created_at = (
+           SELECT MAX(created_at) FROM user_teams
+           WHERE match_id = ? AND team_side = ?
+         )
+       ORDER BY FIELD(role, 'GK', 'DEF', 'MID', 'FWD')`,
+      [team.match_id, team.team_side, team.match_id, team.team_side]
     );
 
-    if (!players.length) {
-      return res.status(404).json({
-        success: false,
-        message: "No teams found for this match",
-      });
-    }
-
-    const teamsMap = {};
-
-    for (const player of players) {
-      if (!teamsMap[player.dt_no]) {
-        teamsMap[player.dt_no] = [];
-      }
-
-      teamsMap[player.dt_no].push(player);
-    }
-
-    const teams = Object.entries(teamsMap).map(
-      ([dt_no, players]) => ({
-        team_no: Number(dt_no),
-        captain:
-          players.find((p) => p.cap === "C")
-            ?.original_name || null,
-        vice_captain:
-          players.find((p) => p.cap === "VC")
-            ?.original_name || null,
-        players,
-      })
-    );
-
-    return res.status(200).json({
+    res.json({
       success: true,
-      match_id: Number(matchId),
-      total_teams: teams.length,
-      teams,
+      team_id: team.id,
+      team_name: team.team_name,
+      match_id: team.match_id,
+      team_side: team.team_side,
+      total: players.length,
+      captain: players.find((p) => p.captain === "C") || null,
+      vc: players.find((p) => p.captain === "VC") || null,
+      players,
     });
-  } catch (error) {
-    console.error("getMyTeams Error:", error);
 
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
-}; 
+};
+
+ 
