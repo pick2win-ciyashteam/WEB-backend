@@ -908,5 +908,217 @@ style="background:#ffffff;border-radius:14px;overflow:hidden;">
 `;
 };
 
+export const accountDeletedEmailHtml = ({
+  fullname = "User",
+  email = "",
+  deletionDateTime = new Date().toLocaleString("en-IN"),
+}) => {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Account Deleted Successfully</title>
+</head>
+
+<body style="margin:0;padding:40px 0;background:#ece8e0;font-family:Arial,sans-serif;">
+
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr>
+<td align="center">
+
+<table width="700" cellpadding="0" cellspacing="0"
+style="background:#ffffff;border-radius:14px;overflow:hidden;">
+
+  <!-- Header -->
+  <tr>
+    <td style="background:#082b4c;padding:40px;text-align:center;">
+      <div style="font-size:58px;font-weight:900;">
+        <span style="color:#ff6b35;">PICK</span>
+        <span style="color:#f5b301;">2</span>
+        <span style="color:#ff6b35;">WIN</span>
+      </div>
+
+      <div style="
+        color:#f5b301;
+        font-size:13px;
+        font-weight:700;
+        letter-spacing:2px;
+        margin-top:10px;">
+        WHERE SKILL MATTERS MORE
+      </div>
+    </td>
+  </tr>
+
+  <tr>
+    <td style="height:6px;background:#f5b301;"></td>
+  </tr>
+
+  <!-- Body -->
+  <tr>
+    <td style="padding:50px;">
+
+      <p style="margin:0;color:#666;font-size:14px;">
+        Account deleted
+      </p>
+
+      <h1 style="
+        margin:20px 0 35px;
+        font-size:54px;
+        line-height:65px;
+        color:#0d2741;">
+        Your account has been removed.
+      </h1>
+
+      <p style="font-size:18px;color:#222;">
+        Hello <strong>${fullname}</strong>,
+      </p>
+
+      <p style="
+        font-size:18px;
+        color:#444;
+        line-height:32px;">
+        Your PICK2WIN account deletion request has been completed successfully.
+      </p>
+
+      <!-- Summary -->
+      <table width="100%"
+      style="
+        margin-top:40px;
+        background:#faf8f7;
+        border:1px solid #ece7e2;
+        border-radius:12px;
+        padding:30px;">
+
+        <tr>
+          <td colspan="2"
+          style="
+            font-size:28px;
+            font-weight:700;
+            color:#243447;
+            padding-bottom:25px;">
+            🗑️ Account Deletion Summary
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            👤 Name
+          </td>
+          <td align="right">
+            ${fullname}
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            📧 Email
+          </td>
+          <td align="right">
+            ${email}
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:14px 0;color:#666;">
+            📅 Deletion Date
+          </td>
+          <td align="right">
+            ${deletionDateTime}
+          </td>
+        </tr>
+      </table>
+
+      <!-- Important Information -->
+      <table width="100%"
+      style="
+        margin-top:35px;
+        background:#fff6f6;
+        border:1px solid #ffd3d3;
+        border-radius:12px;
+        padding:30px;">
+
+        <tr>
+          <td>
+            <h3 style="
+              margin-top:0;
+              color:#243447;">
+              📌 Important Information
+            </h3>
+
+            <ul style="
+              color:#444;
+              line-height:36px;
+              padding-left:25px;">
+              <li>Your PICK2WIN account has been permanently deleted.</li>
+              <li>Access to the account has been removed.</li>
+              <li>Remaining coin balances, if any, have been permanently removed.</li>
+              <li>Coin purchases remain non-refundable as per PICK2WIN policies.</li>
+              <li>Deleted accounts cannot recover previous balances, generated teams, account history, or profile information.</li>
+            </ul>
+          </td>
+        </tr>
+      </table>
+
+      <p style="
+        margin-top:45px;
+        font-size:18px;
+        color:#444;">
+        We are sorry to see you leave and thank you for being part of PICK2WIN.
+      </p>
+
+      <div style="margin-top:35px;">
+        <strong style="font-size:22px;">
+          PICK2WIN Team
+        </strong>
+
+        <p style="margin:12px 0;color:#444;">
+          Where SKILL Matters More.
+        </p>
+      </div>
+
+      <hr style="
+        border:none;
+        border-top:1px solid #eee;
+        margin:45px 0;">
+
+      <div style="line-height:35px;color:#444;">
+        <strong style="font-size:22px;">
+          PICK2WIN Technologies Private Limited
+        </strong>
+
+        <div>Bengaluru, India</div>
+
+        <div>
+          Support:
+          <a href="mailto:support@pick2win.io"
+          style="color:#082b4c;text-decoration:none;">
+            support@pick2win.io
+          </a>
+        </div>
+
+        <p style="
+          color:#999;
+          font-size:13px;
+          margin-top:25px;">
+          © 2026 PICK2WIN Technologies Pvt Ltd.
+          All rights reserved.
+        </p>
+      </div>
+
+    </td>
+  </tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+
+</body>
+</html>
+`;
+};
 
 export default noreplyTransporter;  

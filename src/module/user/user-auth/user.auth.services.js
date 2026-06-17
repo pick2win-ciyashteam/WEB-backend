@@ -9,7 +9,7 @@ import db        from "../../../config/db.js";
  
 import { sendSms } from "../../../utils/sms.js";
 
-import { sendNoreplyMail, otpEmailHtml, welcomeEmailHtml } from "../../../utils/mailer.js";
+import { sendNoreplyMail, otpEmailHtml, welcomeEmailHtml,    accountDeletedEmailHtml, } from "../../../utils/mailer.js";
 
 
 
@@ -766,33 +766,101 @@ export const resetPasswordService = async (email, otp, newPassword) => {
 /* ══════════════════════════════════════════
    DELETE ACCOUNT
 ══════════════════════════════════════════ */
+// export const deleteAccountService = async (userId) => {
+//   const [[user]] = await db.execute(
+//     `SELECT id, email, fullname FROM users WHERE id = ? AND account_status != 'deleted'`,
+//     [userId]
+//   );
+//   if (!user) throw new Error("User not found");
+
+//   const otp       = crypto.randomInt(100000, 999999).toString();
+//   const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+//   await db.execute(
+//     `UPDATE users SET loginotp = ?, loginotpexpires = ? WHERE id = ?`,
+//     [otp, otpExpiry, userId]
+//   );
+
+//   /* ── Send OTP email ── */
+//   await sendNoreplyMail({
+//     to:      user.email,
+//     subject: "Pick2Win — Account Deletion OTP",
+//     html:    otpEmailHtml(otp, "Confirm Account Deletion"),
+//   });
+
+//   return {
+//     success: true,
+//     message: "OTP sent to your email. Please verify to delete your account.",
+//     ...(process.env.NODE_ENV !== "production" && { otp }),
+//   };
+// };
+
+
 export const deleteAccountService = async (userId) => {
-  const [[user]] = await db.execute(
-    `SELECT id, email, fullname FROM users WHERE id = ? AND account_status != 'deleted'`,
-    [userId]
-  );
-  if (!user) throw new Error("User not found");
+  const conn = await db.getConnection();
 
-  const otp       = crypto.randomInt(100000, 999999).toString();
-  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+  try {
+    await conn.beginTransaction();
 
-  await db.execute(
-    `UPDATE users SET loginotp = ?, loginotpexpires = ? WHERE id = ?`,
-    [otp, otpExpiry, userId]
-  );
+    /* ── Get User Details Before Deleting ── */
+    const [[user]] = await conn.execute(
+      `SELECT id, fullname, email
+       FROM users
+       WHERE id = ?`,
+      [userId]
+    );
 
-  /* ── Send OTP email ── */
-  await sendNoreplyMail({
-    to:      user.email,
-    subject: "Pick2Win — Account Deletion OTP",
-    html:    otpEmailHtml(otp, "Confirm Account Deletion"),
-  });
+    if (!user) {
+      throw new Error("User not found");
+    }
 
-  return {
-    success: true,
-    message: "OTP sent to your email. Please verify to delete your account.",
-    ...(process.env.NODE_ENV !== "production" && { otp }),
-  };
+    /* ── Soft Delete Account ── */
+    await conn.execute(
+      `UPDATE users
+       SET account_status = 'deleted',
+           deleted_at = NOW()
+       WHERE id = ?`,
+      [userId]
+    );
+
+    await conn.commit();
+
+    /* ── Send Account Deleted Email ── */
+    try {
+      if (user.email) {
+        await sendNoreplyMail({
+          to: user.email,
+          subject: "Account Deleted Successfully - PICK2WIN",
+          html: accountDeletedEmailHtml({
+            fullname: user.fullname || "User",
+            email: user.email,
+            deletionDateTime:
+              new Date().toLocaleString("en-IN"),
+          }),
+        });
+
+        console.log(
+          `✅ Account deletion email sent to ${user.email}`
+        );
+      }
+    } catch (mailErr) {
+      console.error(
+        "❌ Account deletion email failed:",
+        mailErr.message
+      );
+    }
+
+    return {
+      success: true,
+      message:
+        "Account deleted successfully and confirmation email sent.",
+    };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 };
 
 /* ══════════════════════════════════════════
