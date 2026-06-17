@@ -644,24 +644,26 @@ style="background:#ffffff;border-radius:12px;overflow:hidden;">
 `;
 
 
+
 export const uctTeamsGeneratedEmailHtml = ({
-  fullname,
-  leagueName,
-  homeTeam,
-  awayTeam,
-  matchDate,
-  kickoffTime,
+  fullname = "User",
+  leagueName = "-",
+  homeTeam = "-",
+  awayTeam = "-",
+  matchDate = "-",
+  kickoffTime = "-",
   teamsGenerated = 20,
   coinsConsumed = 1,
-  generatedOn,
-  attachmentFileName,
-}) => `
+  generatedOn = "-",
+  attachmentFileName = "PICK2WIN_UCT.txt",
+}) => {
+  return `
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>UCT Teams Generated</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UCT Teams Generated</title>
 </head>
 
 <body style="margin:0;padding:40px 0;background:#ece8e0;font-family:Arial,sans-serif;">
@@ -673,7 +675,6 @@ export const uctTeamsGeneratedEmailHtml = ({
 <table width="700" cellpadding="0" cellspacing="0"
 style="background:#ffffff;border-radius:14px;overflow:hidden;">
 
-  <!-- Header -->
   <tr>
     <td style="background:#082b4c;padding:40px;text-align:center;">
       <div style="font-size:58px;font-weight:900;">
@@ -682,12 +683,15 @@ style="background:#ffffff;border-radius:14px;overflow:hidden;">
         <span style="color:#ff6b35;">WIN</span>
       </div>
 
-      <div style="
-        color:#f5b301;
-        font-size:13px;
-        font-weight:700;
-        letter-spacing:2px;
-        margin-top:10px;">
+      <div
+        style="
+          color:#f5b301;
+          font-size:13px;
+          font-weight:700;
+          letter-spacing:2px;
+          margin-top:10px;
+        "
+      >
         WHERE SKILL MATTERS MORE
       </div>
     </td>
@@ -697,7 +701,6 @@ style="background:#ffffff;border-radius:14px;overflow:hidden;">
     <td style="height:6px;background:#f5b301;"></td>
   </tr>
 
-  <!-- Body -->
   <tr>
     <td style="padding:50px;">
 
@@ -705,11 +708,14 @@ style="background:#ffffff;border-radius:14px;overflow:hidden;">
         UCT generation complete
       </p>
 
-      <h1 style="
-        margin:20px 0 35px;
-        font-size:54px;
-        line-height:65px;
-        color:#0d2741;">
+      <h1
+        style="
+          margin:20px 0 35px;
+          font-size:54px;
+          line-height:65px;
+          color:#0d2741;
+        "
+      >
         ${teamsGenerated} teams generated successfully.
       </h1>
 
@@ -717,205 +723,164 @@ style="background:#ffffff;border-radius:14px;overflow:hidden;">
         Hello <strong>${fullname}</strong>,
       </p>
 
-      <p style="
-        font-size:18px;
-        color:#444;
-        line-height:32px;">
+      <p
+        style="
+          font-size:18px;
+          color:#444;
+          line-height:32px;
+        "
+      >
         Your UCT generation has been completed successfully.
       </p>
 
-      <!-- Match Details -->
-      <table width="100%"
-      style="
-        margin-top:40px;
-        background:#faf8f7;
-        border:1px solid #ece7e2;
-        border-radius:12px;
-        padding:30px;">
-
+      <table
+        width="100%"
+        style="
+          margin-top:40px;
+          background:#faf8f7;
+          border:1px solid #ece7e2;
+          border-radius:12px;
+          padding:30px;
+        "
+      >
         <tr>
           <td colspan="2"
-          style="
-            font-size:28px;
-            font-weight:700;
-            color:#243447;
-            padding-bottom:25px;">
+            style="
+              font-size:28px;
+              font-weight:700;
+              color:#243447;
+              padding-bottom:25px;
+            "
+          >
             ⚽ Match Details
           </td>
         </tr>
 
         <tr>
-          <td style="padding:14px 0;color:#666;">
-            🏆 League
-          </td>
-          <td align="right">
-            ${leagueName}
-          </td>
+          <td style="padding:14px 0;color:#666;">🏆 League</td>
+          <td align="right">${leagueName}</td>
         </tr>
 
         <tr>
-          <td style="padding:14px 0;color:#666;">
-            🆚 Match
-          </td>
-          <td align="right">
-            ${homeTeam} vs ${awayTeam}
-          </td>
+          <td style="padding:14px 0;color:#666;">🆚 Match</td>
+          <td align="right">${homeTeam} vs ${awayTeam}</td>
         </tr>
 
         <tr>
-          <td style="padding:14px 0;color:#666;">
-            📅 Match Date
-          </td>
-          <td align="right">
-            ${matchDate}
-          </td>
+          <td style="padding:14px 0;color:#666;">📅 Match Date</td>
+          <td align="right">${matchDate}</td>
         </tr>
 
         <tr>
-          <td style="padding:14px 0;color:#666;">
-            ⏰ Kickoff Time
-          </td>
-          <td align="right">
-            ${kickoffTime}
-          </td>
+          <td style="padding:14px 0;color:#666;">⏰ Kickoff Time</td>
+          <td align="right">${kickoffTime}</td>
         </tr>
       </table>
 
-      <!-- Summary -->
-      <table width="100%"
-      style="
-        margin-top:35px;
-        background:#faf8f7;
-        border:1px solid #ece7e2;
-        border-radius:12px;
-        padding:30px;">
-
+      <table
+        width="100%"
+        style="
+          margin-top:35px;
+          background:#faf8f7;
+          border:1px solid #ece7e2;
+          border-radius:12px;
+          padding:30px;
+        "
+      >
         <tr>
           <td colspan="2"
-          style="
-            font-size:28px;
-            font-weight:700;
-            color:#243447;
-            padding-bottom:25px;">
+            style="
+              font-size:28px;
+              font-weight:700;
+              color:#243447;
+              padding-bottom:25px;
+            "
+          >
             ⚙ Generation Summary
           </td>
         </tr>
 
         <tr>
-          <td style="padding:14px 0;color:#666;">
-            ⚡ Teams Generated
-          </td>
-          <td align="right">
-            <strong>${teamsGenerated}</strong>
-          </td>
+          <td style="padding:14px 0;color:#666;">⚡ Teams Generated</td>
+          <td align="right"><strong>${teamsGenerated}</strong></td>
         </tr>
 
         <tr>
-          <td style="padding:14px 0;color:#666;">
-            🪙 Coins Consumed
-          </td>
-          <td align="right">
-            <strong>${coinsConsumed}</strong>
-          </td>
+          <td style="padding:14px 0;color:#666;">🪙 Coins Consumed</td>
+          <td align="right"><strong>${coinsConsumed}</strong></td>
         </tr>
 
         <tr>
-          <td style="padding:14px 0;color:#666;">
-            📅 Generated On
-          </td>
-          <td align="right">
-            ${generatedOn}
-          </td>
+          <td style="padding:14px 0;color:#666;">📅 Generated On</td>
+          <td align="right">${generatedOn}</td>
         </tr>
       </table>
 
-      <!-- Attachment -->
-      <table width="100%"
-      style="
-        margin-top:35px;
-        background:#f2faf4;
-        border:1px solid #cfe7d4;
-        border-radius:12px;
-        padding:30px;">
-
+      <table
+        width="100%"
+        style="
+          margin-top:35px;
+          background:#f2faf4;
+          border:1px solid #cfe7d4;
+          border-radius:12px;
+          padding:30px;
+        "
+      >
         <tr>
           <td>
-            <h3 style="
-              margin-top:0;
-              color:#243447;">
+            <h3 style="margin-top:0;color:#243447;">
               📎 ATTACHMENT INCLUDED
             </h3>
 
-            <p style="
-              color:#444;
-              font-size:16px;
-              line-height:30px;">
+            <p
+              style="
+                color:#444;
+                font-size:16px;
+                line-height:30px;
+              "
+            >
               The generated UCT file containing all
               ${teamsGenerated} structured football virtual teams
               has been attached to this email.
             </p>
 
-            <div style="
-              background:#ffffff;
-              border:1px solid #e8e8e8;
-              border-radius:8px;
-              padding:18px;
-              margin-top:20px;">
+            <div
+              style="
+                background:#ffffff;
+                border:1px solid #e8e8e8;
+                border-radius:8px;
+                padding:18px;
+                margin-top:20px;
+              "
+            >
               📄 ${attachmentFileName}
             </div>
           </td>
         </tr>
       </table>
 
-      <!-- My Teams -->
       <div style="margin-top:40px;">
-        <h3 style="color:#243447;">
-          📁 My Teams
-        </h3>
+        <h3 style="color:#243447;">📁 My Teams</h3>
 
-        <p style="
-          color:#444;
-          line-height:32px;
-          font-size:17px;">
-          The same generated teams are also available
-          under <strong>My Teams</strong> within your
-          PICK2WIN account.
+        <p
+          style="
+            color:#444;
+            line-height:32px;
+            font-size:17px;
+          "
+        >
+          The same generated teams are also available under
+          <strong>My Teams</strong> within your PICK2WIN account.
         </p>
       </div>
 
-      <!-- Information -->
-      <table width="100%"
-      style="
-        margin-top:35px;
-        background:#faf8f7;
-        border:1px solid #ece7e2;
-        border-radius:12px;
-        padding:30px;">
-
-        <tr>
-          <td>
-            <h3 style="
-              margin-top:0;
-              color:#243447;">
-              📌 Important Information
-            </h3>
-
-            <ul style="
-              padding-left:25px;
-              color:#444;
-              line-height:36px;">
-              <li>Teams are generated strictly based on your selected configuration.</li>
-              <li>UCT generation for this match has been completed successfully.</li>
-              <li>One coin has been consumed for this generation.</li>
-            </ul>
-          </td>
-        </tr>
-      </table>
-
-      <p style="
-        margin-top:45px;
-        font-size:18px;
-        color:#444;">
+      <p
+        style="
+          margin-top:45px;
+          font-size:18px;
+          color:#444;
+        "
+      >
         Thank you for using PICK2WIN.
       </p>
 
@@ -926,35 +891,6 @@ style="background:#ffffff;border-radius:14px;overflow:hidden;">
 
         <p style="margin:12px 0;color:#444;">
           Where SKILL Matters More.
-        </p>
-      </div>
-
-      <hr style="
-        border:none;
-        border-top:1px solid #eee;
-        margin:45px 0;">
-
-      <div style="line-height:35px;color:#444;">
-        <strong style="font-size:22px;">
-          PICK2WIN Technologies Private Limited
-        </strong>
-
-        <div>Bengaluru, India</div>
-
-        <div>
-          Support:
-          <a href="mailto:support@pick2win.io"
-          style="color:#082b4c;text-decoration:none;">
-            support@pick2win.io
-          </a>
-        </div>
-
-        <p style="
-          color:#999;
-          font-size:13px;
-          margin-top:25px;">
-          © 2026 PICK2WIN Technologies Pvt Ltd.
-          All rights reserved.
         </p>
       </div>
 
@@ -970,7 +906,7 @@ style="background:#ffffff;border-radius:14px;overflow:hidden;">
 </body>
 </html>
 `;
-
+};
 
 
 export default noreplyTransporter;  
