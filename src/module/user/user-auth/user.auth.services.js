@@ -16,18 +16,44 @@ import { sendNoreplyMail, otpEmailHtml, welcomeEmailHtml } from "../../../utils/
 /* ══════════════════════════════════════════
    SIGNUP
 ══════════════════════════════════════════ */
-// export const signupService = async (data) => {
-//   const { fullname, email, mobile, country, date_of_birth, password } = data;
+
+//  export const signupService = async (data) => {
+//   const {
+//     fullName,
+//     fullname,
+//     email,
+//     mobile,
+//     country,
+//     date_of_birth,
+//     password,
+//   } = data;
+
+//   const userFullName = (fullname || fullName || "").trim();
+//   const normalizedEmail = email.trim().toLowerCase();
 //   const normalizedMobile = String(mobile).replace(/\D/g, "").trim();
 
-//   /* ── 1. Age Check ── */
-//   const age = new Date(Date.now() - new Date(date_of_birth)).getUTCFullYear() - 1970;
-//   if (age < 18) throw new Error("You must be at least 18 years old");
+//   /* ── Age Check ── */
+//   const age =
+//     new Date(Date.now() - new Date(date_of_birth)).getUTCFullYear() - 1970;
 
-//   /* ── 2. Duplicate Check ── */
+//   if (age < 18) {
+//     throw new Error("You must be at least 18 years old");
+//   }
+
+//   /* ── Already Registered Check ── */
 //   const [[[emailUser]], [[mobileUser]]] = await Promise.all([
-//     db.execute(`SELECT id, account_status FROM users WHERE email = ?`,  [email]),
-//     db.execute(`SELECT id, account_status FROM users WHERE mobile = ?`, [normalizedMobile]),
+//     db.execute(
+//       `SELECT id, account_status
+//        FROM users
+//        WHERE email = ?`,
+//       [normalizedEmail]
+//     ),
+//     db.execute(
+//       `SELECT id, account_status
+//        FROM users
+//        WHERE mobile = ?`,
+//       [normalizedMobile]
+//     ),
 //   ]);
 
 //   if (emailUser) {
@@ -46,70 +72,91 @@ import { sendNoreplyMail, otpEmailHtml, welcomeEmailHtml } from "../../../utils/
 //     );
 //   }
 
-//   /* ── 3. Hash Password ── */
+//   /* ── Hash Password ── */
 //   const hashedPassword = await bcrypt.hash(password, 10);
 
-//   /* ── 4. Generate OTPs ── */
-//   const mobileOtp     = crypto.randomInt(100000, 999999).toString();
-//   const emailOtp      = crypto.randomInt(100000, 999999).toString();
-//   const otpExpiry     = new Date(Date.now() + 5  * 60 * 1000);
+//   /* ── Generate OTPs ── */
+//   const mobileOtp = crypto.randomInt(100000, 999999).toString();
+//   const emailOtp = crypto.randomInt(100000, 999999).toString();
+
+//   const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 //   const sessionExpiry = new Date(Date.now() + 15 * 60 * 1000);
 
-//   /* ── 5. Save signup session ── */
+//   /* ── Create or Update Signup Session ── */
 //   await db.execute(
-//     `INSERT INTO signup_sessions
-//        (fullname, email, mobile, country, date_of_birth, password,
-//         mobile_otp, mobile_otp_expiry,
-//         email_otp,  email_otp_expiry,
-//         mobile_verified, email_verified, expires_at)
-//      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
-//      ON DUPLICATE KEY UPDATE
-//        mobile_otp         = VALUES(mobile_otp),
-//        mobile_otp_expiry  = VALUES(mobile_otp_expiry),
-//        email_otp          = VALUES(email_otp),
-//        email_otp_expiry   = VALUES(email_otp_expiry),
-//        mobile_verified    = 0,
-//        email_verified     = 0,
-//        expires_at         = VALUES(expires_at)`,
+//     `
+//     INSERT INTO signup_sessions
+//     (
+//       fullname,
+//       email,
+//       mobile,
+//       country,
+//       date_of_birth,
+//       password,
+//       mobile_otp,
+//       mobile_otp_expiry,
+//       email_otp,
+//       email_otp_expiry,
+//       mobile_verified,
+//       email_verified,
+//       expires_at
+//     )
+//     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+
+//     ON DUPLICATE KEY UPDATE
+//       fullname            = VALUES(fullname),
+//       email               = VALUES(email),
+//       country             = VALUES(country),
+//       date_of_birth       = VALUES(date_of_birth),
+//       password            = VALUES(password),
+//       mobile_otp          = VALUES(mobile_otp),
+//       mobile_otp_expiry   = VALUES(mobile_otp_expiry),
+//       email_otp           = VALUES(email_otp),
+//       email_otp_expiry    = VALUES(email_otp_expiry),
+//       mobile_verified     = 0,
+//       email_verified      = 0,
+//       expires_at          = VALUES(expires_at)
+//     `,
 //     [
-//       fullname, email, normalizedMobile, country, date_of_birth, hashedPassword,
-//       mobileOtp, otpExpiry,
-//       emailOtp,  otpExpiry,
+//       userFullName,
+//       normalizedEmail,
+//       normalizedMobile,
+//       country,
+//       date_of_birth,
+//       hashedPassword,
+//       mobileOtp,
+//       otpExpiry,
+//       emailOtp,
+//       otpExpiry,
 //       sessionExpiry,
 //     ]
 //   );
 
-    
+//   /* ── Send Email OTP ── */
+//   await sendNoreplyMail({
+//     to: normalizedEmail,
+//     subject: "Pick2Win — Email Verification OTP",
+//     html: otpEmailHtml(emailOtp, userFullName, 5),
+//   });
 
-//   // /* ── 6. Send email OTP ── */
-//   // await sendNoreplyMail({
-//   //   to:      email,
-//   //   subject: "Pick2Win — Email Verification OTP",
-//   //   html:    otpEmailHtml(emailOtp, "Verify Your Email"),
-//   // });
+//   /* ── Send SMS OTP ── */
+//   await sendSms(
+//     normalizedMobile,
+//     `Your Pick2Win OTP is ${mobileOtp}. Valid for 5 minutes.`
+//   );
 
-// // ── 6. Send OTPs ──
-// await sendNoreplyMail({    
-//   to:      email,
-//   subject: "Pick2Win — Email Verification OTP",
-//   html:    otpEmailHtml(emailOtp, fullname, 5),
-// });
-//  console.log(`✅ Email sent to ${email}`);
-
-// await sendSms(
-//   normalizedMobile,
-//   `Your Pick2Win OTP is ${mobileOtp}. Valid for 5 minutes.`
-// );
-//  console.log(`✅ SMS sent to ${normalizedMobile}`);
 //   return {
 //     success: true,
-//     message: "OTP sent to your mobile and email. Please verify both.",
-//     ...(process.env.NODE_ENV !== "production" && { mobileOtp, emailOtp }),
+//     message:
+//       "OTP sent to your mobile and email. Please verify both.",
+//     ...(process.env.NODE_ENV !== "production" && {
+//       mobileOtp,
+//       emailOtp,
+//     }),
 //   };
-// };  
+// };
 
-
- export const signupService = async (data) => {
+export const signupService = async (data) => {
   const {
     fullName,
     fullname,
@@ -137,7 +184,7 @@ import { sendNoreplyMail, otpEmailHtml, welcomeEmailHtml } from "../../../utils/
     db.execute(
       `SELECT id, account_status
        FROM users
-       WHERE email = ?`,
+       WHERE LOWER(email) = LOWER(?)`,
       [normalizedEmail]
     ),
     db.execute(
@@ -196,18 +243,18 @@ import { sendNoreplyMail, otpEmailHtml, welcomeEmailHtml } from "../../../utils/
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
 
     ON DUPLICATE KEY UPDATE
-      fullname            = VALUES(fullname),
-      email               = VALUES(email),
-      country             = VALUES(country),
-      date_of_birth       = VALUES(date_of_birth),
-      password            = VALUES(password),
-      mobile_otp          = VALUES(mobile_otp),
-      mobile_otp_expiry   = VALUES(mobile_otp_expiry),
-      email_otp           = VALUES(email_otp),
-      email_otp_expiry    = VALUES(email_otp_expiry),
-      mobile_verified     = 0,
-      email_verified      = 0,
-      expires_at          = VALUES(expires_at)
+      fullname          = VALUES(fullname),
+      email             = VALUES(email),
+      country           = VALUES(country),
+      date_of_birth     = VALUES(date_of_birth),
+      password          = VALUES(password),
+      mobile_otp        = VALUES(mobile_otp),
+      mobile_otp_expiry = VALUES(mobile_otp_expiry),
+      email_otp         = VALUES(email_otp),
+      email_otp_expiry  = VALUES(email_otp_expiry),
+      mobile_verified   = 0,
+      email_verified    = 0,
+      expires_at        = VALUES(expires_at)
     `,
     [
       userFullName,
@@ -231,16 +278,15 @@ import { sendNoreplyMail, otpEmailHtml, welcomeEmailHtml } from "../../../utils/
     html: otpEmailHtml(emailOtp, userFullName, 5),
   });
 
-  /* ── Send SMS OTP ── */
-  await sendSms(
-    normalizedMobile,
-    `Your Pick2Win OTP is ${mobileOtp}. Valid for 5 minutes.`
+  /* ── SMS SKIPPED FOR TESTING ── */
+  console.log(
+    `⚠️ SMS skipped for testing. Mobile OTP: ${mobileOtp}`
   );
 
   return {
     success: true,
     message:
-      "OTP sent to your mobile and email. Please verify both.",
+      "Email OTP sent successfully. Mobile SMS skipped for testing.",
     ...(process.env.NODE_ENV !== "production" && {
       mobileOtp,
       emailOtp,
@@ -248,6 +294,7 @@ import { sendNoreplyMail, otpEmailHtml, welcomeEmailHtml } from "../../../utils/
   };
 };
 
+  
 /* ══════════════════════════════════════════
    VERIFY MOBILE OTP
 ══════════════════════════════════════════ */
@@ -609,31 +656,78 @@ export const verifyEmailChangeService = async (userId, otp) => {
   );
 
   return { success: true, message: "Email updated successfully" };
-};
+};  
 
 /* ══════════════════════════════════════════
    FORGOT PASSWORD
 ══════════════════════════════════════════ */
-export const forgotPasswordService = async (email) => {
-  const [[user]] = await db.execute(
-    `SELECT id, email FROM users WHERE email = ? AND account_status != 'deleted'`,
-    [email]
-  );
-  if (!user) throw new Error("No account found with this email");
+// export const forgotPasswordService = async (email) => {
+//   const [[user]] = await db.execute(
+//     `SELECT id, email FROM users WHERE email = ? AND account_status != 'deleted'`,
+//     [email]
+//   );
+//   if (!user) throw new Error("No account found with this email");
 
-  const otp    = crypto.randomInt(100000, 999999).toString();
+//   const otp    = crypto.randomInt(100000, 999999).toString();
+//   const expiry = new Date(Date.now() + 10 * 60 * 1000);
+
+//   await db.execute(
+//     `UPDATE users SET loginotp = ?, loginotpexpires = ? WHERE id = ?`,
+//     [otp, expiry, user.id]
+//   );
+
+//   /* ── Send OTP email ── */
+//   await sendNoreplyMail({
+//     to:      email,
+//     subject: "Pick2Win — Password Reset OTP",
+//     html:    otpEmailHtml(otp, "Reset Your Password"),
+//   });
+
+//   return {
+//     success: true,
+//     message: "OTP sent to your email",
+//     ...(process.env.NODE_ENV !== "production" && { otp }),
+//   };
+// };
+
+ export const forgotPasswordService = async (email) => {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  const [[user]] = await db.execute(
+    `SELECT id, fullname, email
+     FROM users
+     WHERE LOWER(email) = LOWER(?)
+       AND account_status != 'deleted'
+     LIMIT 1`,
+    [normalizedEmail]
+  );
+
+  if (!user) {
+    throw new Error("No account found with this email");
+  }
+
+  const otp = crypto.randomInt(100000, 999999).toString();
   const expiry = new Date(Date.now() + 10 * 60 * 1000);
 
+  console.log("Generated OTP:", otp);
+
   await db.execute(
-    `UPDATE users SET loginotp = ?, loginotpexpires = ? WHERE id = ?`,
+    `UPDATE users
+     SET loginotp = ?, loginotpexpires = ?
+     WHERE id = ?`,
     [otp, expiry, user.id]
   );
 
-  /* ── Send OTP email ── */
+  const html = otpEmailHtml(
+    otp,
+    user.fullname || "User",
+    10
+  );
+
   await sendNoreplyMail({
-    to:      email,
-    subject: "Pick2Win — Password Reset OTP",
-    html:    otpEmailHtml(otp, "Reset Your Password"),
+    to: user.email,
+    subject: `Pick2Win — Password Reset OTP ${otp}`,
+    html,
   });
 
   return {
@@ -643,6 +737,7 @@ export const forgotPasswordService = async (email) => {
   };
 };
 
+ 
 /* ══════════════════════════════════════════
    RESET PASSWORD
 ══════════════════════════════════════════ */
@@ -746,4 +841,4 @@ export const confirmDeleteAccountService = async (userId, otp) => {
   }
 };       
 
-   
+     
