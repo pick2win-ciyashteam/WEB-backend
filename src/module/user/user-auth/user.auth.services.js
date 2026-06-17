@@ -766,59 +766,148 @@ export const resetPasswordService = async (email, otp, newPassword) => {
 /* ══════════════════════════════════════════
    DELETE ACCOUNT
 ══════════════════════════════════════════ */
-// export const deleteAccountService = async (userId) => {
+export const deleteAccountService = async (userId) => {
+  const [[user]] = await db.execute(
+    `SELECT id, email, fullname FROM users WHERE id = ? AND account_status != 'deleted'`,
+    [userId]
+  );
+  if (!user) throw new Error("User not found");
+
+  const otp       = crypto.randomInt(100000, 999999).toString();
+  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  await db.execute(
+    `UPDATE users SET loginotp = ?, loginotpexpires = ? WHERE id = ?`,
+    [otp, otpExpiry, userId]
+  );
+
+  /* ── Send OTP email ── */
+  await sendNoreplyMail({
+    to:      user.email,
+    subject: "Pick2Win — Account Deletion OTP",
+    html:    otpEmailHtml(otp, "Confirm Account Deletion"),
+  });
+
+  return {
+    success: true,
+    message: "OTP sent to your email. Please verify to delete your account.",
+    ...(process.env.NODE_ENV !== "production" && { otp }),
+  };
+};
+
+/* ══════════════════════════════════════════
+   CONFIRM DELETE ACCOUNT
+══════════════════════════════════════════ */
+// export const confirmDeleteAccountService = async (userId, otp) => {
 //   const [[user]] = await db.execute(
-//     `SELECT id, email, fullname FROM users WHERE id = ? AND account_status != 'deleted'`,
+//     `SELECT id, loginotp, loginotpexpires FROM users
+//      WHERE id = ? AND account_status != 'deleted'`,
 //     [userId]
 //   );
-//   if (!user) throw new Error("User not found");
 
-//   const otp       = crypto.randomInt(100000, 999999).toString();
-//   const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+//   if (!user)          throw new Error("User not found");
+//   if (!user.loginotp) throw new Error("OTP not requested. Please request again.");
+//   if (String(user.loginotp) !== String(otp))           throw new Error("Invalid OTP");
+//   if (new Date(user.loginotpexpires) < new Date())     throw new Error("OTP expired. Please request again.");
 
-//   await db.execute(
-//     `UPDATE users SET loginotp = ?, loginotpexpires = ? WHERE id = ?`,
-//     [otp, otpExpiry, userId]
-//   );
+//   const conn = await db.getConnection();
+//   try {
+//     await conn.beginTransaction();
 
-//   /* ── Send OTP email ── */
-//   await sendNoreplyMail({
-//     to:      user.email,
-//     subject: "Pick2Win — Account Deletion OTP",
-//     html:    otpEmailHtml(otp, "Confirm Account Deletion"),
-//   });
+//     await conn.query(
+//       `DELETE utp FROM user_team_players utp
+//        INNER JOIN user_teams ut ON ut.id = utp.user_team_id
+//        WHERE ut.user_id = ?`,
+//       [userId]
+//     );
+//     await conn.query(`DELETE FROM user_teams            WHERE user_id = ?`, [userId]);
+//     await conn.query(`DELETE FROM match_generation_log  WHERE user_id = ?`, [userId]);
+//     await conn.query(
+//       `DELETE FROM signup_sessions WHERE email = (SELECT email FROM users WHERE id = ?)`,
+//       [userId]
+//     );
+//     await conn.query(`DELETE FROM user_subscriptions    WHERE user_id = ?`, [userId]);
+//     await conn.query(`DELETE FROM user_coins            WHERE user_id = ?`, [userId]);
+//     await conn.query(`DELETE FROM users                 WHERE id = ?`,      [userId]);
 
-//   return {
-//     success: true,
-//     message: "OTP sent to your email. Please verify to delete your account.",
-//     ...(process.env.NODE_ENV !== "production" && { otp }),
-//   };
-// };
+//     await conn.commit();
+//     return { success: true, message: "Account deleted successfully" };
 
+//   } catch (err) {
+//     await conn.rollback().catch(() => {});
+//     throw err;
+//   } finally {
+//     conn.release();
+//   }
+// };       
 
-export const deleteAccountService = async (userId) => {
+     export const confirmDeleteAccountService = async (userId, otp) => {
+  const [[user]] = await db.execute(
+    `SELECT id, email, fullname, loginotp, loginotpexpires
+     FROM users
+     WHERE id = ? AND account_status != 'deleted'`,
+    [userId]
+  );
+
+  if (!user)
+    throw new Error("User not found");
+
+  if (!user.loginotp)
+    throw new Error("OTP not requested. Please request again.");
+
+  if (String(user.loginotp) !== String(otp))
+    throw new Error("Invalid OTP");
+
+  if (new Date(user.loginotpexpires) < new Date())
+    throw new Error("OTP expired. Please request again.");
+
+  const email = user.email;
+  const fullname = user.fullname;
+
   const conn = await db.getConnection();
 
   try {
     await conn.beginTransaction();
 
-    /* ── Get User Details Before Deleting ── */
-    const [[user]] = await conn.execute(
-      `SELECT id, fullname, email
-       FROM users
-       WHERE id = ?`,
+    await conn.query(
+      `DELETE utp
+       FROM user_team_players utp
+       INNER JOIN user_teams ut
+         ON ut.id = utp.user_team_id
+       WHERE ut.user_id = ?`,
       [userId]
     );
 
-    if (!user) {
-      throw new Error("User not found");
-    }
+    await conn.query(
+      `DELETE FROM user_teams WHERE user_id = ?`,
+      [userId]
+    );
 
-    /* ── Soft Delete Account ── */
-    await conn.execute(
-      `UPDATE users
-       SET account_status = 'deleted',
-           deleted_at = NOW()
+    await conn.query(
+      `DELETE FROM match_generation_log WHERE user_id = ?`,
+      [userId]
+    );
+
+    await conn.query(
+      `DELETE FROM signup_sessions
+       WHERE email = ?`,
+      [email]
+    );
+
+    await conn.query(
+      `DELETE FROM user_subscriptions
+       WHERE user_id = ?`,
+      [userId]
+    );
+
+    await conn.query(
+      `DELETE FROM user_coins
+       WHERE user_id = ?`,
+      [userId]
+    );
+
+    await conn.query(
+      `DELETE FROM users
        WHERE id = ?`,
       [userId]
     );
@@ -827,22 +916,20 @@ export const deleteAccountService = async (userId) => {
 
     /* ── Send Account Deleted Email ── */
     try {
-      if (user.email) {
-        await sendNoreplyMail({
-          to: user.email,
-          subject: "Account Deleted Successfully - PICK2WIN",
-          html: accountDeletedEmailHtml({
-            fullname: user.fullname || "User",
-            email: user.email,
-            deletionDateTime:
-              new Date().toLocaleString("en-IN"),
-          }),
-        });
+      await sendNoreplyMail({
+        to: email,
+        subject: "Account Deleted Successfully - PICK2WIN",
+        html: accountDeletedEmailHtml({
+          fullname,
+          email,
+          deletionDateTime:
+            new Date().toLocaleString("en-IN"),
+        }),
+      });
 
-        console.log(
-          `✅ Account deletion email sent to ${user.email}`
-        );
-      }
+      console.log(
+        `✅ Account deletion email sent to ${email}`
+      );
     } catch (mailErr) {
       console.error(
         "❌ Account deletion email failed:",
@@ -853,60 +940,12 @@ export const deleteAccountService = async (userId) => {
     return {
       success: true,
       message:
-        "Account deleted successfully and confirmation email sent.",
+        "Account deleted successfully",
     };
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
-};
-
-/* ══════════════════════════════════════════
-   CONFIRM DELETE ACCOUNT
-══════════════════════════════════════════ */
-export const confirmDeleteAccountService = async (userId, otp) => {
-  const [[user]] = await db.execute(
-    `SELECT id, loginotp, loginotpexpires FROM users
-     WHERE id = ? AND account_status != 'deleted'`,
-    [userId]
-  );
-
-  if (!user)          throw new Error("User not found");
-  if (!user.loginotp) throw new Error("OTP not requested. Please request again.");
-  if (String(user.loginotp) !== String(otp))           throw new Error("Invalid OTP");
-  if (new Date(user.loginotpexpires) < new Date())     throw new Error("OTP expired. Please request again.");
-
-  const conn = await db.getConnection();
-  try {
-    await conn.beginTransaction();
-
-    await conn.query(
-      `DELETE utp FROM user_team_players utp
-       INNER JOIN user_teams ut ON ut.id = utp.user_team_id
-       WHERE ut.user_id = ?`,
-      [userId]
-    );
-    await conn.query(`DELETE FROM user_teams            WHERE user_id = ?`, [userId]);
-    await conn.query(`DELETE FROM match_generation_log  WHERE user_id = ?`, [userId]);
-    await conn.query(
-      `DELETE FROM signup_sessions WHERE email = (SELECT email FROM users WHERE id = ?)`,
-      [userId]
-    );
-    await conn.query(`DELETE FROM user_subscriptions    WHERE user_id = ?`, [userId]);
-    await conn.query(`DELETE FROM user_coins            WHERE user_id = ?`, [userId]);
-    await conn.query(`DELETE FROM users                 WHERE id = ?`,      [userId]);
-
-    await conn.commit();
-    return { success: true, message: "Account deleted successfully" };
-
   } catch (err) {
     await conn.rollback().catch(() => {});
     throw err;
   } finally {
     conn.release();
   }
-};       
-
-     
+};
