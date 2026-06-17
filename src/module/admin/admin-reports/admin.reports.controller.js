@@ -1,9 +1,6 @@
 // reports.controller.js
 import db from "../../../config/db.js";
 
-
-import { sendBillingMail, coinPurchaseEmailHtml} from "../../../utils/mailer.js";
-
 export const getDashboardReport = async (req, res) => {
   try {
     /* ── 1. Total Users ── */

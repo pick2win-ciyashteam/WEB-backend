@@ -22,7 +22,7 @@ import {
 
 const router = express.Router();
 
-router.get("/dashboard", getDashboardReport);
+router.get("/overview", getDashboardReport);
 
 router.get("/geography", getGeographyReport);
 
@@ -54,4 +54,4 @@ router.get("/matches/capacity-planning", getCapacityPlanning);
 
 router.get("/matches/match-history",  getMatchHistory);
 
-export default router;  
+export default router;
