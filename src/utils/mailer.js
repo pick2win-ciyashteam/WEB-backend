@@ -268,4 +268,129 @@ export const welcomeEmailHtml = (fullname) => `
 </html>
 `;
 
+export const coinPurchaseEmailHtml = (data) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:20px 0;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;max-width:600px;">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:#0a1628;padding:24px 32px;text-align:center;">
+              <span style="font-size:32px;font-weight:900;">
+                <span style="color:#FF6B00;">PICK</span><span style="color:#FFD700;">2</span><span style="color:#FF6B00;">WIN</span>
+              </span>
+              <br/>
+              <span style="color:#FFD700;font-size:11px;letter-spacing:3px;font-weight:600;">WHERE SKILL MATTERS MORE</span>
+            </td>
+          </tr>
+
+          <!-- Orange line -->
+          <tr><td style="background:#FF6B00;height:4px;"></td></tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px 40px 24px;">
+              <p style="margin:0 0 8px;color:#888;font-size:13px;">Payment receipt</p>
+              <h1 style="margin:0 0 24px;color:#1a1a1a;font-size:26px;font-weight:700;">Your coin purchase is confirmed.</h1>
+
+              <p style="margin:0 0 24px;color:#333;font-size:15px;">Hello <strong>${data.fullname}</strong>,</p>
+              <p style="margin:0 0 24px;color:#333;font-size:15px;">Your coin purchase has been completed successfully.</p>
+
+              <!-- Purchase Details -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;">
+                <tr>
+                  <td style="padding:16px 20px;background:#f8f8f8;border-bottom:1px solid #e0e0e0;">
+                    <strong style="color:#333;font-size:14px;">💳 Purchase Details</strong>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:16px 20px;">
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="color:#666;font-size:13px;padding:6px 0;">🎁 Package</td>
+                        <td style="color:#333;font-size:13px;text-align:right;padding:6px 0;">${data.planName}</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#666;font-size:13px;padding:6px 0;">🪙 Coins Purchased</td>
+                        <td style="color:#22c55e;font-size:13px;font-weight:700;text-align:right;padding:6px 0;">${data.coins}</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#666;font-size:13px;padding:6px 0;">🪙 Available Coin Balance</td>
+                        <td style="color:#333;font-size:13px;text-align:right;padding:6px 0;">${data.currentBalance}</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#666;font-size:13px;padding:6px 0;">💰 Amount Paid</td>
+                        <td style="color:#333;font-size:13px;text-align:right;padding:6px 0;">${data.currency}${data.amount}</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#666;font-size:13px;padding:6px 0;">💳 Transaction ID</td>
+                        <td style="color:#333;font-size:12px;text-align:right;padding:6px 0;">${data.transactionId}</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#666;font-size:13px;padding:6px 0;">📅 Purchase Date</td>
+                        <td style="color:#333;font-size:13px;text-align:right;padding:6px 0;">${data.purchaseDate}</td>
+                      </tr>
+                      <tr>
+                        <td style="color:#666;font-size:13px;padding:6px 0;">⏳ Coin Validity</td>
+                        <td style="color:#22c55e;font-size:13px;font-weight:700;text-align:right;padding:6px 0;">365 Days</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Important Info -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
+                <tr>
+                  <td style="background:#fff8f0;border:1px solid #ffe0c0;border-radius:8px;padding:20px 24px;">
+                    <p style="margin:0 0 12px;color:#cc5500;font-size:14px;font-weight:700;">📌 Important Information</p>
+                    <ul style="margin:0;padding-left:18px;color:#555;font-size:13px;line-height:2;">
+                      <li>Coins can be used for UCT generation.</li>
+                      <li><strong>1 Coin = 1 Match UCT Generation.</strong></li>
+                      <li>New coin purchases refresh the validity of all active coin balances.</li>
+                      <li>Please review the Subscription &amp; Refund Policy available within the platform.</li>
+                    </ul>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 4px;color:#333;font-size:14px;">Thank you for choosing PICK2WIN.</p>
+              <br/>
+              <p style="margin:0 0 4px;color:#333;font-size:14px;font-weight:700;">PICK2WIN Team</p>
+              <p style="margin:0 0 28px;color:#888;font-size:13px;">Where SKILL Matters More.</p>
+
+              <hr style="border:none;border-top:1px solid #eee;margin:0 0 24px;"/>
+
+              <p style="margin:0 0 4px;color:#333;font-size:13px;font-weight:700;">PICK2WIN Technologies Private Limited</p>
+              <p style="margin:0 0 4px;color:#888;font-size:12px;">Bengaluru, India</p>
+              <p style="margin:0 0 20px;color:#888;font-size:12px;">Support: <a href="mailto:support@pick2win.io" style="color:#FF6B00;">support@pick2win.io</a></p>
+
+              <p style="margin:0 0 4px;color:#bbb;font-size:11px;">You're receiving this email because you have a verified PICK2WIN account.</p>
+              <p style="margin:0;color:#bbb;font-size:11px;">© 2026 PICK2WIN Technologies Pvt Ltd. All rights reserved.</p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f8f8f8;border-top:1px solid #eee;padding:16px;text-align:center;">
+              <p style="margin:0;color:#888;font-size:12px;">PICK2WIN · Where SKILL Matters More.</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+
 export default noreplyTransporter;  
