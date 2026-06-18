@@ -439,8 +439,7 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
 };
 
 
-
-export const getMyTeams = async (req, res) => {
+ export const getMyTeams = async (req, res) => {
   try {
     const { matchId } = req.params;
     const userId = req.user.id;
@@ -462,20 +461,18 @@ export const getMyTeams = async (req, res) => {
          ut.role,
          ut.cap,
          ut.selected,
-
          mp.logo AS player_image,
-         mp.is_playing,
-         mp.is_substitute
-
+         CASE
+           WHEN mp.is_playing = 1 THEN 'playing_xi'
+           WHEN mp.is_substitute = 1 THEN 'substitute'
+           ELSE 'unknown'
+         END AS status
        FROM user_teams ut
-
        LEFT JOIN match_players mp
               ON mp.match_id = ut.match_id
              AND mp.player_name = ut.original_name
-
        WHERE ut.match_id = ?
          AND ut.user_id = ?
-
        ORDER BY ut.dt_no, ut.role`,
       [matchId, userId]
     );
@@ -502,15 +499,9 @@ export const getMyTeams = async (req, res) => {
         original_name: player.original_name,
         role: player.role,
         cap: player.cap,
-        selected: player.selected === 1,
+        selected: Boolean(player.selected),
         player_image: player.player_image || null,
-
-        status:
-          Number(player.is_playing) === 1
-            ? "playing_xi"
-            : Number(player.is_substitute) === 1
-            ? "substitute"
-            : "unknown",
+        status: player.status,
       });
     }
 
@@ -527,10 +518,56 @@ export const getMyTeams = async (req, res) => {
       })
     );
 
+    // Review / Preview section
+    const allPlayers = teams.flatMap((t) => t.players);
+
+    const uniqueByName = (arr) =>
+      Object.values(
+        arr.reduce((acc, p) => {
+          acc[p.original_name] = p;
+          return acc;
+        }, {})
+      );
+
+    const preview = {
+      substitutes: uniqueByName(
+        allPlayers.filter(
+          (p) => p.status === "substitute"
+        )
+      ).map((p) => ({
+        name: p.original_name,
+        role: p.role,
+        image: p.player_image,
+      })),
+
+      mandate_yes: uniqueByName(
+        allPlayers.filter(
+          (p) => p.selected === true
+        )
+      ).map((p) => ({
+        name: p.original_name,
+        role: p.role,
+        image: p.player_image,
+      })),
+
+      substitutes_count: uniqueByName(
+        allPlayers.filter(
+          (p) => p.status === "substitute"
+        )
+      ).length,
+
+      mandate_yes_count: uniqueByName(
+        allPlayers.filter(
+          (p) => p.selected === true
+        )
+      ).length,
+    };
+
     return res.status(200).json({
       success: true,
       match_id: Number(matchId),
       total_teams: teams.length,
+      preview,
       teams,
     });
   } catch (error) {
@@ -541,7 +578,7 @@ export const getMyTeams = async (req, res) => {
       message: error.message,
     });
   }
-};
+};  
 
 // export const getMyTeams = async (req, res) => {
 //   try {
@@ -625,6 +662,9 @@ export const getMyTeams = async (req, res) => {
 //     });
 //   }
 // };
+
+
+
 /* ================= GET MY GENERATED MATCHES ================= */
 
 export const getMyGeneratedMatches = async (req, res) => {
