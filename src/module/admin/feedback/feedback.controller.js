@@ -194,13 +194,6 @@ export const getAllFeedbacks = async (req, res) => {
   }
 };
 
-
-
-
-
-
-
- 
 export const getAdminFeedbackPosts = async (req, res) => {
   try {
     const [rows] = await db.execute(
@@ -216,12 +209,6 @@ export const getAdminFeedbackPosts = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
-
-//uct 
-
-
-
 
 export const createQuestion = async (req, res) => {
   try {
@@ -268,16 +255,6 @@ export const getAdminAnswers = async (req, res) => {
   }
 };
 
-// ── USER controllers ───────────────────────────────────────────
-
-// export const getUserQuestions = async (req, res) => {
-//   try {
-//     const result = await s.getUserQuestionsService();
-//     res.json(result);
-//   } catch (err) {
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// };
 
 export const getUserQuestions = async (req, res) => {
   try {
