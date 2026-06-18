@@ -486,13 +486,12 @@ import { sendNoreplyMail, uctTeamsGeneratedEmailHtml, } from "../../../utils/mai
 //   } catch (err) {
 //     console.error("generateTeams error:", err.message);
 //     return res.status(500).json({ success: false, message: err.message });
-//   }
+// }
 // }; 
 
-// .......................................................................
+//====================================================================
 
-
-// export const getMyTeams = async (req, res) => {
+//  export const getMyTeams = async (req, res) => {
 //   try {
 //     const { matchId } = req.params;
 //     const userId = req.user.id;
@@ -574,6 +573,17 @@ import { sendNoreplyMail, uctTeamsGeneratedEmailHtml, } from "../../../utils/mai
 //     });
 //   }
 // };
+
+//
+
+
+
+
+
+
+
+
+
 
 
 export const generateTeams = async (req, res) => {
@@ -869,18 +879,16 @@ export const generateTeams = async (req, res) => {
     const selectedMap = {};
     const mandateMap = {};
 
-    allMapped.forEach((p) => {
-      nameMap[p.name] = p._original || p.name;
+ allMapped.forEach((p) => {
+  const mandate = p.mandate
+    ? String(p.mandate).trim().toUpperCase()
+    : null;
 
-      const mandate = p.mandate
-        ? String(p.mandate).trim().toUpperCase()
-        : null;
+  mandateMap[p.name] = mandate;
 
-      mandateMap[p.name] = mandate;
-
-      // mandate YES పంపిన players కి మాత్రమే selected = 1
-      selectedMap[p.name] = mandate === "YES" ? 1 : 0;
-    });
+  selectedMap[p.name] =
+    mandate === "YES" ? 1 : 0;
+});
 
     /* ── 15. Transaction ── */
     const conn = await db.getConnection();
@@ -942,7 +950,15 @@ export const generateTeams = async (req, res) => {
         const realName = nameMap[player.name] || player.name;
         const capValue = player.cap && player.cap !== "" ? player.cap : null;
         const selected = selectedMap[player.name] || 0;
-        const mandate = mandateMap[player.name] || null;
+
+        // const mandate = mandateMap[player.name] || null;
+
+      const mandate =
+  mandateMap[player.name]
+    ? String(mandateMap[player.name])
+        .trim()
+        .toUpperCase()
+    : null;
 
         console.log(
           `Saving Team ${player.dt_no} | ${realName} | CAP: ${capValue} | SELECTED: ${selected} | MANDATE: ${mandate}`
