@@ -1144,13 +1144,29 @@ status: player.status,
       });
     }
 
-    const teams = Object.entries(teamsMap).map(([dt_no, teamPlayers]) => ({
-      team_no: Number(dt_no),
-      captain: teamPlayers.find((p) => p.cap === "C")?.original_name || null,
-      vice_captain: teamPlayers.find((p) => p.cap === "VC")?.original_name || null,
-      players: teamPlayers,
-    }));
+  const teams = Object.entries(teamsMap).map(([dt_no, teamPlayers]) => {
+  const homeCount = teamPlayers.filter(
+    (p) => p.team_side === "team_a"
+  ).length;
 
+  const awayCount = teamPlayers.filter(
+    (p) => p.team_side === "team_b"
+  ).length;
+
+  return {
+    team_no: Number(dt_no),
+    captain:
+      teamPlayers.find((p) => p.cap === "C")?.original_name || null,
+    vice_captain:
+      teamPlayers.find((p) => p.cap === "VC")?.original_name || null,
+
+    // 👇 Add these
+    home_players: homeCount,
+    away_players: awayCount,
+
+    players: teamPlayers,
+  };
+});
     /* ── Preview calculations ── */
     const allPlayers = teams.flatMap((t) => t.players);
 
