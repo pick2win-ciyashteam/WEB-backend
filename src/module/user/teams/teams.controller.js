@@ -2,7 +2,7 @@
 import db from "../../../config/db.js";
 
 import axios from "axios";
-import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mailer.js";
+import { sendNoreplyMail, uctTeamsGeneratedEmailHtml, } from "../../../utils/mailer.js";
 
 
 //  export const generateTeams = async (req, res) => {
@@ -489,6 +489,93 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
 //   }
 // }; 
 
+// .......................................................................
+
+
+// export const getMyTeams = async (req, res) => {
+//   try {
+//     const { matchId } = req.params;
+//     const userId = req.user.id;
+
+//     if (!matchId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "matchId is required",
+//       });
+//     }
+
+//     const [players] = await db.execute(
+//       `SELECT
+//          ut.id,
+//          ut.match_id,
+//          ut.dt_no,
+//          ut.name,
+//          ut.original_name,
+//          ut.role,
+//          ut.cap,
+//          ut.selected,
+//          mp.logo AS player_image
+//        FROM user_teams ut
+//        LEFT JOIN match_players mp
+//               ON mp.match_id = ut.match_id
+//              AND mp.player_name = ut.original_name
+//        WHERE ut.match_id = ?
+//          AND ut.user_id = ?
+//        ORDER BY ut.dt_no, ut.role`,
+//       [matchId, userId]
+//     );
+
+//     if (!players.length) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "No teams found for this match",
+//       });
+//     }
+
+//     const teamsMap = {};
+
+//     for (const player of players) {
+//       if (!teamsMap[player.dt_no]) {
+//         teamsMap[player.dt_no] = [];
+//       }
+//       teamsMap[player.dt_no].push(player);
+//     }
+
+//     const teams = Object.entries(teamsMap).map(([dt_no, players]) => ({
+//       team_no: Number(dt_no),
+//       captain:
+//         players.find((p) => p.cap === "C")?.original_name || null,
+//       vice_captain:
+//         players.find((p) => p.cap === "VC")?.original_name || null,
+//       players: players.map((p) => ({
+//         id: p.id,
+//         match_id: p.match_id,
+//         dt_no: p.dt_no,
+//         name: p.name,
+//         original_name: p.original_name,
+//         role: p.role,
+//         cap: p.cap,
+//         selected: p.selected === 1,
+//         player_image: p.player_image || null,
+//       })),
+//     }));
+
+//     return res.status(200).json({
+//       success: true,
+//       match_id: Number(matchId),
+//       total_teams: teams.length,
+//       teams,
+//     });
+//   } catch (error) {
+//     console.error("getMyTeams Error:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
+
+
 export const generateTeams = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -963,7 +1050,7 @@ export const generateTeams = async (req, res) => {
   }
 };
 
- export const getMyTeams = async (req, res) => {
+export const getMyTeams = async (req, res) => {
   try {
     const { matchId } = req.params;
     const userId = req.user.id;
@@ -1020,27 +1107,32 @@ export const generateTeams = async (req, res) => {
       }
 
       teamsMap[player.dt_no].push({
-        id:                 player.id,
-        match_id:           player.match_id,
-        dt_no:              player.dt_no,
-        name:               player.name,
-        original_name:      player.original_name,
-        role:               player.role,
-        cap:                player.cap    || null,
-        selected:           player.selected === 1,
-        mandate:            player.mandate ? player.mandate.toLowerCase() : null,
-        team_side:          player.team_side || null,
-        provider_player_id: player.provider_player_id || null,
-        player_image:       player.player_image || null,
-        status:             player.status,
+        id: player.id,
+        match_id: player.match_id,
+        dt_no: player.dt_no,
+        name: player.name,
+        original_name: player.original_name,
+        role: player.role,
+        cap: player.cap || null,
+
+        // selected:           player.selected === 1,
+
+       selected: Boolean(player.selected),
+mandate: player.mandate
+  ? String(player.mandate).trim().toLowerCase()
+  : null,
+team_side: player.team_side || null,
+provider_player_id: player.provider_player_id || null,
+player_image: player.player_image || null,
+status: player.status,
       });
     }
 
     const teams = Object.entries(teamsMap).map(([dt_no, teamPlayers]) => ({
-      team_no:      Number(dt_no),
-      captain:      teamPlayers.find((p) => p.cap === "C")?.original_name  || null,
+      team_no: Number(dt_no),
+      captain: teamPlayers.find((p) => p.cap === "C")?.original_name || null,
       vice_captain: teamPlayers.find((p) => p.cap === "VC")?.original_name || null,
-      players:      teamPlayers,
+      players: teamPlayers,
     }));
 
     /* ── Preview calculations ── */
@@ -1054,12 +1146,33 @@ export const generateTeams = async (req, res) => {
         }, {})
       );
 
-    const substitutes        = uniqueByName(allPlayers.filter((p) => p.selected === true));
-    const mandateYes         = uniqueByName(allPlayers.filter((p) => p.mandate === "yes"));
-    const mandateNo          = uniqueByName(allPlayers.filter((p) => p.mandate === "no"));
-    const captainPlayers     = uniqueByName(allPlayers.filter((p) => p.cap === "C"));
+    // const substitutes        = uniqueByName(allPlayers.filter((p) => p.selected === true));
+
+    const substitutes = uniqueByName(
+      allPlayers.filter(
+        (p) => p.status === "substitute"
+      )
+    );
+
+    // const mandateYes         = uniqueByName(allPlayers.filter((p) => p.mandate === "yes"));
+
+    const mandateYes = uniqueByName(
+      allPlayers.filter(
+        (p) => p.mandate?.toLowerCase() === "yes"
+      )
+    );
+
+    // const mandateNo          = uniqueByName(allPlayers.filter((p) => p.mandate === "no"));
+
+    const mandateNo = uniqueByName(
+      allPlayers.filter(
+        (p) => p.mandate?.toLowerCase() === "no"
+      )
+    );
+
+    const captainPlayers = uniqueByName(allPlayers.filter((p) => p.cap === "C"));
     const viceCaptainPlayers = uniqueByName(allPlayers.filter((p) => p.cap === "VC"));
-    const cvcPlayers         = uniqueByName(allPlayers.filter((p) => p.cap === "CVC"));
+    const cvcPlayers = uniqueByName(allPlayers.filter((p) => p.cap === "CVC"));
 
     /* unique captaincy pool */
     const captaincyPool = uniqueByName(
@@ -1069,55 +1182,55 @@ export const generateTeams = async (req, res) => {
     const preview = {
       substitutes_count: substitutes.length,
       mandate_yes_count: mandateYes.length,
-      mandate_no_count:  mandateNo.length,
-      captaincy_count:   captaincyPool.length,
+      mandate_no_count: mandateNo.length,
+      captaincy_count: captaincyPool.length,
 
       substitutes: substitutes.map((p) => ({
-        name:  p.original_name,
-        role:  p.role,
+        name: p.original_name,
+        role: p.role,
         image: p.player_image,
-        side:  p.team_side,
+        side: p.team_side,
       })),
 
       mandate_yes: mandateYes.map((p) => ({
-        name:  p.original_name,
-        role:  p.role,
+        name: p.original_name,
+        role: p.role,
         image: p.player_image,
-        side:  p.team_side,
+        side: p.team_side,
       })),
 
       mandate_no: mandateNo.map((p) => ({
-        name:  p.original_name,
-        role:  p.role,
+        name: p.original_name,
+        role: p.role,
         image: p.player_image,
-        side:  p.team_side,
+        side: p.team_side,
       })),
 
       captains: captainPlayers.map((p) => ({
-        name:  p.original_name,
-        role:  p.role,
+        name: p.original_name,
+        role: p.role,
         image: p.player_image,
-        side:  p.team_side,
+        side: p.team_side,
       })),
 
       vice_captains: viceCaptainPlayers.map((p) => ({
-        name:  p.original_name,
-        role:  p.role,
+        name: p.original_name,
+        role: p.role,
         image: p.player_image,
-        side:  p.team_side,
+        side: p.team_side,
       })),
 
       cvc_players: cvcPlayers.map((p) => ({
-        name:  p.original_name,
-        role:  p.role,
+        name: p.original_name,
+        role: p.role,
         image: p.player_image,
-        side:  p.team_side,
+        side: p.team_side,
       })),
     };
 
     return res.status(200).json({
-      success:     true,
-      match_id:    Number(matchId),
+      success: true,
+      match_id: Number(matchId),
       total_teams: teams.length,
       preview,
       teams,
@@ -1132,89 +1245,6 @@ export const generateTeams = async (req, res) => {
   }
 };
 
-
-// export const getMyTeams = async (req, res) => {
-//   try {
-//     const { matchId } = req.params;
-//     const userId = req.user.id;
-
-//     if (!matchId) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "matchId is required",
-//       });
-//     }
-
-//     const [players] = await db.execute(
-//       `SELECT
-//          ut.id,
-//          ut.match_id,
-//          ut.dt_no,
-//          ut.name,
-//          ut.original_name,
-//          ut.role,
-//          ut.cap,
-//          ut.selected,
-//          mp.logo AS player_image
-//        FROM user_teams ut
-//        LEFT JOIN match_players mp
-//               ON mp.match_id = ut.match_id
-//              AND mp.player_name = ut.original_name
-//        WHERE ut.match_id = ?
-//          AND ut.user_id = ?
-//        ORDER BY ut.dt_no, ut.role`,
-//       [matchId, userId]
-//     );
-
-//     if (!players.length) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "No teams found for this match",
-//       });
-//     }
-
-//     const teamsMap = {};
-
-//     for (const player of players) {
-//       if (!teamsMap[player.dt_no]) {
-//         teamsMap[player.dt_no] = [];
-//       }
-//       teamsMap[player.dt_no].push(player);
-//     }
-
-//     const teams = Object.entries(teamsMap).map(([dt_no, players]) => ({
-//       team_no: Number(dt_no),
-//       captain:
-//         players.find((p) => p.cap === "C")?.original_name || null,
-//       vice_captain:
-//         players.find((p) => p.cap === "VC")?.original_name || null,
-//       players: players.map((p) => ({
-//         id: p.id,
-//         match_id: p.match_id,
-//         dt_no: p.dt_no,
-//         name: p.name,
-//         original_name: p.original_name,
-//         role: p.role,
-//         cap: p.cap,
-//         selected: p.selected === 1,
-//         player_image: p.player_image || null,
-//       })),
-//     }));
-
-//     return res.status(200).json({
-//       success: true,
-//       match_id: Number(matchId),
-//       total_teams: teams.length,
-//       teams,
-//     });
-//   } catch (error) {
-//     console.error("getMyTeams Error:", error);
-//     return res.status(500).json({
-//       success: false,
-//       message: error.message,
-//     });
-//   }
-// };
 
 
 /* ================= GET MY GENERATED MATCHES ================= */
@@ -1359,5 +1389,4 @@ export const getTeamPlayers = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-  
- 
+
