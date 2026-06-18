@@ -293,9 +293,9 @@ allMapped.forEach((p) => {
     : null;
 
   // mandateMap[p.name] = mandate;
-
-  // mandateMap లో lowercase చేయండి
-mandateMap[p.name] = p.mandate ? p.mandate.toLowerCase() : null;
+ mandateMap[p.name] = p.mandate
+  ? String(p.mandate).trim().toUpperCase()
+  : null;
 
   // YES players ki selected = 1
   selectedMap[p.name] =
