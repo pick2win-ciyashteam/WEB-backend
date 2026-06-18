@@ -23,16 +23,6 @@ import db from "../../../config/db.js";
   return { success: true, data: questions };
 };
 
-// export const getUserQuestionsService = async () => {
-//   const [questions] = await db.execute(
-//     `SELECT id, question, hint, question_type, is_mandatory, sort_order
-//      FROM uct_questions ORDER BY sort_order ASC`
-//   );
-
-//   return { success: true, data: questions };
-// };
-
-
 export const getUserQuestionsService = async (userId) => {
   const [questions] = await db.execute(
     `SELECT id, question, hint, question_type, is_mandatory, sort_order
@@ -90,6 +80,31 @@ export const getAdminAnswersService = async () => {
 
 // ── USER services ──────────────────────────────────────────────
 
+export const submitAnswersService = async (userId, data) => {
+  const { answers } = data;
+
+  if (!answers || typeof answers !== 'object' || Array.isArray(answers))
+    throw new Error("answers required");
+
+  if (Object.keys(answers).length === 0)
+    throw new Error("answers cannot be empty");
+
+  const [existing] = await db.execute(
+    `SELECT id FROM uct_answers WHERE user_id = ?`,
+    [userId]
+  );
+
+  if (existing.length > 0) {
+    return { success: false, already_submitted: true, message: "You have already submitted feedback" };
+  }
+
+  await db.execute(
+    `INSERT INTO uct_answers (user_id, answers) VALUES (?, ?)`,
+    [userId, JSON.stringify(answers)]
+  );
+
+  return { success: true, already_submitted: false, message: "Feedback submitted successfully" };
+};
 
 
 // export const submitAnswersService = async (userId, data) => {
@@ -118,29 +133,11 @@ export const getAdminAnswersService = async () => {
 //   return { success: true, message: "Feedback submitted successfully" };
 // };
 
+// export const getUserQuestionsService = async () => {
+//   const [questions] = await db.execute(
+//     `SELECT id, question, hint, question_type, is_mandatory, sort_order
+//      FROM uct_questions ORDER BY sort_order ASC`
+//   );
 
-export const submitAnswersService = async (userId, data) => {
-  const { answers } = data;
-
-  if (!answers || typeof answers !== 'object' || Array.isArray(answers))
-    throw new Error("answers required");
-
-  if (Object.keys(answers).length === 0)
-    throw new Error("answers cannot be empty");
-
-  const [existing] = await db.execute(
-    `SELECT id FROM uct_answers WHERE user_id = ?`,
-    [userId]
-  );
-
-  if (existing.length > 0) {
-    return { success: false, already_submitted: true, message: "You have already submitted feedback" };
-  }
-
-  await db.execute(
-    `INSERT INTO uct_answers (user_id, answers) VALUES (?, ?)`,
-    [userId, JSON.stringify(answers)]
-  );
-
-  return { success: true, already_submitted: false, message: "Feedback submitted successfully" };
-};
+//   return { success: true, data: questions };
+// };

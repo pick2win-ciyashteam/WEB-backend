@@ -259,6 +259,35 @@ export const getMatchesBySeriesId = async (req, res) => {
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
-};        
+}; 
+
+
+export const getVisibleLeagues = async (req, res) => {
+  try {
+ 
+    const [leagues] = await db.execute(
+      `SELECT id, name, region, tier, matches_30d
+       FROM leagues_catalog
+       WHERE is_visible = 1
+       ORDER BY tier ASC, name ASC`
+    );
+ 
+    return res.status(200).json({
+      success: true,
+      total: leagues.length,
+      leagues: leagues.map((l) => ({
+        id:          l.id,
+        name:        l.name,
+        region:      l.region,
+        tier:        l.tier,
+        matches_30d: Number(l.matches_30d || 0),
+      })),
+    });
+ 
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+ 
 
   
