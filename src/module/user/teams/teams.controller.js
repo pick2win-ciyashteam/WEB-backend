@@ -436,10 +436,9 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
     console.error("generateTeams error:", err.message);
     return res.status(500).json({ success: false, message: err.message });
   }
-};
+}; 
 
-
- export const getMyTeams = async (req, res) => {
+export const getMyTeams = async (req, res) => {
   try {
     const { matchId } = req.params;
     const userId = req.user.id;
@@ -461,6 +460,9 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
          ut.role,
          ut.cap,
          ut.selected,
+         ut.mandate,
+         ut.team_side,
+         ut.provider_player_id,
          mp.logo AS player_image,
          CASE
            WHEN mp.is_playing = 1 THEN 'playing_xi'
@@ -484,6 +486,7 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
       });
     }
 
+    /* ── Build teams ── */
     const teamsMap = {};
 
     for (const player of players) {
@@ -498,27 +501,30 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
         name: player.name,
         original_name: player.original_name,
         role: player.role,
-        cap: player.cap,
+        cap: player.cap || null,
         selected: Boolean(player.selected),
+        mandate: player.mandate || null,
+        team_side: player.team_side,
+        provider_player_id: player.provider_player_id,
         player_image: player.player_image || null,
         status: player.status,
       });
     }
 
     const teams = Object.entries(teamsMap).map(
-      ([dt_no, players]) => ({
+      ([dt_no, teamPlayers]) => ({
         team_no: Number(dt_no),
         captain:
-          players.find((p) => p.cap === "C")
+          teamPlayers.find((p) => p.cap === "C")
             ?.original_name || null,
         vice_captain:
-          players.find((p) => p.cap === "VC")
+          teamPlayers.find((p) => p.cap === "VC")
             ?.original_name || null,
-        players,
+        players: teamPlayers,
       })
     );
 
-    // Review / Preview section
+    /* ── Preview ── */
     const allPlayers = teams.flatMap((t) => t.players);
 
     const uniqueByName = (arr) =>
@@ -529,38 +535,97 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
         }, {})
       );
 
+    // substitutes
+    const substitutes = uniqueByName(
+      allPlayers.filter(
+        (p) => p.status === "substitute"
+      )
+    );
+
+    // mandate YES
+    // currently DB stores selected=true
+    const mandateYes = uniqueByName(
+      allPlayers.filter(
+        (p) => p.selected === true
+      )
+    );
+
+    // mandate NO
+    const mandateNo = uniqueByName(
+      allPlayers.filter(
+        (p) =>
+          p.mandate &&
+          String(p.mandate).toUpperCase() === "NO"
+      )
+    );
+
+    // captains
+    const captainPlayers = uniqueByName(
+      allPlayers.filter((p) => p.cap === "C")
+    );
+
+    // vice captains
+    const viceCaptainPlayers = uniqueByName(
+      allPlayers.filter((p) => p.cap === "VC")
+    );
+
+    // cvc players
+    const cvcPlayers = uniqueByName(
+      allPlayers.filter((p) => p.cap === "CVC")
+    );
+
+    const captaincyCount =
+      captainPlayers.length +
+      viceCaptainPlayers.length +
+      cvcPlayers.length;
+
     const preview = {
-      substitutes: uniqueByName(
-        allPlayers.filter(
-          (p) => p.status === "substitute"
-        )
-      ).map((p) => ({
+      substitutes_count: substitutes.length,
+      mandate_yes_count: mandateYes.length,
+      mandate_no_count: mandateNo.length,
+      captaincy_count: captaincyCount,
+
+      substitutes: substitutes.map((p) => ({
         name: p.original_name,
         role: p.role,
         image: p.player_image,
+        side: p.team_side,
       })),
 
-      mandate_yes: uniqueByName(
-        allPlayers.filter(
-          (p) => p.selected === true
-        )
-      ).map((p) => ({
+      mandate_yes: mandateYes.map((p) => ({
         name: p.original_name,
         role: p.role,
         image: p.player_image,
+        side: p.team_side,
       })),
 
-      substitutes_count: uniqueByName(
-        allPlayers.filter(
-          (p) => p.status === "substitute"
-        )
-      ).length,
+      mandate_no: mandateNo.map((p) => ({
+        name: p.original_name,
+        role: p.role,
+        image: p.player_image,
+        side: p.team_side,
+      })),
 
-      mandate_yes_count: uniqueByName(
-        allPlayers.filter(
-          (p) => p.selected === true
-        )
-      ).length,
+      captains: captainPlayers.map((p) => ({
+        name: p.original_name,
+        role: p.role,
+        image: p.player_image,
+        side: p.team_side,
+      })),
+
+      vice_captains: viceCaptainPlayers.map((p) => ({
+        name: p.original_name,
+        role: p.role,
+        image: p.player_image,
+        side: p.team_side,
+      })),
+
+      cvc_players: cvcPlayers.map((p) => ({
+        name: p.original_name,
+        role: p.role,
+        image: p.player_image,
+        side: p.team_side,
+      })),
     };
 
     return res.status(200).json({
@@ -578,7 +643,7 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
       message: error.message,
     });
   }
-};  
+};
 
 // export const getMyTeams = async (req, res) => {
 //   try {
