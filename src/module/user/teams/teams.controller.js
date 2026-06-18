@@ -192,12 +192,26 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
 
     /* ── 11. Build UCT payload ── */
     const buildUCTPlayer = (p) => {
-      const obj = { name: p.name, role: p.role };
-      const cap = resolveCapForUCT(p.captain);
-      if (cap) obj.captain = cap;
-      if (p.mandate) obj.mandate = p.mandate; // ✅ mandate UCT కి పంపాలి
-      return obj;
-    };
+  const obj = {
+    name: p.name,
+    role: p.role,
+  };
+
+  const cap = resolveCapForUCT(p.captain);
+
+  if (cap) {
+    obj.captain = cap;
+  }
+
+  // ✅ UCT API expects YES / NO in uppercase
+  if (p.mandate) {
+    obj.mandate = String(p.mandate)
+      .trim()
+      .toUpperCase();
+  }
+
+  return obj;
+};
 
     const uctPayload = {
       team_a: uctTeamA.map(buildUCTPlayer),
@@ -266,18 +280,24 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
         message: "UCT API returned no teams",
       });
     }
+ /* ── 13. Build name map + selected map + mandate map ── */
+const nameMap = {};
+const selectedMap = {};
+const mandateMap = {};
 
-    /* ── 13. Build name map + selected map ── */
-    const nameMap = {};
-    const selectedMap = {};
+allMapped.forEach((p) => {
+  nameMap[p.name] = p._original || p.name;
 
-    allMapped.forEach((p) => {
-      nameMap[p.name] = p._original || p.name;
+  const mandate = p.mandate
+    ? String(p.mandate).trim().toUpperCase()
+    : null;
 
-      // ✅ mandate: "yes" పంపిన players కి మాత్రమే selected = 1
-      selectedMap[p.name] =
-        String(p.mandate || "").trim().toLowerCase() === "yes" ? 1 : 0;
-    });
+  mandateMap[p.name] = mandate;
+
+  // YES players ki selected = 1
+  selectedMap[p.name] =
+    mandate === "YES" ? 1 : 0;
+});
 
     /* ── 14. Transaction ── */
     const conn = await db.getConnection();
@@ -334,25 +354,53 @@ import { sendNoreplyMail,  uctTeamsGeneratedEmailHtml,} from "../../../utils/mai
         [match_id, userId]
       );
 
-      /* Store teams */
-      for (const player of uctTeams) {
-        const realName = nameMap[player.name] || player.name;
-        const capValue = player.cap && player.cap !== "" ? player.cap : null;
+    /* Store teams */
+for (const player of uctTeams) {
+  const realName =
+    nameMap[player.name] || player.name;
 
-        // ✅ mandate: "yes" పంపిన players కి selected = 1, మిగతావాళ్ళకి 0
-        const selected = selectedMap[player.name] || 0;
+  const capValue =
+    player.cap && player.cap !== ""
+      ? player.cap
+      : null;
 
-        console.log(
-          `Saving Team ${player.dt_no} | ${realName} | CAP: ${capValue} | SELECTED: ${selected}`
-        );
+  const selected =
+    selectedMap[player.name] || 0;
 
-        await conn.query(
-          `INSERT INTO user_teams
-           (match_id, user_id, dt_no, name, role, cap, original_name, selected)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [match_id, userId, player.dt_no, player.name, player.role, capValue, realName, selected]
-        );
-      }
+  const mandate =
+    mandateMap[player.name] || null;
+
+  console.log(
+    `Saving Team ${player.dt_no} | ${realName} | CAP:${capValue} | SELECTED:${selected} | MANDATE:${mandate}`
+  );
+
+  await conn.query(
+    `INSERT INTO user_teams
+     (
+       match_id,
+       user_id,
+       dt_no,
+       name,
+       role,
+       cap,
+       original_name,
+       selected,
+       mandate
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      match_id,
+      userId,
+      player.dt_no,
+      player.name,
+      player.role,
+      capValue,
+      realName,
+      selected,
+      mandate,
+    ]
+  );
+}
 
       /* Generation log */
       const totalTeams = [...new Set(uctTeams.map((p) => p.dt_no))].length;
@@ -872,5 +920,5 @@ export const getTeamPlayers = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
+  
  
