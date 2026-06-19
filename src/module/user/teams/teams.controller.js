@@ -496,15 +496,6 @@ import { sendNoreplyMail, uctTeamsGeneratedEmailHtml, } from "../../../utils/mai
 //
 
 
-
-
-
-
-
-
-
-
-
 export const generateTeams = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -691,7 +682,7 @@ export const generateTeams = async (req, res) => {
     const startTime = Date.now();
     let uctTeams = [];
 
-    try {  
+    try {
       const response = await axios.post(
         `${process.env.UCT_API}/football/teams`,
         uctPayload,
