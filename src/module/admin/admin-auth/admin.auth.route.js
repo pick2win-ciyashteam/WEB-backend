@@ -12,11 +12,11 @@ router.post("/login",                adminLimiter, v.adminLogin,   c.adminLogin)
 router.post("/create-admin",       adminLimiter, adminAuth(["super_admin"]), v.createAdmin,  c.createAdmin);
 router.get("/get-admins",           adminLimiter, adminAuth(["super_admin"]),                 c.getAdmins);
 router.get("/get-admin-by-id/:id",   adminLimiter, adminAuth(["super_admin"]),                 c.getAdminById);
-router.put("/update-admin/:id",    adminLimiter, adminAuth(["super_admin"]), v.updateAdmin,  c.updateAdmin);
+router.patch("/update-admin/:id",    adminLimiter, adminAuth(["super_admin"]), v.updateAdmin,  c.updateAdmin);
 
 router.post("/setup-2fa", adminAuth(["super_admin","manager","support"]), c.setup2FA);
 router.post("/verify-2fa", adminAuth(["super_admin","manager","support"]), c.verify2FA);
+router.post("/logout", adminLimiter, adminAuth(["super_admin", "manager", "support"]), c.logout);
  
- 
-  
-export default router;  
+    
+export default router;    

@@ -1,7 +1,7 @@
-import bcrypt from "bcryptjs";
-import jwt    from "jsonwebtoken";
-import db     from "../../../config/db.js";
- import speakeasy from "speakeasy";
+import bcrypt    from "bcryptjs";
+import jwt       from "jsonwebtoken";
+import speakeasy from "speakeasy";
+import db        from "../../../config/db.js";
 
 /* ================= ADMIN LOG ================= */
 const logAdmin = async (conn, admin, action, entity, entityId, ip) => {
@@ -20,12 +20,9 @@ const logAdmin = async (conn, admin, action, entity, entityId, ip) => {
   if (result.affectedRows === 0) throw new Error("Failed to write admin log");
 };
 
-
-
 /* ================= LOGIN ================= */
 export const adminLoginService = async ({ email, password, twoFaCode }) => {
 
-  /* ── 1. Fetch Admin ── */
   const [[admin]] = await db.query(
     `SELECT id, name, email, password_hash, role, status, twofa_secret, twofa_enabled
      FROM admin
@@ -36,15 +33,12 @@ export const adminLoginService = async ({ email, password, twoFaCode }) => {
 
   if (!admin) throw new Error("Invalid email or password");
 
-  /* ── 2. Status Check ── */
   if (admin.status === "inactive")
     throw new Error("Your account is inactive. Contact super admin.");
 
-  /* ── 3. Password Check ── */
   const isMatch = await bcrypt.compare(password, admin.password_hash);
   if (!isMatch) throw new Error("Invalid email or password");
 
-  /* ── 4. 2FA Check ── */
   if (admin.twofa_enabled) {
     if (!twoFaCode) {
       return {
@@ -64,7 +58,6 @@ export const adminLoginService = async ({ email, password, twoFaCode }) => {
     if (!verified) throw new Error("Invalid 2FA code");
   }
 
-  /* ── 5. Generate JWT ── */
   const token = jwt.sign(
     {
       id:    admin.id,
@@ -89,57 +82,44 @@ export const adminLoginService = async ({ email, password, twoFaCode }) => {
   };
 };
 
-/* ================= SETUP 2FA ===================*/
-export const setup2FAService = async (adminId) => {
-  const secret = speakeasy.generateSecret({
-    name: `Pick2Win Admin`,
-    length: 20,
-  });
+/* ================= CREATE ADMIN ================= */
+export const createAdmin = async (data, admin, ip) => {
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
 
-  await db.query(
-    `UPDATE admin SET twofa_secret = ? WHERE id = ?`,
-    [secret.base32, adminId]
-  );
+    const [[existing]] = await conn.query(
+      `SELECT id FROM admin WHERE email = ?`,
+      [data.email.toLowerCase()]
+    );
+    if (existing) throw new Error("Admin with this email already exists");
 
-  return {
-    success: true,
-    secret: secret.base32,
-    otpauthUrl: secret.otpauth_url,
-  };
-};
+    const hash = await bcrypt.hash(data.password, 12);
 
-/* ================= VERIFY & ENABLE 2FA ================= */
- export const verify2FAService = async (adminId, token) => {
-  const [[admin]] = await db.query(
-    `SELECT twofa_secret FROM admin WHERE id = ?`,
-    [adminId]
-  );
+    const [result] = await conn.query(
+      `INSERT INTO admin
+         (name, email, password_hash, role, status, created_at)
+       VALUES (?, ?, ?, ?, 'active', NOW())`,
+      [data.name, data.email.toLowerCase(), hash, data.role]
+    );
 
-  if (!admin?.twofa_secret) throw new Error("2FA not set up");
+    if (result.affectedRows === 0) throw new Error("Failed to create admin");
 
-  const expectedToken = speakeasy.totp({
-    secret: admin.twofa_secret,
-    encoding: "base32",
-  });
-  console.log("SERVER EXPECTED TOKEN:", expectedToken);
-  console.log("USER ENTERED TOKEN:", token);
-  console.log("SERVER TIME:", new Date());
+    await logAdmin(conn, admin, "CREATE_ADMIN", "admin", result.insertId, ip);
+    await conn.commit();
 
-  const verified = speakeasy.totp.verify({
-    secret: admin.twofa_secret,
-    encoding: "base32",
-    token,
-    window: 1,
-  });
+    return {
+      success: true,
+      id:      result.insertId,
+      message: "Admin created successfully",
+    };
 
-  if (!verified) throw new Error("Invalid code");
-
-  await db.query(
-    `UPDATE admin SET twofa_enabled = 1 WHERE id = ?`,
-    [adminId]
-  );
-
-  return { success: true, message: "2FA enabled successfully" };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 };
 
 /* ================= GET ALL ADMINS ================= */
@@ -234,4 +214,68 @@ export const updateAdmin = async (id, data, admin, ip) => {
   } finally {
     conn.release();
   }
+};
+
+/* ================= SETUP 2FA ================= */
+export const setup2FAService = async (adminId) => {
+  const secret = speakeasy.generateSecret({
+    name: `Pick2Win Admin`,
+    length: 20,
+  });
+
+  await db.query(
+    `UPDATE admin SET twofa_secret = ? WHERE id = ?`,
+    [secret.base32, adminId]
+  );
+
+  return {
+    success: true,
+    secret: secret.base32,
+    otpauthUrl: secret.otpauth_url,
+  };
+};
+
+/* ================= VERIFY & ENABLE 2FA ================= */
+export const verify2FAService = async (adminId, token) => {
+  const [[admin]] = await db.query(
+    `SELECT twofa_secret FROM admin WHERE id = ?`,
+    [adminId]
+  );
+
+  if (!admin?.twofa_secret) throw new Error("2FA not set up");
+
+  const verified = speakeasy.totp.verify({
+    secret: admin.twofa_secret,
+    encoding: "base32",
+    token,
+    window: 1,
+  });
+
+  if (!verified) throw new Error("Invalid code");
+
+  await db.query(
+    `UPDATE admin SET twofa_enabled = 1 WHERE id = ?`,
+    [adminId]
+  );
+
+  return { success: true, message: "2FA enabled successfully" };
+};
+
+
+/* ================= LOGOUT ================= */
+export const logoutService = async (token, admin) => {
+  if (!token) throw new Error("Token is required");
+
+  const decoded = jwt.decode(token);
+  if (!decoded?.exp) throw new Error("Invalid token");
+
+  const expiresAt = new Date(decoded.exp * 1000);
+
+  await db.query(
+    `INSERT INTO admin_token_blacklist (token, admin_id, expires_at)
+     VALUES (?, ?, ?)`,
+    [token, admin.id, expiresAt]
+  );
+
+  return { success: true, message: "Logged out successfully" };
 };
