@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt    from "jsonwebtoken";
 import db     from "../../../config/db.js";
+ import speakeasy from "speakeasy";
 
 /* ================= ADMIN LOG ================= */
 const logAdmin = async (conn, admin, action, entity, entityId, ip) => {
@@ -19,12 +20,14 @@ const logAdmin = async (conn, admin, action, entity, entityId, ip) => {
   if (result.affectedRows === 0) throw new Error("Failed to write admin log");
 };
 
+
+
 /* ================= LOGIN ================= */
-export const adminLoginService = async ({ email, password }) => {
+export const adminLoginService = async ({ email, password, twoFaCode }) => {
 
   /* ── 1. Fetch Admin ── */
   const [[admin]] = await db.query(
-    `SELECT id, name, email, password_hash, role, status
+    `SELECT id, name, email, password_hash, role, status, twofa_secret, twofa_enabled
      FROM admin
      WHERE email = ?
      LIMIT 1`,
@@ -41,7 +44,27 @@ export const adminLoginService = async ({ email, password }) => {
   const isMatch = await bcrypt.compare(password, admin.password_hash);
   if (!isMatch) throw new Error("Invalid email or password");
 
-  /* ── 4. Generate JWT ── */
+  /* ── 4. 2FA Check ── */
+  if (admin.twofa_enabled) {
+    if (!twoFaCode) {
+      return {
+        success: true,
+        twoFaRequired: true,
+        message: "2FA code required",
+      };
+    }
+
+    const verified = speakeasy.totp.verify({
+      secret: admin.twofa_secret,
+      encoding: "base32",
+      token: twoFaCode,
+      window: 1,
+    });
+
+    if (!verified) throw new Error("Invalid 2FA code");
+  }
+
+  /* ── 5. Generate JWT ── */
   const token = jwt.sign(
     {
       id:    admin.id,
@@ -66,48 +89,57 @@ export const adminLoginService = async ({ email, password }) => {
   };
 };
 
-/* ================= CREATE ADMIN ================= */
-export const createAdmin = async (data, admin, ip) => {
-  const conn = await db.getConnection();
-  try {
-    await conn.beginTransaction();
+/* ================= SETUP 2FA ================= */
+export const setup2FAService = async (adminId) => {
+  const secret = speakeasy.generateSecret({
+    name: `Pick2Win Admin`,
+    length: 20,
+  });
 
-    /* ── 1. Duplicate Check ── */
-    const [[existing]] = await conn.query(
-      `SELECT id FROM admin WHERE email = ?`,
-      [data.email.toLowerCase()]
-    );
-    if (existing) throw new Error("Admin with this email already exists");
+  await db.query(
+    `UPDATE admin SET twofa_secret = ? WHERE id = ?`,
+    [secret.base32, adminId]
+  );
 
-    /* ── 2. Hash Password ── */
-    const hash = await bcrypt.hash(data.password, 12);
+  return {
+    success: true,
+    secret: secret.base32,
+    otpauthUrl: secret.otpauth_url,
+  };
+};
 
-    /* ── 3. Insert Admin ── */
-    const [result] = await conn.query(
-      `INSERT INTO admin
-         (name, email, password_hash, role, status, created_at)
-       VALUES (?, ?, ?, ?, 'active', NOW())`,
-      [data.name, data.email.toLowerCase(), hash, data.role]
-    );
+/* ================= VERIFY & ENABLE 2FA ================= */
+ export const verify2FAService = async (adminId, token) => {
+  const [[admin]] = await db.query(
+    `SELECT twofa_secret FROM admin WHERE id = ?`,
+    [adminId]
+  );
 
-    if (result.affectedRows === 0) throw new Error("Failed to create admin");
+  if (!admin?.twofa_secret) throw new Error("2FA not set up");
 
-    /* ── 4. Log ── */
-    await logAdmin(conn, admin, "CREATE_ADMIN", "admin", result.insertId, ip);
-    await conn.commit();
+  const expectedToken = speakeasy.totp({
+    secret: admin.twofa_secret,
+    encoding: "base32",
+  });
+  console.log("SERVER EXPECTED TOKEN:", expectedToken);
+  console.log("USER ENTERED TOKEN:", token);
+  console.log("SERVER TIME:", new Date());
 
-    return {
-      success: true,
-      id:      result.insertId,
-      message: "Admin created successfully",
-    };
+  const verified = speakeasy.totp.verify({
+    secret: admin.twofa_secret,
+    encoding: "base32",
+    token,
+    window: 1,
+  });
 
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
+  if (!verified) throw new Error("Invalid code");
+
+  await db.query(
+    `UPDATE admin SET twofa_enabled = 1 WHERE id = ?`,
+    [adminId]
+  );
+
+  return { success: true, message: "2FA enabled successfully" };
 };
 
 /* ================= GET ALL ADMINS ================= */

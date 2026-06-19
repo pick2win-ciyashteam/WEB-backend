@@ -24,10 +24,22 @@ export const updateAdmin = (req, res, next) => {
   next();
 };
 
+// export const adminLogin = (req, res, next) => {
+//   const schema = Joi.object({
+//     email:    Joi.string().email().required(),
+//     password: Joi.string().required(),
+//   });
+
+//   const { error } = schema.validate(req.body);
+//   if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+//   next();
+// };
+
 export const adminLogin = (req, res, next) => {
   const schema = Joi.object({
-    email:    Joi.string().email().required(),
-    password: Joi.string().required(),
+    email:     Joi.string().email().required(),
+    password:  Joi.string().required(),
+    twoFaCode: Joi.string().length(6).pattern(/^\d+$/).optional(),
   });
 
   const { error } = schema.validate(req.body);

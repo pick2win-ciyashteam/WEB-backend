@@ -3,7 +3,7 @@ import * as s from  "./admin.auth.service.js"
 const getIp = (req) =>
   req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
 
-/* ================= LOGIN ================= */
+// /* ================= LOGIN ================= */
 export const adminLogin = async (req, res) => {
   try {
     const result = await s.adminLoginService(req.body);
@@ -13,7 +13,7 @@ export const adminLogin = async (req, res) => {
   }
 };
 
-/* ================= CREATE ADMIN ================= */
+// /* ================= CREATE ADMIN ================= */
 export const createAdmin = async (req, res) => {
   try {
     const result = await s.createAdmin(req.body, req.admin, getIp(req));
@@ -22,6 +22,29 @@ export const createAdmin = async (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 };
+
+
+export const setup2FA = async (req, res) => {
+  try {
+    const result = await s.setup2FAService(req.admin.id);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+ export const verify2FA = async (req, res) => {
+  try {
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ success: false, message: "token is required" });
+
+    const result = await s.verify2FAService(req.admin.id, token);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
 
 /* ================= GET ALL ADMINS ================= */
 export const getAdmins = async (req, res) => {

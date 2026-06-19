@@ -14,13 +14,9 @@ router.get("/get-admins",           adminLimiter, adminAuth(["super_admin"]),   
 router.get("/get-admin-by-id/:id",   adminLimiter, adminAuth(["super_admin"]),                 c.getAdminById);
 router.put("/update-admin/:id",    adminLimiter, adminAuth(["super_admin"]), v.updateAdmin,  c.updateAdmin);
 
-router.get("/test-hash", async (req, res) => {
-  const hash = await bcrypt.hash("StrongPass123", 12);
-
-  res.json({
-    password: "StrongPass123",
-    hash
-  });
-});
-
+router.post("/setup-2fa", adminAuth(["super_admin","manager","support"]), c.setup2FA);
+router.post("/verify-2fa", adminAuth(["super_admin","manager","support"]), c.verify2FA);
+ 
+ 
+  
 export default router;  
