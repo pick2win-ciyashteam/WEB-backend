@@ -89,7 +89,7 @@ export const adminLoginService = async ({ email, password, twoFaCode }) => {
   };
 };
 
-/* ================= SETUP 2FA ================= */
+/* ================= SETUP 2FA ===================*/
 export const setup2FAService = async (adminId) => {
   const secret = speakeasy.generateSecret({
     name: `Pick2Win Admin`,
