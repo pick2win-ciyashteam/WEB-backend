@@ -2,7 +2,7 @@
 
  
 
-export const getMySubscriptionService = async (userId) => {
+ export const getMySubscriptionService = async (userId) => {
   const [[subscription]] = await db.query(
     `SELECT
         us.id,
@@ -16,10 +16,24 @@ export const getMySubscriptionService = async (userId) => {
         us.start_date,
         us.expiry_date,
         us.status,
-        us.created_at
+        us.created_at,
+
+        sp.regular_price,
+        sp.offer_price,
+        sp.discount_pct,
+        sp.offer_label,
+        sp.is_offer_active,
+        sp.price_per_coin,
+        sp.currency,
+        sp.currency_symbol,
+        sp.validity_days,
+        sp.is_popular,
+        sp.is_pro
      FROM user_subscriptions us
+     LEFT JOIN subscription_plans sp ON sp.id = us.plan_id
      WHERE us.user_id = ?
        AND us.status = 'active'
+       AND us.expiry_date > NOW()
      ORDER BY us.id DESC
      LIMIT 1`,
     [userId]

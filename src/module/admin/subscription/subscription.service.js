@@ -6,12 +6,12 @@ export const addPlanService = async (data) => {
     name, subtitle, coins, matches, price,
     currency, currency_symbol, validity_days,
     is_popular, is_pro, is_active, sort_order,
+    regular_price, offer_price, discount_pct,
+    offer_label, is_offer_active,
   } = data;
 
-  /* ── auto calculate price_per_coin ── */
   const price_per_coin = (parseFloat(price) / parseInt(coins)).toFixed(4);
 
-  /* ── duplicate check ── */
   const [[existing]] = await db.execute(
     `SELECT id FROM subscription_plans WHERE name = ?`, [name]
   );
@@ -21,37 +21,55 @@ export const addPlanService = async (data) => {
     `INSERT INTO subscription_plans
        (name, subtitle, coins, matches, price, price_per_coin,
         currency, currency_symbol, validity_days,
-        is_popular, is_pro, is_active, sort_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        is_popular, is_pro, is_active, sort_order,
+        regular_price, offer_price, discount_pct,
+        offer_label, is_offer_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name,
-      subtitle        || null,
+      subtitle          || null,
       coins,
       matches,
       price,
       price_per_coin,
-      currency        || "GBP",
-      currency_symbol || "£",
-      validity_days   || 365,
-      is_popular      ?? 0,
-      is_pro          ?? 0,
-      is_active       ?? 1,
-      sort_order      ?? 0,
+      currency          || "GBP",
+      currency_symbol   || "£",
+      validity_days     || 365,
+      is_popular        ?? 0,
+      is_pro            ?? 0,
+      is_active         ?? 1,
+      sort_order        ?? 0,
+      regular_price     || null,
+      offer_price       || null,
+      discount_pct      || null,
+      offer_label       || null,
+      is_offer_active   ?? 0,
     ]
   );
 
-  return {
-    success: true,
-    id:      result.insertId,
-    message: "Plan added successfully",
-  };
+  return { success: true, id: result.insertId, message: "Plan added successfully" };
 };
 
 /* ================= GET ALL PLANS (admin) ================= */
 export const getAllPlansAdminService = async () => {
   const [rows] = await db.execute(
-    `SELECT * FROM subscription_plans
-     ORDER BY sort_order ASC, created_at DESC`
+    `SELECT * FROM subscription_plans ORDER BY sort_order ASC, created_at DESC`
+  );
+  return { success: true, total: rows.length, data: rows };
+};
+
+/* ================= GET ALL PLANS (user) ================= */
+export const getAllPlansUserService = async () => {
+  const [rows] = await db.execute(
+    `SELECT
+       id, name, subtitle, coins, matches, price, price_per_coin,
+       currency, currency_symbol, validity_days,
+       is_popular, is_pro, sort_order,
+       regular_price, offer_price, discount_pct,
+       offer_label, is_offer_active
+     FROM subscription_plans
+     WHERE is_active = 1
+     ORDER BY sort_order ASC`
   );
   return { success: true, total: rows.length, data: rows };
 };
@@ -71,6 +89,8 @@ export const updatePlanService = async (id, data) => {
     "name", "subtitle", "coins", "matches", "price",
     "currency", "currency_symbol", "validity_days",
     "is_popular", "is_pro", "is_active", "sort_order",
+    "regular_price", "offer_price", "discount_pct",
+    "offer_label", "is_offer_active",
   ];
 
   const sanitized = {};
@@ -81,7 +101,6 @@ export const updatePlanService = async (id, data) => {
   if (!Object.keys(sanitized).length)
     throw new Error("No valid fields to update");
 
-  /* ── recalculate price_per_coin if price or coins changed ── */
   if (sanitized.price || sanitized.coins) {
     const [[current]] = await db.execute(
       `SELECT coins, price FROM subscription_plans WHERE id = ?`, [id]
