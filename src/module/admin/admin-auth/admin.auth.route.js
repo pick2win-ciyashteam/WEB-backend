@@ -19,4 +19,4 @@ router.post("/verify-2fa", adminAuth(["super_admin","manager","support"]), c.ver
 router.post("/logout", adminLimiter, adminAuth(["super_admin", "manager", "support"]), c.logout);
  
     
-export default router;    
+export default router;      

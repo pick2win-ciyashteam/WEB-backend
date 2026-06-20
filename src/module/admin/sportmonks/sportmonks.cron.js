@@ -5,6 +5,9 @@ import {
   // syncAllPlayerStatsService,   
 } from "./sportmonks.service.js";
 
+import { cleanExpiredBlacklistTokens } from "../admin-auth/admin.auth.service.js";
+
+
 /* ================= HELPERS ================= */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -222,6 +225,9 @@ const syncLineupStatus = async () => {
   }
 };
 
+
+ 
+
 /* ================= START ALL CRON JOBS ================= */
 export const startCronJobs = () => {
   cron.schedule(SCHEDULES.EVERY_5_MINS,  syncLineups,               { scheduled: true, timezone: "UTC" });
@@ -230,7 +236,7 @@ export const startCronJobs = () => {
   cron.schedule(SCHEDULES.EVERY_5_MINS,  syncLineupStatus,          { scheduled: true, timezone: "UTC" });
   cron.schedule(SCHEDULES.DAILY_2AM_UTC, cleanupOldInactiveMatches, { scheduled: true, timezone: "UTC" });
   cron.schedule("0 0 * * *",             syncSubscriptionExpiry,    { scheduled: true, timezone: "UTC" });
-
+  cron.schedule("0 3 * * *",             cleanExpiredBlacklistTokens, { scheduled: true, timezone: "UTC" })
 
   console.log("✅ [CRON] All jobs registered");
 };   

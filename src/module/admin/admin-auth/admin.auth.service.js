@@ -279,3 +279,18 @@ export const logoutService = async (token, admin) => {
 
   return { success: true, message: "Logged out successfully" };
 };
+
+
+/* ================= CLEAN EXPIRED BLACKLIST TOKENS (CRON) ================= */
+export const cleanExpiredBlacklistTokens = async () => {
+  try {
+    const [result] = await db.query(
+      `DELETE FROM admin_token_blacklist WHERE expires_at < NOW()`
+    );
+    if (result.affectedRows > 0) {
+      console.log(`[Cron] Cleaned ${result.affectedRows} expired blacklist tokens`);
+    }
+  } catch (err) {
+    console.error("[Cron] Blacklist cleanup error:", err.message);
+  }
+};

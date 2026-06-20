@@ -1017,115 +1017,268 @@ export const getUctActivityList = async (req, res) => {
   }
 };
 
-
+ 
 /* ═══════════════════════════════════════════════════
-   1. SUMMARY + INSIGHTS
-   GET /admin/feedback/votes-summary
-   Sections: KPI cards, sentiment insight,
-             How users feel donut, Most-requested changes
+   1. VOTES SURVEY — SUMMARY (Q1–Q9, Q11 aggregated, Q6 top free-text)
+   GET /admin/feedback/votes/summary
    ═══════════════════════════════════════════════════ */
-export const getVotesSummary = async (req, res) => {
+export const getVotesSurveySummary = async (req, res) => {
   try {
 
-    /* ── Total responses + vote breakdown (q1) ── */
     const [[totals]] = await db.execute(
       `SELECT
-         COUNT(*)                                                                          AS total_responses,
-         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'like_uct'      THEN 1 ELSE 0 END) AS like_uct,
-         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'like_changes'  THEN 1 ELSE 0 END) AS want_changes,
-         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'dislike'       THEN 1 ELSE 0 END) AS dislike,
-         AVG(CAST(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q11')) AS DECIMAL(3,1)))          AS avg_rating
+         COUNT(*) AS total_responses,
+         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'like_uct'     THEN 1 ELSE 0 END) AS like_uct,
+         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'like_changes' THEN 1 ELSE 0 END) AS like_changes,
+         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'dislike'      THEN 1 ELSE 0 END) AS dislike,
+         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q4')) = 'very_likely'  THEN 1 ELSE 0 END) AS would_recommend,
+         AVG(CAST(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q11')) AS DECIMAL(3,1)))     AS avg_rating
        FROM uct_answers`
     );
 
     const totalResponses = Number(totals.total_responses);
     const likeUct         = Number(totals.like_uct);
-    const wantChanges      = Number(totals.want_changes);
+    const likeChanges      = Number(totals.like_changes);
     const dislike          = Number(totals.dislike);
-    const sentimentScore   = likeUct - dislike;
+    const wouldRecommend   = Number(totals.would_recommend);
     const avgRating        = totals.avg_rating ? Number(Number(totals.avg_rating).toFixed(1)) : 0;
 
-    const pct = (count) => totalResponses > 0 ? Number(((count / totalResponses) * 100).toFixed(1)) : 0;
+    const pct = (count, base = totalResponses) =>
+      base > 0 ? Number(((count / base) * 100).toFixed(1)) : 0;
 
-    /* ── Last period comparison (likes up/down) ──
-       "Last period" = previous 30-day window before current 30 days */
+    /* ── last-period comparison (prev 30d window vs current 30d) ── */
     const [[lastPeriod]] = await db.execute(
-      `SELECT
-         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'like_uct' THEN 1 ELSE 0 END) AS like_uct
+      `SELECT COUNT(*) AS total
        FROM uct_answers
        WHERE created_at >= DATE_SUB(NOW(), INTERVAL 60 DAY)
          AND created_at <  DATE_SUB(NOW(), INTERVAL 30 DAY)`
     );
-
-    const likesVsLastPeriod = likeUct - Number(lastPeriod.like_uct || 0);
-
-    /* ── Most-requested changes (q2 is a JSON array, from users who want_changes) ──
-       MySQL JSON_TABLE to explode array values into rows */
-    const [changeRows] = await db.execute(
-      `SELECT jt.change_item
-       FROM uct_answers a,
-            JSON_TABLE(
-              a.answers->'$.q2',
-              '$[*]' COLUMNS (change_item VARCHAR(100) PATH '$')
-            ) AS jt
-       WHERE JSON_UNQUOTE(JSON_EXTRACT(a.answers, '$.q1')) = 'like_changes'`
+    const [[currentPeriod]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM uct_answers
+       WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)`
     );
+    const responsesVsLastPeriod = Number(currentPeriod.total) - Number(lastPeriod.total);
 
-    const changeCounts = {};
-    for (const row of changeRows) {
-      changeCounts[row.change_item] = (changeCounts[row.change_item] || 0) + 1;
-    }
-
-    const changeLabels = {
-      more_leagues:        "More leagues / series",
-      faster_generation:   "Faster team generation",
-      better_coins:        "Cheaper coin packs",
-      smarter_selection:   "Smarter team selection",
-      add_sports:          "Add more sports",
-      ui_improvements:     "Website / UI improvements",
-      remove_sub_mandate:  "Remove Sub, Mandate options",
-      custom_players:      "Let me choose my 18-22 players to generate teams",
+    /* ── helper: count single-select option frequencies for a question ── */
+    const countSingleSelect = async (qKey) => {
+      const [rows] = await db.execute(
+        `SELECT
+           JSON_UNQUOTE(JSON_EXTRACT(answers, '$.${qKey}')) AS val,
+           COUNT(*) AS cnt
+         FROM uct_answers
+         WHERE JSON_EXTRACT(answers, '$.${qKey}') IS NOT NULL
+         GROUP BY val
+         ORDER BY cnt DESC`
+      );
+      return rows;
     };
 
-    const maxChangeCount = Math.max(1, ...Object.values(changeCounts));
+    /* ── helper: explode multi-select JSON array question ── */
+    const countMultiSelect = async (qKey, whereClause = "") => {
+      const [rows] = await db.execute(
+        `SELECT jt.val, COUNT(*) AS cnt
+         FROM uct_answers a,
+              JSON_TABLE(
+                a.answers->'$.${qKey}',
+                '$[*]' COLUMNS (val VARCHAR(100) PATH '$')
+              ) AS jt
+         ${whereClause}
+         GROUP BY jt.val
+         ORDER BY cnt DESC`
+      );
+      return rows;
+    };
 
-    const mostRequestedChanges = Object.entries(changeCounts)
-      .sort((a, b) => b[1] - a[1])
-      .map(([key, count]) => ({
-        key,
-        label:        changeLabels[key] || key,
-        users:        count,
-        pct_of_top:   Number(((count / maxChangeCount) * 100).toFixed(1)),
-        pct_of_wantchanges: wantChanges > 0 ? Number(((count / wantChanges) * 100).toFixed(1)) : 0,
-      }));
+    /* ── Q1 — overall feeling (donut) ── */
+    const q1 = {
+      label: "Overall feeling about UCT",
+      like_uct_pct: pct(likeUct),
+      breakdown: [
+        { key: "like_uct",     label: "Like UCT",          count: likeUct,    pct: pct(likeUct) },
+        { key: "like_changes", label: "Like it, want changes", count: likeChanges, pct: pct(likeChanges) },
+        { key: "dislike",      label: "Dislike",           count: dislike,    pct: pct(dislike) },
+      ],
+    };
+
+    /* ── Q2 — most-requested improvements (multi-select) ── */
+    const q2ChangeLabels = {
+      more_leagues:      "More leagues / series",
+      custom_players:     "Let me choose my 18-22 players",
+      add_sports:         "Add more sports",
+      better_coins:       "Better coin packs",
+      ui_improvements:    "Website / UI improvements",
+      remove_sub_mandate: "Remove Sub, Mandate options",
+    };
+    const q2Rows = await countMultiSelect("q2");
+    const q2 = {
+      label: "Most-requested improvements",
+      options: q2Rows.map((r) => ({
+        key:   r.val,
+        label: q2ChangeLabels[r.val] || r.val,
+        count: Number(r.cnt),
+        pct:   pct(Number(r.cnt)),
+      })),
+    };
+
+    /* ── Q3 — how often they use PICK2WIN ── */
+    const q3Labels = {
+      every_matchday: "Every matchday",
+      few_times_week: "A few times a week",
+      very_rare:      "Very rare",
+      only_fifa_wc:   "Only FIFA WC",
+    };
+    const q3Rows = await countSingleSelect("q3");
+    const q3 = {
+      label: "How often they use PICK2WIN",
+      options: q3Rows.map((r) => ({
+        key:   r.val,
+        label: q3Labels[r.val] || r.val,
+        count: Number(r.cnt),
+        pct:   pct(Number(r.cnt)),
+      })),
+    };
+
+    /* ── Q4 — likely to recommend ── */
+    const q4Labels = { very_likely: "Very likely", maybe: "Maybe", unlikely: "Unlikely" };
+    const q4Rows = await countSingleSelect("q4");
+    const q4 = {
+      label: "Likely to recommend",
+      options: q4Rows.map((r) => ({
+        key:   r.val,
+        label: q4Labels[r.val] || r.val,
+        count: Number(r.cnt),
+        pct:   pct(Number(r.cnt)),
+      })),
+    };
+
+    /* ── Q5 — teams needed per match ── */
+    const q5Rows = await countSingleSelect("q5");
+    const q5 = {
+      label: "Teams needed per match",
+      options: q5Rows.map((r) => ({
+        key:   r.val,
+        label: `${r.val} teams`,
+        count: Number(r.cnt),
+        pct:   pct(Number(r.cnt)),
+      })),
+    };
+
+    /* ── Q6 — competitions to add/expand (free text, top requested) ── */
+    const [q6Rows] = await db.execute(
+      `SELECT
+         TRIM(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q6'))) AS val,
+         COUNT(*) AS cnt
+       FROM uct_answers
+       WHERE JSON_EXTRACT(answers, '$.q6') IS NOT NULL
+         AND TRIM(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q6'))) != ''
+       GROUP BY val
+       ORDER BY cnt DESC
+       LIMIT 10`
+    );
+    const q6 = {
+      label: "Competitions to add / expand (free text)",
+      top_requested: q6Rows.map((r) => ({ text: r.val, count: Number(r.cnt) })),
+    };
+
+    /* ── Q7 — which new sport first ── */
+    const q7Labels = {
+      cricket:           "Cricket",
+      basketball:         "Basketball",
+      american_football:  "American football",
+      baseball:           "Baseball",
+      football_only:      "Football only is fine",
+    };
+    const q7Rows = await countSingleSelect("q7");
+    const q7 = {
+      label: "Which new sport first",
+      options: q7Rows.map((r) => ({
+        key:   r.val,
+        label: q7Labels[r.val] || r.val,
+        count: Number(r.cnt),
+        pct:   pct(Number(r.cnt)),
+      })),
+    };
+
+    /* ── Q8 — preferred pricing ── */
+    const q8Labels = {
+      current_coin_packs:    "Current Coin Packs",
+      league_series_packs:    "League / Series basis packs",
+      pay_per_match:           "Pay per match (coins)",
+      monthly_subscription:   "Monthly subscription",
+    };
+    const q8Rows = await countSingleSelect("q8");
+    const q8 = {
+      label: "Preferred pricing",
+      options: q8Rows.map((r) => ({
+        key:   r.val,
+        label: q8Labels[r.val] || r.val,
+        count: Number(r.cnt),
+        pct:   pct(Number(r.cnt)),
+      })),
+    };
+
+    /* ── Q9 — where they mostly play (device) ── */
+    const q9Labels = { mobile_browser: "Mobile browser", desktop: "Desktop" };
+    const q9Rows = await countSingleSelect("q9");
+    const q9 = {
+      label: "Where they mostly play",
+      options: q9Rows.map((r) => ({
+        key:   r.val,
+        label: q9Labels[r.val] || r.val,
+        count: Number(r.cnt),
+        pct:   pct(Number(r.cnt)),
+      })),
+    };
+
+    /* ── Q11 — UCT rating distribution (1-5 stars) ── */
+    const [q11Rows] = await db.execute(
+      `SELECT
+         CAST(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q11')) AS UNSIGNED) AS stars,
+         COUNT(*) AS cnt
+       FROM uct_answers
+       WHERE JSON_EXTRACT(answers, '$.q11') IS NOT NULL
+       GROUP BY stars
+       ORDER BY stars DESC`
+    );
+    const q11 = {
+      label: "UCT rating (1=poor, 5=excellent)",
+      avg_rating: avgRating,
+      distribution: q11Rows.map((r) => ({
+        stars: Number(r.stars),
+        count: Number(r.cnt),
+        pct:   pct(Number(r.cnt)),
+      })),
+    };
 
     return res.status(200).json({
       success: true,
 
       kpis: {
-        feedback_responses: totalResponses,
-        like_uct:    { count: likeUct,      pct: pct(likeUct) },
-        want_changes:{ count: wantChanges,  pct: pct(wantChanges) },
-        dislike:     { count: dislike,      pct: pct(dislike) },
+        total_responses:  totalResponses,
+        avg_uct_rating:   avgRating,
+        like_uct:         { count: likeUct,       pct: pct(likeUct) },
+        would_recommend:  { count: wouldRecommend, pct: pct(wouldRecommend) },
       },
 
       insight: {
-        sentiment_score:        sentimentScore,
-        likes_vs_last_period:   likesVsLastPeriod,
-        trend:                  likesVsLastPeriod >= 0 ? "gaining" : "declining",
-        avg_rating:              avgRating,
+        responses_vs_last_period: responsesVsLastPeriod,
+        like_uct_pct:    pct(likeUct),
+        would_recommend_pct: pct(wouldRecommend),
+        avg_rating:      avgRating,
+        top_ask:         q2.options[0] ? q2.options[0].label : null,
       },
 
-      how_users_feel: {
-        like_uct_pct: pct(likeUct),
-        breakdown: [
-          { label: "Like UCT",      count: likeUct,      pct: pct(likeUct) },
-          { label: "Want changes",  count: wantChanges,  pct: pct(wantChanges) },
-          { label: "Dislike",       count: dislike,      pct: pct(dislike) },
-        ],
-      },
-
-      most_requested_changes: mostRequestedChanges,
+      q1_overall_feeling:        q1,
+      q2_most_requested:         q2,
+      q3_usage_frequency:        q3,
+      q4_recommend_likelihood:   q4,
+      q5_teams_per_match:        q5,
+      q6_competitions_requested: q6,
+      q7_next_sport:             q7,
+      q8_preferred_pricing:      q8,
+      q9_device:                 q9,
+      q11_rating:                q11,
     });
 
   } catch (err) {
@@ -1134,12 +1287,11 @@ export const getVotesSummary = async (req, res) => {
 };
 
 /* ═══════════════════════════════════════════════════
-   2. RECENT FEEDBACK LIST
-   GET /admin/feedback/votes-list?vote=like_uct|like_changes|dislike
+   2. VOTES SURVEY — RECENT SUBMISSIONS LIST (Q10 table)
+   GET /admin/feedback/votes/list?vote=like_uct|like_changes|dislike
                                   &page=1&limit=20
-   Section: Recent feedback table (filterable, paginated)
    ═══════════════════════════════════════════════════ */
-export const getVotesList = async (req, res) => {
+export const getVotesSurveyList = async (req, res) => {
   try {
     const { vote = "", page = 1, limit = 20 } = req.query;
     const limitNum  = Number(limit);
@@ -1162,8 +1314,10 @@ export const getVotesList = async (req, res) => {
          u.fullname,
          u.country,
          JSON_UNQUOTE(JSON_EXTRACT(a.answers, '$.q1'))  AS vote,
-         JSON_UNQUOTE(JSON_EXTRACT(a.answers, '$.q10')) AS comment,
-         CAST(JSON_UNQUOTE(JSON_EXTRACT(a.answers, '$.q11')) AS DECIMAL(3,1)) AS rating
+         CAST(JSON_UNQUOTE(JSON_EXTRACT(a.answers, '$.q11')) AS DECIMAL(3,1)) AS rating,
+         JSON_UNQUOTE(JSON_EXTRACT(a.answers, '$.q3'))  AS usage_frequency,
+         JSON_UNQUOTE(JSON_EXTRACT(a.answers, '$.q9'))  AS device,
+         JSON_UNQUOTE(JSON_EXTRACT(a.answers, '$.q10')) AS comment
        FROM uct_answers a
        JOIN users u ON u.id = a.user_id
        ${whereClause}
@@ -1180,9 +1334,9 @@ export const getVotesList = async (req, res) => {
     );
 
     const voteLabel = {
-      like_uct:      "Like UCT",
-      like_changes:  "Want changes",
-      dislike:       "Dislike",
+      like_uct:     "Like UCT",
+      like_changes: "Want changes",
+      dislike:      "Dislike",
     };
 
     return res.status(200).json({
@@ -1194,16 +1348,18 @@ export const getVotesList = async (req, res) => {
         total_pages: Math.ceil(Number(total) / limitNum),
       },
       filters: { vote },
-      feedback: rows.map((r) => ({
-        id:        r.id,
-        feedback_code: `FB-${r.id}`,
-        fullname:  r.fullname,
-        region:    r.country,
-        vote:      r.vote,
-        vote_label: voteLabel[r.vote] || r.vote,
-        rating:    r.rating ? Number(r.rating) : null,
-        comment:   r.comment,
-        date:      r.created_at,
+      submissions: rows.map((r) => ({
+        id:              r.id,
+        feedback_code:   `FB-${r.id}`,
+        fullname:        r.fullname,
+        country:         r.country,
+        vote:            r.vote,
+        vote_label:      voteLabel[r.vote] || r.vote,
+        rating:          r.rating ? Number(r.rating) : null,
+        usage_frequency: r.usage_frequency,
+        device:          r.device,
+        comment:         r.comment,
+        date:            r.created_at,
       })),
     });
 
@@ -1214,6 +1370,201 @@ export const getVotesList = async (req, res) => {
 
 
  
+
+/* ═══════════════════════════════════════════════════
+   1. DETAILED FEEDBACK — SUMMARY
+   GET /admin/feedback/detailed/summary
+   Sections: KPI cards, By category, By importance, Where in PICK2WIN
+   ═══════════════════════════════════════════════════ */
+export const getDetailedFeedbackSummary = async (req, res) => {
+  try {
+
+    /* ── KPI cards ── */
+    const [[kpi]] = await db.execute(
+      `SELECT
+         COUNT(*)                                                        AS total_submissions,
+         SUM(CASE WHEN status = 'New'        THEN 1 ELSE 0 END)         AS new_unreviewed,
+         SUM(CASE WHEN importance = 'Stopping me using it' THEN 1 ELSE 0 END) AS blockers,
+         SUM(CASE WHEN status = 'Resolved'   THEN 1 ELSE 0 END)         AS resolved
+       FROM feedbacks
+       WHERE user_id IS NOT NULL`
+    );
+
+    const totalSubmissions = Number(kpi.total_submissions);
+    const pct = (count) => totalSubmissions > 0 ? Number(((count / totalSubmissions) * 100).toFixed(1)) : 0;
+
+    /* ── By category ── */
+    const [categoryRows] = await db.execute(
+      `SELECT type AS category, COUNT(*) AS cnt
+       FROM feedbacks
+       WHERE user_id IS NOT NULL
+       GROUP BY type
+       ORDER BY cnt DESC`
+    );
+    const byCategory = categoryRows.map((r) => ({
+      category: r.category,
+      count:    Number(r.cnt),
+      pct:      pct(Number(r.cnt)),
+    }));
+
+    /* ── By importance ── */
+    const [importanceRows] = await db.execute(
+      `SELECT importance, COUNT(*) AS cnt
+       FROM feedbacks
+       WHERE user_id IS NOT NULL
+       GROUP BY importance
+       ORDER BY
+         CASE importance
+           WHEN 'Stopping me using it' THEN 1
+           WHEN 'Would really help'    THEN 2
+           WHEN 'Nice to have'         THEN 3
+           ELSE 4
+         END`
+    );
+    const byImportance = importanceRows.map((r) => ({
+      importance: r.importance,
+      count:      Number(r.cnt),
+      pct:        pct(Number(r.cnt)),
+    }));
+
+    /* ── Where in PICK2WIN (location) ── */
+    const [locationRows] = await db.execute(
+      `SELECT location, COUNT(*) AS cnt
+       FROM feedbacks
+       WHERE user_id IS NOT NULL
+       GROUP BY location
+       ORDER BY cnt DESC`
+    );
+    const byLocation = locationRows.map((r) => ({
+      location: r.location,
+      count:    Number(r.cnt),
+      pct:      pct(Number(r.cnt)),
+    }));
+
+    return res.status(200).json({
+      success: true,
+
+      kpis: {
+        total_submissions: totalSubmissions,
+        new_unreviewed:    Number(kpi.new_unreviewed),
+        blockers:          Number(kpi.blockers),
+        resolved:          Number(kpi.resolved),
+      },
+
+      by_category:   byCategory,
+      by_importance: byImportance,
+      by_location:   byLocation,
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   2. DETAILED FEEDBACK — SUBMISSIONS LIST
+   GET /admin/feedback/detailed/list?status=New|Reviewing|Planned|Resolved|Declined
+                                     &page=1&limit=20
+   Section: Submissions inbox table
+   ═══════════════════════════════════════════════════ */
+export const getDetailedFeedbackList = async (req, res) => {
+  try {
+    const { status = "", page = 1, limit = 20 } = req.query;
+    const limitNum  = Number(limit);
+    const offsetNum = (Number(page) - 1) * limitNum;
+
+    const conditions = ["f.user_id IS NOT NULL"];
+    const params      = [];
+
+    if (status) {
+      conditions.push(`f.status = ?`);
+      params.push(status);
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    const [rows] = await db.execute(
+      `SELECT
+         f.id,
+         f.type        AS category,
+         f.subject,
+         f.message      AS suggestion,
+         f.importance,
+         f.location,
+         f.email,
+         f.status,
+         f.created_at,
+         u.fullname,
+         u.email AS user_email
+       FROM feedbacks f
+       JOIN users u ON u.id = f.user_id
+       ${whereClause}
+       ORDER BY f.created_at DESC
+       LIMIT ${limitNum} OFFSET ${offsetNum}`,
+      params
+    );
+
+    const [[{ total }]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM feedbacks f
+       ${whereClause}`,
+      params
+    );
+
+    return res.status(200).json({
+      success: true,
+      pagination: {
+        total:       Number(total),
+        page:        Number(page),
+        limit:       limitNum,
+        total_pages: Math.ceil(Number(total) / limitNum),
+      },
+      filters: { status },
+      submissions: rows.map((r) => ({
+        id:          r.id,
+        category:    r.category,
+        subject:     r.subject,
+        suggestion:  r.suggestion,
+        importance:  r.importance,
+        location:    r.location,
+        from_name:   r.fullname,
+        from_email:  r.email || r.user_email,
+        status:      r.status,
+        date:        r.created_at,
+      })),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   3. UPDATE SUBMISSION STATUS (status dropdown on each row)
+   PATCH /admin/feedback/detailed/:id/status
+   body: { status: "New" | "Reviewing" | "Planned" | "Resolved" | "Declined" }
+   ═══════════════════════════════════════════════════ */
+export const updateDetailedFeedbackStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const allowedStatuses = ["New", "Reviewing", "Planned", "Resolved", "Declined"];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed: ${allowedStatuses.join(", ")}`,
+      });
+    }
+
+    await db.execute(`UPDATE feedbacks SET status = ? WHERE id = ?`, [status, id]);
+
+    return res.status(200).json({ success: true, message: "Status updated successfully" });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 /* ═══════════════════════════════════════════════════
    GET /admin/reports/coin-packs
