@@ -2,13 +2,15 @@ import { Router } from "express";
 import { adminAuth, adminLimiter } from "../../../middlewares/adminAuth.middleware.js"
 import * as v from "./admin.auth.validation.js";
 import * as c from  "./admin.auth.controller.js"
-import bcrypt from "bcryptjs";
+import bcrypt from "bcryptjs";  
+
 const router = Router();
 
 /* ── Auth ── */
 router.post("/login",                adminLimiter, v.adminLogin,   c.adminLogin);
 /* ── Employee Management ── */
 router.post("/create-admin",       adminLimiter, adminAuth(["super_admin"]), v.createAdmin,  c.createAdmin);
+router.get("/profile",             adminLimiter, adminAuth(["super_admin"]), v.createAdmin, c.getProfile);
 router.get("/get-admins",           adminLimiter, adminAuth(["super_admin"]),                 c.getAdmins);
 router.get("/get-admin-by-id/:id",   adminLimiter, adminAuth(["super_admin"]),                 c.getAdminById);
 router.patch("/update-admin/:id",    adminLimiter, adminAuth(["super_admin"]), v.updateAdmin,  c.updateAdmin);
@@ -26,4 +28,6 @@ router.post("/setup-2fa",  adminLimiter, adminAuth(ALL_ROLES), c.setup2FA);
 router.post("/verify-2fa", adminLimiter, adminAuth(ALL_ROLES), c.verify2FA);
 router.post("/logout",     adminLimiter, adminAuth(ALL_ROLES), c.logout);
     
-export default router;      
+export default router;    
+
+      

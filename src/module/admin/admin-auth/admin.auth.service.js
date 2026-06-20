@@ -82,45 +82,6 @@ export const adminLoginService = async ({ email, password, twoFaCode }) => {
   };
 };
 
-/* ================= CREATE ADMIN ================= */
-// export const createAdmin = async (data, admin, ip) => {
-//   const conn = await db.getConnection();
-//   try {
-//     await conn.beginTransaction();
-
-//     const [[existing]] = await conn.query(
-//       `SELECT id FROM admin WHERE email = ?`,
-//       [data.email.toLowerCase()]
-//     );
-//     if (existing) throw new Error("Admin with this email already exists");
-
-//     const hash = await bcrypt.hash(data.password, 12);
-
-//     const [result] = await conn.query(
-//       `INSERT INTO admin
-//          (name, email, password_hash, role, status, created_at)
-//        VALUES (?, ?, ?, ?, 'active', NOW())`,
-//       [data.name, data.email.toLowerCase(), hash, data.role]
-//     );
-
-//     if (result.affectedRows === 0) throw new Error("Failed to create admin");
-
-//     await logAdmin(conn, admin, "CREATE_ADMIN", "admin", result.insertId, ip);
-//     await conn.commit();
-
-//     return {
-//       success: true,
-//       id:      result.insertId,
-//       message: "Admin created successfully",
-//     };
-
-//   } catch (err) {
-//     await conn.rollback();
-//     throw err;
-//   } finally {
-//     conn.release();
-//   }
-// };
 
 /* ================= CREATE ADMIN ================= */
 export const createAdmin = async (data, admin, ip) => {
@@ -166,6 +127,35 @@ export const createAdmin = async (data, admin, ip) => {
   } finally {
     conn.release();
   }
+};
+
+/* ================= GET PROFILE ================= */
+export const getProfileService = async (adminId) => {
+  const [[admin]] = await db.query(
+    `SELECT
+        id,
+        name,
+        email,
+        mobile,
+        role,
+        access_level,
+        status,
+        twofa_enabled,
+        created_at
+     FROM admin
+     WHERE id = ?
+     LIMIT 1`,
+    [adminId]
+  );
+
+  if (!admin) {
+    throw new Error("Admin not found");
+  }
+
+  return {
+    success: true,
+    data: admin,
+  };
 };
 
 /* ================= GET ALL ADMINS ================= */

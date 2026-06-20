@@ -20,7 +20,8 @@ import {
   getDetailedFeedbackList,
   getVotesSurveyList,
   getAdminSeries,
-  getCoinPackPurchasesByCountry
+  getCoinPackPurchasesByCountry,
+  updateUserAccountStatus
 } from "../admin-reports/reports.controller.js";
 
 const router = express.Router();
@@ -33,10 +34,14 @@ router.get("/dashboard", getDashboardReport);
 /* Users table — search, filter by status/country, pagination, KPI cards */
 router.get("/users", getUsersList);
 
+ 
+/* Suspend / activate a user account */
+router.patch("/users/:id/account-status", updateUserAccountStatus);
+
 //   🌍Regions
 
 router.get("/coin-expiry", getCoinExpiry);
-
+  
 router.get("/countries", getCountriesReport);
 
 

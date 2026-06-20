@@ -23,6 +23,18 @@ export const createAdmin = async (req, res) => {
   }
 };
 
+/* ================= GET PROFILE ================= */
+export const getProfile = async (req, res) => {
+  try {
+    const result = await s.getProfileService(req.admin.id);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({
+      success: false,
+      message: err.message,
+    });
+  }
+};
 
 export const setup2FA = async (req, res) => {
   try {

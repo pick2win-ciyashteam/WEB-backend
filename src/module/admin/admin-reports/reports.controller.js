@@ -345,7 +345,7 @@ export const getUsersList = async (req, res) => {
       params.push(country);
     }
 
-    /* status */
+    /* pack status (active = has a currently-valid pack, idle = no pack) */
     if (status === "active") {
       conditions.push(
         `CAST(u.account_status AS CHAR) != 'deleted'
@@ -358,7 +358,8 @@ export const getUsersList = async (req, res) => {
       conditions.push(
         `CAST(u.account_status AS CHAR) != 'deleted'
          AND NOT EXISTS (
-           SELECT 1 FROM user_subscriptions us WHERE us.user_id = u.id
+           SELECT 1 FROM user_subscriptions us
+           WHERE us.user_id = u.id AND us.status = 'active' AND us.expiry_date > NOW()
          )`
       );
     } else if (status === "deleted") {
@@ -367,7 +368,9 @@ export const getUsersList = async (req, res) => {
 
     const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
-    /* ── Main list ── */
+    /* ── Main list ──
+       current_pack = the latest subscription row that is still active+unexpired
+       (NOT all historical packs, only the one currently in effect) */
     const [users] = await db.execute(
       `SELECT
          u.id,
@@ -376,17 +379,21 @@ export const getUsersList = async (req, res) => {
          u.country,
          u.account_status,
          u.created_at,
-         COALESCE(uc.available_coins, 0)              AS coins,
-         GROUP_CONCAT(DISTINCT us.plan_name ORDER BY us.created_at DESC) AS packs_purchased,
-         EXISTS (
-           SELECT 1 FROM user_subscriptions us2
-           WHERE us2.user_id = u.id AND us2.status = 'active' AND us2.expiry_date > NOW()
-         )                                              AS is_active_pack
+         COALESCE(uc.available_coins, 0) AS coins,
+         cp.plan_name                     AS current_pack
        FROM users u
-       LEFT JOIN user_coins        uc ON uc.user_id = u.id
-       LEFT JOIN user_subscriptions us ON us.user_id = u.id
+       LEFT JOIN user_coins uc ON uc.user_id = u.id
+       LEFT JOIN (
+         SELECT us1.*
+         FROM user_subscriptions us1
+         INNER JOIN (
+           SELECT user_id, MAX(id) AS max_id
+           FROM user_subscriptions
+           WHERE status = 'active' AND expiry_date > NOW()
+           GROUP BY user_id
+         ) us2 ON us2.user_id = us1.user_id AND us2.max_id = us1.id
+       ) cp ON cp.user_id = u.id
        ${whereClause}
-       GROUP BY u.id, u.fullname, u.email, u.country, u.account_status, u.created_at, uc.available_coins
        ORDER BY u.id DESC
        LIMIT ${limitNum} OFFSET ${offsetNum}`,
       params
@@ -396,7 +403,6 @@ export const getUsersList = async (req, res) => {
     const [[{ total }]] = await db.execute(
       `SELECT COUNT(DISTINCT u.id) AS total
        FROM users u
-       LEFT JOIN user_subscriptions us ON us.user_id = u.id
        ${whereClause}`,
       params
     );
@@ -413,7 +419,8 @@ export const getUsersList = async (req, res) => {
                ) THEN 1 ELSE 0 END)                                                  AS active_accounts,
          SUM(CASE WHEN CAST(account_status AS CHAR) != 'deleted'
                AND NOT EXISTS (
-                 SELECT 1 FROM user_subscriptions us WHERE us.user_id = users.id
+                 SELECT 1 FROM user_subscriptions us
+                 WHERE us.user_id = users.id AND us.status = 'active' AND us.expiry_date > NOW()
                ) THEN 1 ELSE 0 END)                                                  AS idle_users
        FROM users`
     );
@@ -439,13 +446,61 @@ export const getUsersList = async (req, res) => {
         fullname:        u.account_status === "deleted" ? "Anonymized" : u.fullname,
         email:           u.account_status === "deleted" ? null : u.email,
         country:         u.country,
-        packs_purchased: u.packs_purchased ? u.packs_purchased.split(",") : [],
+        current_pack:    u.current_pack || "No pack",
         coins:           Number(u.coins),
         joined:          u.created_at,
-        status:          u.account_status === "deleted"
-          ? "deleted"
-          : (u.is_active_pack ? "active" : "idle"),
+        account_status:  u.account_status,                          // active | suspended | deleted
+        pack_status:      u.current_pack ? "active" : "idle",          // active | idle
       })),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   SUSPEND / ACTIVATE USER ACCOUNT
+   PATCH /admin/users/:id/account-status
+   body: { account_status: "active" | "suspended" }
+   ═══════════════════════════════════════════════════ */
+export const updateUserAccountStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { account_status } = req.body;
+
+    const allowedStatuses = ["active", "blocked"];
+    if (!allowedStatuses.includes(account_status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid account_status. Allowed: ${allowedStatuses.join(", ")}`,
+      });
+    }
+
+    const [[user]] = await db.execute(
+      `SELECT id, account_status FROM users WHERE id = ?`,
+      [id]
+    );
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (String(user.account_status) === "deleted") {
+      return res.status(400).json({ success: false, message: "Cannot change status of a deleted account" });
+    }
+
+    await db.execute(
+      `UPDATE users SET account_status = ? WHERE id = ?`,
+      [account_status, id]
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: account_status === "suspended"
+        ? "User account suspended"
+        : "User account activated",
+      account_status,
     });
 
   } catch (err) {
@@ -462,8 +517,8 @@ export const getCoinExpiry = async (req, res) => {
   try {
     const { window = "30d" } = req.query;
 
-    /* Only 4 valid window values accepted */
-    const validWindows = ["07d", "15d", "30d", "expired"];
+    /* Only 3 valid window values accepted */
+    const validWindows = ["15d", "30d", "expired"];
     if (!validWindows.includes(window)) {
       return res.status(400).json({
         success: false,
@@ -553,8 +608,7 @@ export const getCoinExpiry = async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-}; 
-
+};
 
 /* ═══════════════════════════════════════════════════
    GET /admin/reports/countries
@@ -1560,7 +1614,7 @@ export const updateDetailedFeedbackStatus = async (req, res) => {
     await db.execute(`UPDATE feedbacks SET status = ? WHERE id = ?`, [status, id]);
 
     return res.status(200).json({ success: true, message: "Status updated successfully" });
-
+ 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -1573,6 +1627,21 @@ export const updateDetailedFeedbackStatus = async (req, res) => {
    GET /admin/coin-packs/purchases?period=today|monthly|yearly&month=6&year=2026
    Sections: KPI cards, Coin pack purchases table (per period)
    ═══════════════════════════════════════════════════ */
+
+
+//Today
+
+// http://localhost:3000/api/admin/reports/coin-packs?period=today
+
+//Monthly (June 2026)
+
+// http://localhost:3000/api/admin/reports/coin-packs?period=monthly&month=6&year=2026
+
+
+// Yearly (FY 2026-27)
+
+// http://localhost:3000/api/admin/reports/coin-packs?period=yearly&year=2026
+
 export const getCoinPackPurchases = async (req, res) => {
   try {
     const { period = "today", month, year } = req.query;
@@ -1693,6 +1762,30 @@ export const getCoinPackPurchases = async (req, res) => {
    GET /admin/coin-packs/by-country?country=&period=monthly&month=6&year=2026
    Section: Pack purchases by country table
    ═══════════════════════════════════════════════════ */
+
+  //  http://localhost:3000/api/admin/reports/countrywise-coin?period=monthly&month=6&year=2026 
+
+ // Monthly - India Only
+ 
+//  http://localhost:3000/api/admin/reports/countrywise-coin?country=India&period=monthly&month=6&year=2026
+ 
+ // Today - All Countries
+ 
+// http://localhost:3000/api/admin/reports/countrywise-coin?period=today
+
+// Today - India Only
+
+// http://localhost:3000/api/admin/reports/countrywise-coin?country=India&period=today
+
+//Yearly - All Countries
+// http://localhost:3000/api/admin/reports/countrywise-coin?period=yearly&year=2026
+
+// Yearly - India Only
+
+// http://localhost:3000/api/admin/reports/countrywise-coin?country=India&period=yearly&year=2026
+
+
+
 export const getCoinPackPurchasesByCountry = async (req, res) => {
   try {
     const { country = "", period = "monthly", month, year } = req.query;
