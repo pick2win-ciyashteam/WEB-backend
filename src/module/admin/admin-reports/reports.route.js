@@ -18,7 +18,8 @@ import {
   getDetailedFeedbackSummary,
   updateDetailedFeedbackStatus,
   getDetailedFeedbackList,
-  getVotesSurveyList
+  getVotesSurveyList,
+  getAdminSeries
 } from "../admin-reports/reports.controller.js";
 
 const router = express.Router();
@@ -70,6 +71,9 @@ router.patch("/detailed/:id/status", updateDetailedFeedbackStatus);
 router.get("/coin-packs", getCoinPacksReport);
 
 //🏆 LEAGUES / SERIES
+
+/* GET /admin/series?status=all|live|upcoming|completed */
+router.get("/series", getAdminSeries);
 
 /* List + KPIs */
 router.get("/leagues", getLeagues);

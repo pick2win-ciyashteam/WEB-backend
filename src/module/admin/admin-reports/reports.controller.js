@@ -1634,6 +1634,178 @@ export const getCoinPacksReport = async (req, res) => {
  
 
 /* ═══════════════════════════════════════════════════
+   GET /admin/series?status=all|live|upcoming|completed
+   Sections: KPI cards, Series table (live/upcoming/completed history)
+   ═══════════════════════════════════════════════════ */
+export const getAdminSeries = async (req, res) => {
+  try {
+    const { status = "all" } = req.query;
+
+    const validStatuses = ["all", "live", "upcoming", "completed"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    /* ── KPI: Leagues on website (from leagues_catalog) ── */
+    const [[leaguesKpi]] = await db.execute(
+      `SELECT
+         COUNT(*)                                              AS total_leagues,
+         SUM(CASE WHEN is_visible = 1 THEN 1 ELSE 0 END)      AS enabled_leagues
+       FROM leagues_catalog`
+    );
+
+    /* ── Per-series aggregated stats: matches, participants, ucts, derived status ──
+       series.status = catalog active/inactive flag (NOT live/upcoming/completed)
+       Live/Upcoming/Completed derived from matches.status per match in this series */
+    const [seriesRows] = await db.execute(
+      `SELECT
+         s.id,
+         s.seriesid,
+         s.name,
+         s.category,
+         s.start_date     AS series_start_date,
+         s.end_date        AS series_end_date,
+         lc.name            AS league_name,
+
+         COUNT(DISTINCT m.id)                                                   AS total_matches,
+         COUNT(DISTINCT mgl.user_id)                                            AS participants,
+         COUNT(DISTINCT mgl.id)                                                 AS ucts_used,
+
+         SUM(CASE WHEN m.status = 'LIVE'     THEN 1 ELSE 0 END)                AS live_matches,
+         SUM(CASE WHEN m.status = 'UPCOMING' THEN 1 ELSE 0 END)                AS upcoming_matches,
+         SUM(CASE WHEN m.status = 'RESULT'   THEN 1 ELSE 0 END)                AS completed_matches,
+
+         MIN(m.start_time)                                                      AS first_match_date,
+         MAX(m.start_time)                                                      AS last_match_date
+
+       FROM series s
+       LEFT JOIN leagues_catalog lc        ON lc.name = s.category
+       LEFT JOIN matches m                  ON m.series_id = s.seriesid AND m.is_active = 1
+       LEFT JOIN match_generation_log mgl   ON mgl.match_id = m.id
+
+       WHERE s.status = 'active'
+       GROUP BY s.id, s.seriesid, s.name, s.category, s.start_date, s.end_date, lc.name
+       ORDER BY s.start_date DESC`
+    );
+
+    /* ── Derive a single display status per series ── */
+    const seriesWithStatus = seriesRows.map((s) => {
+      let derivedStatus;
+      if (Number(s.live_matches) > 0) {
+        derivedStatus = "Live";
+      } else if (Number(s.upcoming_matches) > 0 && Number(s.completed_matches) === 0) {
+        derivedStatus = "Upcoming";
+      } else if (
+        Number(s.completed_matches) > 0 &&
+        Number(s.upcoming_matches) === 0 &&
+        Number(s.live_matches) === 0
+      ) {
+        derivedStatus = "Completed";
+      } else if (Number(s.upcoming_matches) > 0) {
+        derivedStatus = "Upcoming";
+      } else {
+        derivedStatus = "Completed";
+      }
+
+      return { ...s, derived_status: derivedStatus };
+    });
+
+    /* ── Apply status filter ── */
+    const filterMap = { live: "Live", upcoming: "Upcoming", completed: "Completed" };
+    const filtered = status === "all"
+      ? seriesWithStatus
+      : seriesWithStatus.filter((s) => s.derived_status === filterMap[status]);
+
+    /* ── Counts for tab badges (always computed on full set, not filtered) ── */
+    const counts = {
+      all:       seriesWithStatus.length,
+      live:      seriesWithStatus.filter((s) => s.derived_status === "Live").length,
+      upcoming:  seriesWithStatus.filter((s) => s.derived_status === "Upcoming").length,
+      completed: seriesWithStatus.filter((s) => s.derived_status === "Completed").length,
+    };
+
+    /* ── KPI: series completed all-time, live now, upcoming next ── */
+    const kpis = {
+      leagues_on_website: {
+        enabled: Number(leaguesKpi.enabled_leagues),
+        total:   Number(leaguesKpi.total_leagues),
+      },
+      series_completed:  counts.completed,
+      live_series:        counts.live,
+      upcoming_series:    counts.upcoming,
+    };
+
+    /* ── Totals row (run-to-date, across filtered set) ── */
+    const totals = filtered.reduce(
+      (acc, s) => {
+        acc.matches      += Number(s.total_matches);
+        acc.participants  += Number(s.participants);
+        acc.ucts_used      += Number(s.ucts_used);
+        return acc;
+      },
+      { matches: 0, participants: 0, ucts_used: 0 }
+    );
+
+    /* ── Total UCTs across completed series only (for subtitle) ── */
+    const uctsCompletedSeries = seriesWithStatus
+      .filter((s) => s.derived_status === "Completed")
+      .reduce((s, r) => s + Number(r.ucts_used), 0);
+
+    return res.status(200).json({
+      success: true,
+
+      kpis,
+
+      tab_counts: counts,
+
+      series_list: {
+        total:                filtered.length,
+        completed_count:      counts.completed,
+        live_count:           counts.live,
+        upcoming_count:       counts.upcoming,
+        ucts_across_completed: uctsCompletedSeries,
+
+        series: filtered.map((s) => ({
+          id:           s.id,
+          series_code:  `SR-${s.seriesid}`,
+          name:         s.name,
+          league:       s.league_name || s.category,
+
+          /* series catalog window (from series.start_date / end_date) */
+          series_window: {
+            start_date: s.series_start_date,
+            end_date:   s.series_end_date,
+          },
+
+          /* actual match dates derived from matches.start_time */
+          match_window: {
+            first_match_date: s.first_match_date,
+            last_match_date:  s.last_match_date,
+          },
+
+          matches:       Number(s.total_matches),
+          participants:  Number(s.participants) || null,
+          ucts_used:     Number(s.ucts_used) || null,
+          status:        s.derived_status,
+        })),
+
+        totals: {
+          matches:      totals.matches,
+          participants:  totals.participants,
+          ucts_used:      totals.ucts_used,
+        },
+      },
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
    TABLE: leagues_catalog
    id, name, region, tier, matches_30d, is_visible, created_at
    ═══════════════════════════════════════════════════ */
