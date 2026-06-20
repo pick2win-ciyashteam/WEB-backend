@@ -203,47 +203,106 @@ export const getAdminById = async (id) => {
 };
 
 /* ================= UPDATE ADMIN ================= */
-export const updateAdmin = async (id, data, admin, ip) => {
-  if (!admin?.id || !admin?.email) throw new Error("Invalid admin context");
-
-  const ALLOWED_FIELDS = ["role", "status"];
-  const sanitized = {};
-  for (const key of ALLOWED_FIELDS) {
-    if (data[key] !== undefined) sanitized[key] = data[key];
+ export const updateAdmin = async (id, data, admin, ip) => {
+  if (!admin?.id || !admin?.email) {
+    throw new Error("Invalid admin context");
   }
 
-  if (!Object.keys(sanitized).length) throw new Error("No valid fields to update");
+  const ALLOWED_FIELDS = [
+    "name",
+    "email",
+    "mobile",
+    "role",
+    "access_level",
+    "status",
+  ];
 
-  if (Number(id) === Number(admin.id)) {
-    throw new Error("Admins cannot update their own role or status");
+  const sanitized = {};
+
+  for (const key of ALLOWED_FIELDS) {
+    if (data[key] !== undefined) {
+      sanitized[key] = data[key];
+    }
+  }
+
+  if (!Object.keys(sanitized).length) {
+    throw new Error("No valid fields to update");
+  }
+
+  const isSelf = Number(id) === Number(admin.id);
+
+  // own role/access/status change cheyyakudadhu
+  if (
+    isSelf &&
+    (
+      sanitized.role !== undefined ||
+      sanitized.access_level !== undefined ||
+      sanitized.status !== undefined
+    )
+  ) {
+    throw new Error(
+      "You cannot update your own role, access level, or status"
+    );
   }
 
   const conn = await db.getConnection();
+
   try {
     await conn.beginTransaction();
 
     const [[existing]] = await conn.query(
-      `SELECT id FROM admin WHERE id = ?`, [id]
+      `SELECT id FROM admin WHERE id = ?`,
+      [id]
     );
-    if (!existing) throw new Error("Admin not found");
 
-    const setClauses = Object.keys(sanitized).map((k) => `${k} = ?`).join(", ");
-    const setValues  = Object.values(sanitized);
+    if (!existing) {
+      throw new Error("Admin not found");
+    }
+
+    // email unique check
+    if (sanitized.email) {
+      const [[emailExists]] = await conn.query(
+        `SELECT id
+         FROM admin
+         WHERE LOWER(email) = LOWER(?)
+           AND id != ?`,
+        [sanitized.email, id]
+      );
+
+      if (emailExists) {
+        throw new Error("Email already exists");
+      }
+    }
+
+    const setClauses = Object.keys(sanitized)
+      .map((k) => `${k} = ?`)
+      .join(", ");
+
+    const values = Object.values(sanitized);
 
     await conn.query(
-      `UPDATE admin SET ${setClauses} WHERE id = ?`,
-      [...setValues, id]
+      `UPDATE admin
+       SET ${setClauses}
+       WHERE id = ?`,
+      [...values, id]
     );
 
-    await logAdmin(conn, admin, "UPDATE_ADMIN", "admin", id, ip);
+    await logAdmin(
+      conn,
+      admin,
+      "UPDATE_ADMIN",
+      "admin",
+      id,
+      ip
+    );
+
     await conn.commit();
 
     return {
       success: true,
-      id:      Number(id),
+      id: Number(id),
       message: "Admin updated successfully",
     };
-
   } catch (err) {
     await conn.rollback();
     throw err;

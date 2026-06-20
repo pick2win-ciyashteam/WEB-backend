@@ -8,7 +8,9 @@ export const getActivePlans = async (req, res) => {
       `SELECT
          id, name, subtitle, coins, matches,
          price, price_per_coin, currency, currency_symbol,
-         validity_days, is_popular, is_pro, sort_order
+         validity_days, is_popular, is_pro, sort_order,
+         regular_price, offer_price, discount_pct,
+         offer_label, is_offer_active
        FROM subscription_plans
        WHERE is_active = 1
        ORDER BY sort_order ASC`
@@ -24,7 +26,6 @@ export const getActivePlans = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
  
 export const getMySubscription = async (req, res) => {
   try {
