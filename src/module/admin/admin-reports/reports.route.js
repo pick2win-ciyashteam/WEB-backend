@@ -8,7 +8,7 @@ import {
   getUctOverview,
   getMatchDrilldown,
   getUctActivityList,
-  getCoinPacksReport,
+  getCoinPackPurchases,
   getLeagues,
   addLeague,
   editLeague,
@@ -19,7 +19,8 @@ import {
   updateDetailedFeedbackStatus,
   getDetailedFeedbackList,
   getVotesSurveyList,
-  getAdminSeries
+  getAdminSeries,
+  getCoinPackPurchasesByCountry
 } from "../admin-reports/reports.controller.js";
 
 const router = express.Router();
@@ -68,7 +69,11 @@ router.patch("/detailed/:id/status", updateDetailedFeedbackStatus);
 
 //COIN PACKS
 
-router.get("/coin-packs", getCoinPacksReport);
+// GET /admin/coin-packs/purchases?period=today|monthly|yearly&month=6&year=2026
+router.get("/coin-packs", getCoinPackPurchases);
+
+// GET /admin/coin-packs/by-country?country=&period=monthly&month=6&year=2026
+router.get("/countrywise-coin",getCoinPackPurchasesByCountry)
 
 //🏆 LEAGUES / SERIES
 

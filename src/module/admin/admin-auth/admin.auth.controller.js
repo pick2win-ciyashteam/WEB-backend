@@ -87,3 +87,53 @@ export const logout = async (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 };
+
+// /..............................................................................................
+
+
+export const updateCredentials = async (req, res) => {
+  try {
+    const result = await s.updateCredentialsService(req.admin.id, req.body, getIp(req));
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const result = await s.updateProfileService(req.admin.id, req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+export const toggle2FA = async (req, res) => {
+  try {
+    const result = await s.toggle2FAService(req.admin.id, req.body.enabled);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+export const removeAdmin = async (req, res) => {
+  try {
+    const result = await s.removeAdmin(req.params.id, req.admin, getIp(req));
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+export const exportAdminsCSV = async (req, res) => {
+  try {
+    const csv = await s.exportAdminsCSV();
+    res.header("Content-Type", "text/csv");
+    res.attachment("admins.csv");
+    res.send(csv);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};

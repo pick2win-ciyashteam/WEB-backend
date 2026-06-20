@@ -83,6 +83,46 @@ export const adminLoginService = async ({ email, password, twoFaCode }) => {
 };
 
 /* ================= CREATE ADMIN ================= */
+// export const createAdmin = async (data, admin, ip) => {
+//   const conn = await db.getConnection();
+//   try {
+//     await conn.beginTransaction();
+
+//     const [[existing]] = await conn.query(
+//       `SELECT id FROM admin WHERE email = ?`,
+//       [data.email.toLowerCase()]
+//     );
+//     if (existing) throw new Error("Admin with this email already exists");
+
+//     const hash = await bcrypt.hash(data.password, 12);
+
+//     const [result] = await conn.query(
+//       `INSERT INTO admin
+//          (name, email, password_hash, role, status, created_at)
+//        VALUES (?, ?, ?, ?, 'active', NOW())`,
+//       [data.name, data.email.toLowerCase(), hash, data.role]
+//     );
+
+//     if (result.affectedRows === 0) throw new Error("Failed to create admin");
+
+//     await logAdmin(conn, admin, "CREATE_ADMIN", "admin", result.insertId, ip);
+//     await conn.commit();
+
+//     return {
+//       success: true,
+//       id:      result.insertId,
+//       message: "Admin created successfully",
+//     };
+
+//   } catch (err) {
+//     await conn.rollback();
+//     throw err;
+//   } finally {
+//     conn.release();
+//   }
+// };
+
+/* ================= CREATE ADMIN ================= */
 export const createAdmin = async (data, admin, ip) => {
   const conn = await db.getConnection();
   try {
@@ -94,13 +134,19 @@ export const createAdmin = async (data, admin, ip) => {
     );
     if (existing) throw new Error("Admin with this email already exists");
 
+    /* ── Sub-admin limit check (max 3, excluding super_admin) ── */
+    const [[{ count }]] = await conn.query(
+      `SELECT COUNT(*) AS count FROM admin WHERE role != 'super_admin'`
+    );
+    if (count >= 3) throw new Error("Sub-admin limit reached (max 3)");
+
     const hash = await bcrypt.hash(data.password, 12);
 
     const [result] = await conn.query(
       `INSERT INTO admin
-         (name, email, password_hash, role, status, created_at)
-       VALUES (?, ?, ?, ?, 'active', NOW())`,
-      [data.name, data.email.toLowerCase(), hash, data.role]
+         (name, email, mobile, password_hash, role, access_level, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'active', NOW())`,
+      [data.name, data.email.toLowerCase(), data.mobile || null, hash, data.role, data.access_level || "read_only"]
     );
 
     if (result.affectedRows === 0) throw new Error("Failed to create admin");
@@ -110,7 +156,7 @@ export const createAdmin = async (data, admin, ip) => {
 
     return {
       success: true,
-      id:      result.insertId,
+      id: result.insertId,
       message: "Admin created successfully",
     };
 
@@ -293,4 +339,118 @@ export const cleanExpiredBlacklistTokens = async () => {
   } catch (err) {
     console.error("[Cron] Blacklist cleanup error:", err.message);
   }
+};
+
+//.........................................................................................................
+
+
+/* ================= UPDATE OWN PASSWORD + 2FA (SUPER ADMIN) ================= */
+export const updateCredentialsService = async (adminId, data, ip) => {
+  const { currentPassword, newPassword, confirmPassword, new2FACode } = data;
+
+  const [[admin]] = await db.query(
+    `SELECT id, email, password_hash, twofa_secret, twofa_enabled FROM admin WHERE id = ?`,
+    [adminId]
+  );
+  if (!admin) throw new Error("Admin not found");
+
+  const isMatch = await bcrypt.compare(currentPassword, admin.password_hash);
+  if (!isMatch) throw new Error("Current password is incorrect");
+
+  const updates = {};
+  const values = [];
+
+  if (newPassword) {
+    if (newPassword.length < 6) throw new Error("New password must be at least 6 characters");
+    if (newPassword !== confirmPassword) throw new Error("Passwords do not match");
+    updates.password_hash = await bcrypt.hash(newPassword, 12);
+  }
+
+  if (new2FACode) {
+    if (!admin.twofa_enabled) throw new Error("2FA is not enabled for this account");
+    const verified = speakeasy.totp.verify({
+      secret: admin.twofa_secret,
+      encoding: "base32",
+      token: new2FACode,
+      window: 1,
+    });
+    if (!verified) throw new Error("Invalid 2FA code");
+  }
+
+  if (!Object.keys(updates).length && !new2FACode) {
+    throw new Error("Nothing to update");
+  }
+
+  if (Object.keys(updates).length) {
+    const setClauses = Object.keys(updates).map((k) => `${k} = ?`).join(", ");
+    await db.query(`UPDATE admin SET ${setClauses} WHERE id = ?`, [...Object.values(updates), adminId]);
+  }
+
+  return { success: true, message: "Credentials updated successfully" };
+};
+
+/* ================= UPDATE OWN PROFILE (PRIMARY ADMIN) ================= */
+export const updateProfileService = async (adminId, data) => {
+  const ALLOWED = ["name", "mobile"];
+  const sanitized = {};
+  for (const key of ALLOWED) {
+    if (data[key] !== undefined) sanitized[key] = data[key];
+  }
+  if (!Object.keys(sanitized).length) throw new Error("No valid fields to update");
+
+  const setClauses = Object.keys(sanitized).map((k) => `${k} = ?`).join(", ");
+  await db.query(`UPDATE admin SET ${setClauses} WHERE id = ?`, [...Object.values(sanitized), adminId]);
+
+  return { success: true, message: "Profile updated successfully" };
+};
+
+/* ================= TOGGLE 2FA REQUIREMENT (SUPER ADMIN) ================= */
+export const toggle2FAService = async (adminId, enabled) => {
+  if (!enabled) {
+    await db.query(`UPDATE admin SET twofa_enabled = 0 WHERE id = ?`, [adminId]);
+    return { success: true, message: "2FA disabled" };
+  }
+  const [[admin]] = await db.query(`SELECT twofa_secret FROM admin WHERE id = ?`, [adminId]);
+  if (!admin?.twofa_secret) throw new Error("Set up 2FA first using /setup-2fa");
+  await db.query(`UPDATE admin SET twofa_enabled = 1 WHERE id = ?`, [adminId]);
+  return { success: true, message: "2FA enabled" };
+};
+
+/* ================= REMOVE ADMIN ================= */
+export const removeAdmin = async (id, admin, ip) => {
+  if (Number(id) === Number(admin.id)) throw new Error("Cannot remove your own account");
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [[existing]] = await conn.query(`SELECT id, role FROM admin WHERE id = ?`, [id]);
+    if (!existing) throw new Error("Admin not found");
+    if (existing.role === "super_admin") throw new Error("Cannot remove a super admin");
+
+    await conn.query(`DELETE FROM admin WHERE id = ?`, [id]);
+    await logAdmin(conn, admin, "REMOVE_ADMIN", "admin", id, ip);
+    await conn.commit();
+
+    return { success: true, message: "Admin removed successfully" };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+};
+
+/* ================= EXPORT ADMINS CSV ================= */
+export const exportAdminsCSV = async () => {
+  const [rows] = await db.query(
+    `SELECT id, name, email, mobile, role, access_level, status, created_at FROM admin ORDER BY id DESC`
+  );
+
+  const headers = ["ID", "Name", "Email", "Mobile", "Role", "Access Level", "Status", "Created At"];
+  const csvRows = rows.map(r =>
+    [r.id, r.name, r.email, r.mobile || "", r.role, r.access_level, r.status, r.created_at].join(",")
+  );
+
+  return [headers.join(","), ...csvRows].join("\n");
 };

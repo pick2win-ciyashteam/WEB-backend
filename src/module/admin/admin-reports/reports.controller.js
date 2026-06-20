@@ -1566,43 +1566,94 @@ export const updateDetailedFeedbackStatus = async (req, res) => {
   }
 };
 
+ 
+
 /* ═══════════════════════════════════════════════════
-   GET /admin/reports/coin-packs
-   Sections: KPI cards, Coin pack table with USD/INR value & share
+   1. PURCHASES SUMMARY
+   GET /admin/coin-packs/purchases?period=today|monthly|yearly&month=6&year=2026
+   Sections: KPI cards, Coin pack purchases table (per period)
    ═══════════════════════════════════════════════════ */
-export const getCoinPacksReport = async (req, res) => {
+export const getCoinPackPurchases = async (req, res) => {
   try {
+    const { period = "today", month, year } = req.query;
 
-    const usdToInr = 95.36; // TODO: replace with live FX rate source if available
+    const validPeriods = ["today", "monthly", "yearly"];
+    if (!validPeriods.includes(period)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid period. Allowed: ${validPeriods.join(", ")}`,
+      });
+    }
 
-    /* ── Per-pack stats: price, users purchased, value ── */
-    const [packs] = await db.execute(
-      `SELECT
-         sp.id,
-         sp.name,
-         sp.coins,
-         sp.price                          AS price_usd,
-         COUNT(us.id)                      AS users_purchased,
-         COALESCE(SUM(us.amount), 0)       AS value_usd
-       FROM subscription_plans sp
-       LEFT JOIN user_subscriptions us ON us.plan_id = sp.id AND us.amount > 0
-       GROUP BY sp.id, sp.name, sp.coins, sp.price
-       ORDER BY sp.price ASC`
+    const today = new Date();
+    const targetMonth = month ? Number(month) : today.getMonth() + 1;
+    const targetYear  = year  ? Number(year)  : today.getFullYear();
+
+    /* ── KPI cards: purchased today, this month MTD, all-time ── */
+    const [[kpiToday]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM user_subscriptions
+       WHERE amount > 0
+         AND DATE(created_at) = CURDATE()`
     );
 
-    const totalPurchases = packs.reduce((s, p) => s + Number(p.users_purchased), 0);
-    const totalValueUsd  = packs.reduce((s, p) => s + Number(p.value_usd), 0);
+    const [[kpiMtd]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM user_subscriptions
+       WHERE amount > 0
+         AND MONTH(created_at) = MONTH(NOW())
+         AND YEAR(created_at)  = YEAR(NOW())`
+    );
+
+    const [[kpiAllTime]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM user_subscriptions
+       WHERE amount > 0`
+    );
+
+    /* ── Resolve date range based on selected period ── */
+    let dateCondition, periodLabel;
+    const params = [];
+
+    if (period === "today") {
+      dateCondition = `DATE(us.created_at) = CURDATE()`;
+      periodLabel = `Today`;
+    } else if (period === "monthly") {
+      dateCondition = `MONTH(us.created_at) = ? AND YEAR(us.created_at) = ?`;
+      params.push(targetMonth, targetYear);
+      const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      periodLabel = `${monthNames[targetMonth]} ${targetYear}`;
+    } else {
+      /* yearly = Indian FY: Apr 1 - Mar 31 */
+      dateCondition = `us.created_at >= ? AND us.created_at < ?`;
+      params.push(`${targetYear}-04-01`, `${targetYear + 1}-04-01`);
+      periodLabel = `FY ${targetYear}-${String(targetYear + 1).slice(2)}`;
+    }
+
+    /* ── Per-pack purchase counts for selected period ── */
+    const [packs] = await db.execute(
+      `SELECT
+         us.plan_id,
+         us.plan_name,
+         us.coins,
+         COUNT(*) AS users_purchased
+       FROM user_subscriptions us
+       WHERE us.amount > 0
+         AND ${dateCondition}
+       GROUP BY us.plan_id, us.plan_name, us.coins
+       ORDER BY us.coins ASC`,
+      params
+    );
+
+    const totalPeriodPurchases = packs.reduce((s, p) => s + Number(p.users_purchased), 0);
 
     const packList = packs.map((p) => ({
-      id:              p.id,
-      name:            p.name,
-      coins:           Number(p.coins),
-      price_usd:       Number(p.price_usd).toFixed(2),
-      users_purchased: Number(p.users_purchased),
-      value_usd:       Number(p.value_usd).toFixed(2),
-      value_inr:       (Number(p.value_usd) * usdToInr).toFixed(2),
-      share_pct:       totalValueUsd > 0
-        ? Number(((Number(p.value_usd) / totalValueUsd) * 100).toFixed(1))
+      plan_id:          p.plan_id,
+      name:             p.plan_name,
+      coins:             Number(p.coins),
+      users_purchased:  Number(p.users_purchased),
+      share_pct:        totalPeriodPurchases > 0
+        ? Number(((Number(p.users_purchased) / totalPeriodPurchases) * 100).toFixed(1))
         : 0,
     }));
 
@@ -1610,20 +1661,111 @@ export const getCoinPacksReport = async (req, res) => {
       success: true,
 
       kpis: {
-        coin_packs_count:  packList.length,
-        total_purchases:   totalPurchases,
-        total_value_usd:   totalValueUsd.toFixed(2),
-        total_value_inr:   (totalValueUsd * usdToInr).toFixed(2),
-        usd_to_inr_rate:   usdToInr,
+        purchased_today:    Number(kpiToday.total),
+        this_month_mtd:      Number(kpiMtd.total),
+        all_time_purchases:  Number(kpiAllTime.total),
       },
+
+      period: {
+        type:   period,
+        label:  periodLabel,
+        month:  period === "monthly" ? targetMonth : null,
+        year:   period !== "today" ? targetYear : null,
+      },
+
+      total_purchased: totalPeriodPurchases,
 
       packs: packList,
 
       totals: {
-        users_purchased: totalPurchases,
-        value_usd:       totalValueUsd.toFixed(2),
-        value_inr:       (totalValueUsd * usdToInr).toFixed(2),
+        users_purchased: totalPeriodPurchases,
         share_pct:       100,
+      },
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   2. PACK PURCHASES BY COUNTRY
+   GET /admin/coin-packs/by-country?country=&period=monthly&month=6&year=2026
+   Section: Pack purchases by country table
+   ═══════════════════════════════════════════════════ */
+export const getCoinPackPurchasesByCountry = async (req, res) => {
+  try {
+    const { country = "", period = "monthly", month, year } = req.query;
+
+    const today = new Date();
+    const targetMonth = month ? Number(month) : today.getMonth() + 1;
+    const targetYear  = year  ? Number(year)  : today.getFullYear();
+
+    let dateCondition;
+    const dateParams = [];
+
+    if (period === "today") {
+      dateCondition = `DATE(us.created_at) = CURDATE()`;
+    } else if (period === "yearly") {
+      dateCondition = `us.created_at >= ? AND us.created_at < ?`;
+      dateParams.push(`${targetYear}-04-01`, `${targetYear + 1}-04-01`);
+    } else {
+      dateCondition = `MONTH(us.created_at) = ? AND YEAR(us.created_at) = ?`;
+      dateParams.push(targetMonth, targetYear);
+    }
+
+    const countryCondition = country ? `AND u.country = ?` : "";
+    const params = country ? [...dateParams, country] : dateParams;
+
+    /* ── Per-country, per-pack purchase counts ── */
+    const [rows] = await db.execute(
+      `SELECT
+         u.country,
+         us.plan_name,
+         COUNT(*) AS cnt
+       FROM user_subscriptions us
+       JOIN users u ON u.id = us.user_id
+       WHERE us.amount > 0
+         AND ${dateCondition}
+         ${countryCondition}
+       GROUP BY u.country, us.plan_name`,
+      params
+    );
+
+    /* ── Pivot into { country: { Starter: x, Basic: y, ... } } ── */
+    const countryMap = {};
+    for (const row of rows) {
+      if (!countryMap[row.country]) countryMap[row.country] = {};
+      countryMap[row.country][row.plan_name] = Number(row.cnt);
+    }
+
+    const byCountry = Object.entries(countryMap).map(([countryName, packs]) => {
+      const total = Object.values(packs).reduce((s, v) => s + v, 0);
+      return {
+        country: countryName,
+        packs,
+        total,
+      };
+    }).sort((a, b) => b.total - a.total);
+
+    /* ── Grand totals per pack across all countries ── */
+    const grandTotals = {};
+    let grandTotal = 0;
+    for (const c of byCountry) {
+      for (const [packName, count] of Object.entries(c.packs)) {
+        grandTotals[packName] = (grandTotals[packName] || 0) + count;
+      }
+      grandTotal += c.total;
+    }
+
+    return res.status(200).json({
+      success: true,
+      filters: { country, period, month: targetMonth, year: targetYear },
+      total_countries: byCountry.length,
+      by_country: byCountry,
+      totals: {
+        packs: grandTotals,
+        total: grandTotal,
       },
     });
 
