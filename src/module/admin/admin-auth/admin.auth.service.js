@@ -163,7 +163,7 @@ export const getAdmins = async ({ page = 1, limit = 20 } = {}) => {
   const offset = (page - 1) * limit;
 
   const [rows] = await db.query(
-    `SELECT id, name, email, role, status, created_at
+    `SELECT id, name,mobile, email, role, status, created_at
      FROM admin
      ORDER BY id DESC
      LIMIT ? OFFSET ?`,
