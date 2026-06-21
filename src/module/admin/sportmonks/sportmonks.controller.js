@@ -11,6 +11,7 @@ import {
   manualSyncPlayingXIService,
     
 } from "./sportmonks.service.js";
+import { logAdminActivity } from "../../../utils/activity.logger.js";
 
 /* ══════════════════════════════════════════
    SERIES
@@ -34,6 +35,16 @@ export const toggleSeries = async (req, res) => {
       return res.status(400).json({ success: false, message: "is_active required" });
 
     const data = await toggleSeriesService(series_ids, is_active);
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "catalog",
+      action:    "Series toggled",
+      details:   `Series ids [${series_ids.join(",")}] ${is_active ? "activated" : "deactivated"}`,
+    });
+
     res.json({ success: true, data });
   } catch (err) {
     console.error("toggleSeries error:", err.message);
@@ -77,6 +88,16 @@ export const toggleMatches = async (req, res) => {
       return res.status(400).json({ success: false, message: "is_active required" });
 
     const data = await toggleMatchesService(match_ids, is_active);  
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "catalog",
+      action:    "Matches toggled",
+      details:   `Match ids [${match_ids.join(",")}] ${is_active ? "activated" : "deactivated"}`,
+    });
+
     res.json({ success: true, data });
   } catch (err) {
     console.error("toggleMatches error:", err.message);
@@ -307,6 +328,15 @@ export const manualSyncPlayingXI = async (req, res) => {
         message: result.reason,
         count:   0,
       });
+ 
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "catalog",
+      action:    "Playing XI synced",
+      details:   `Synced ${result.count} players for match ${match_id}`,
+    });
  
     res.json({
       success: true,

@@ -9,7 +9,7 @@ import db        from "../../../config/db.js";
  
 import { sendSms } from "../../../utils/sms.js";
 
-import { sendNoreplyMail, otpEmailHtml, welcomeEmailHtml,    accountDeletedEmailHtml, } from "../../../utils/mailer.js";
+import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, } from "../../../utils/mailer.js";
 
 
 
@@ -275,7 +275,7 @@ export const signupService = async (data) => {
   await sendNoreplyMail({
     to: normalizedEmail,
     subject: "Pick2Win — Email Verification OTP",
-    html: otpEmailHtml(emailOtp, userFullName, 5),
+    html: otpEmailHtml(emailOtp, userFullName, 5, new Date()),
   });
 
   /* ── SMS SKIPPED FOR TESTING ── */
@@ -429,7 +429,7 @@ export const resendOtpService = async ({ mobile, email, type }) => {
     await sendNoreplyMail({
       to:      session.email,
       subject: "Verify Your Email Address · PICK2WIN OTP",
-      html:    otpEmailHtml(newOtp, session.fullname, 5),
+      html:    otpEmailHtml(newOtp, session.fullname, 5, new Date()),
     });
 
   } else {
@@ -477,7 +477,13 @@ const completeRegistration = async (sessionId) => {
   await sendNoreplyMail({
     to:      session.email,
     subject: "Welcome to Pick2Win! 🎉",
-    html:    welcomeEmailHtml(session.fullname),
+    html:    welcomeEmailHtml({
+      fullname: session.fullname,
+      email: session.email,
+      mobile: session.mobile,
+      country: session.country,
+      activationDate: new Date(),
+    }),
   }).catch(err => console.error("Welcome email failed:", err.message));
 
   await db.execute(`DELETE FROM signup_sessions WHERE id = ?`, [sessionId]);
@@ -531,6 +537,28 @@ export const loginService = async ({ email, password }) => {
       account_status: user.account_status,
     },
   };
+};
+
+export const updateProfileService = async (updatedUser) => {
+  const { email, fullname, mobile, country } = updatedUser;
+
+  if (!email) {
+    throw new Error("User email missing for profile update notification.");
+  }
+
+  await sendNoreplyMail({
+    to:      email,
+    subject: "Profile Updated Successfully · PICK2WIN",
+    html:    profileUpdatedEmailHtml({
+      fullname: fullname || "User",
+      email:    email,
+      mobile:   mobile || "-",
+      country:  country || "-",
+      updatedOn: new Date(),
+    }),
+  });
+
+  return { success: true, message: "Profile update email sent." };
 };
 
 /* ══════════════════════════════════════════
@@ -622,7 +650,7 @@ export const requestEmailChangeService = async (userId, newEmail) => {
   await sendNoreplyMail({
     to:      newEmail,
     subject: "Pick2Win — Email Change OTP",
-    html:    otpEmailHtml(otp, "Verify Your New Email"),
+    html:    otpEmailHtml(otp, "Verify Your New Email", 5, new Date()),
   });
 
   return {
@@ -718,15 +746,16 @@ export const verifyEmailChangeService = async (userId, otp) => {
     [otp, expiry, user.id]
   );
 
-  const html = otpEmailHtml(
+  const html = passwordResetEmailHtml(
     otp,
     user.fullname || "User",
-    10
+    10,
+    new Date()
   );
 
   await sendNoreplyMail({
     to: user.email,
-    subject: `Pick2Win — Password Reset OTP ${otp}`,
+    subject: `Reset your PICK2WIN password · OTP`,
     html,
   });
 
@@ -785,7 +814,7 @@ export const deleteAccountService = async (userId) => {
   await sendNoreplyMail({
     to:      user.email,
     subject: "Pick2Win — Account Deletion OTP",
-    html:    otpEmailHtml(otp, "Confirm Account Deletion"),
+    html:    otpEmailHtml(otp, "Confirm Account Deletion", 5, new Date()),
   });
 
   return {
@@ -841,7 +870,7 @@ export const deleteAccountService = async (userId) => {
 //   }
 // };       
 
-     export const confirmDeleteAccountService = async (userId, otp) => {
+ export const confirmDeleteAccountService = async (userId, otp) => {
   const [[user]] = await db.execute(
     `SELECT id, email, fullname, loginotp, loginotpexpires
      FROM users

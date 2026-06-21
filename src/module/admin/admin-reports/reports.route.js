@@ -21,7 +21,8 @@ import {
   getVotesSurveyList,
   getAdminSeries,
   getCoinPackPurchasesByCountry,
-  updateUserAccountStatus
+  updateUserAccountStatus,
+  getActivityLog
 } from "../admin-reports/reports.controller.js";
 
 const router = express.Router();
@@ -100,6 +101,9 @@ router.patch("/leagues/:id/toggle-visibility", toggleLeagueVisibility);
 /* Delete league */
 router.delete("/leagues/:id", deleteLeague);
 
+/* GET /admin/activity-log?category=all|packs|finance|payments|catalog|users|admin */
+
+router.get("/activity-log", getActivityLog);
 
 export default router;
 

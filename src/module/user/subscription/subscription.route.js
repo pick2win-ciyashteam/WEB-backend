@@ -10,4 +10,4 @@ router.get("/", getActivePlans);
 
 router.get("/my-subscription", authenticate, getMySubscription);
 
-export default router;
+export default router;   

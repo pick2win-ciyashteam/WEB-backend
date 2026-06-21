@@ -1,4 +1,5 @@
 import * as s from  "./admin.auth.service.js"
+import { logAdminActivity } from "../../../utils/activity.logger.js";
 
 const getIp = (req) =>
   req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress;
@@ -17,6 +18,16 @@ export const adminLogin = async (req, res) => {
 export const createAdmin = async (req, res) => {
   try {
     const result = await s.createAdmin(req.body, req.admin, getIp(req));
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "admin",
+      action:    "Create admin",
+      details:   `Created admin ${req.body.email}`,
+    });
+
     res.status(201).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -84,6 +95,16 @@ export const getAdminById = async (req, res) => {
 export const updateAdmin = async (req, res) => {
   try {
     const result = await s.updateAdmin(req.params.id, req.body, req.admin, getIp(req));
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "admin",
+      action:    "Update admin",
+      details:   `Updated admin ${req.params.id}`,
+    });
+
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -106,6 +127,16 @@ export const logout = async (req, res) => {
 export const updateCredentials = async (req, res) => {
   try {
     const result = await s.updateCredentialsService(req.admin.id, req.body, getIp(req));
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "admin",
+      action:    "Update credentials",
+      details:   `Updated own credentials for admin ${req.admin.email}`,
+    });
+
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -115,6 +146,16 @@ export const updateCredentials = async (req, res) => {
 export const updateProfile = async (req, res) => {
   try {
     const result = await s.updateProfileService(req.admin.id, req.body);
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "admin",
+      action:    "Update profile",
+      details:   `Updated own profile for admin ${req.admin.email}`,
+    });
+
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -133,6 +174,16 @@ export const toggle2FA = async (req, res) => {
 export const removeAdmin = async (req, res) => {
   try {
     const result = await s.removeAdmin(req.params.id, req.admin, getIp(req));
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "admin",
+      action:    "Remove admin",
+      details:   `Removed admin ${req.params.id}`,
+    });
+
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

@@ -1,5 +1,6 @@
 import db from "../../../config/db.js";
 import * as s from "./feedback.service.js"
+import { logAdminActivity } from "../../../utils/activity.logger.js";
 
 /* ================= USER — SUBMIT FEEDBACK ================= */
  export const submitFeedback = async (req, res) => {
@@ -40,6 +41,15 @@ import * as s from "./feedback.service.js"
        VALUES (?, ?, ?, ?)`,
       [null, title, message, status || ""]
     );
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "users",
+      action:    "Feedback post created",
+      details:   `Created feedback post ${title}`,
+    });
 
     res.json({
       success: true,
@@ -95,6 +105,15 @@ export const updateFeedbackPost = async (req, res) => {
       [title, message, id]
     );
 
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "users",
+      action:    "Feedback post updated",
+      details:   `Updated feedback post ${id}`,
+    });
+
     res.json({
       success: true,
       message: "Post updated successfully"
@@ -117,6 +136,15 @@ export const deleteFeedbackPost = async (req, res) => {
        WHERE id = ?`,
       [id]
     );
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "users",
+      action:    "Feedback post deleted",
+      details:   `Deleted feedback post ${id}`,
+    });
 
     res.json({
       success: true,
@@ -213,6 +241,16 @@ export const getAdminFeedbackPosts = async (req, res) => {
 export const createQuestion = async (req, res) => {
   try {
     const result = await s.createQuestionService(req.body);
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "users",
+      action:    "Question created",
+      details:   `Created feedback question ${result.id}`,
+    });
+
     res.status(201).json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -231,6 +269,16 @@ export const getAdminQuestions = async (req, res) => {
 export const updateQuestion = async (req, res) => {
   try {
     const result = await s.updateQuestionService(req.params.id, req.body);
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "users",
+      action:    "Question updated",
+      details:   `Updated feedback question ${req.params.id}`,
+    });
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -240,6 +288,16 @@ export const updateQuestion = async (req, res) => {
 export const deleteQuestion = async (req, res) => {
   try {
     const result = await s.deleteQuestionService(req.params.id);
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "users",
+      action:    "Question deleted",
+      details:   `Deleted feedback question ${req.params.id}`,
+    });
+
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -101,14 +101,14 @@ export const updatePlanService = async (id, data) => {
   if (!Object.keys(sanitized).length)
     throw new Error("No valid fields to update");
 
-  if (sanitized.price || sanitized.coins) {
-    const [[current]] = await db.execute(
-      `SELECT coins, price FROM subscription_plans WHERE id = ?`, [id]
-    );
-    if (!current) throw new Error("Plan not found");
+  const [[current]] = await db.execute(
+    `SELECT * FROM subscription_plans WHERE id = ?`, [id]
+  );
+  if (!current) throw new Error("Plan not found");
 
-    const finalCoins = sanitized.coins || current.coins;
-    const finalPrice = sanitized.price || current.price;
+  if (sanitized.price !== undefined || sanitized.coins !== undefined) {
+    const finalCoins = sanitized.coins !== undefined ? sanitized.coins : current.coins;
+    const finalPrice = sanitized.price !== undefined ? sanitized.price : current.price;
     sanitized.price_per_coin = (parseFloat(finalPrice) / parseInt(finalCoins)).toFixed(4);
   }
 
@@ -120,24 +120,33 @@ export const updatePlanService = async (id, data) => {
     [...setValues, id]
   );
 
-  return { success: true, message: "Plan updated successfully" };
+  return {
+    success: true,
+    message: "Plan updated successfully",
+    oldPlan: current,
+    updatedFields: sanitized,
+  };
 };
 
 /* ================= DELETE PLAN ================= */
 export const deletePlanService = async (id) => {
   const [[existing]] = await db.execute(
-    `SELECT id FROM subscription_plans WHERE id = ?`, [id]
+    `SELECT id, name FROM subscription_plans WHERE id = ?`, [id]
   );
   if (!existing) throw new Error("Plan not found");
 
   await db.execute(`DELETE FROM subscription_plans WHERE id = ?`, [id]);
-  return { success: true, message: "Plan deleted successfully" };
+  return {
+    success: true,
+    message: "Plan deleted successfully",
+    planName: existing.name,
+  };
 };
 
 /* ================= TOGGLE ACTIVE ================= */
 export const togglePlanService = async (id) => {
   const [[existing]] = await db.execute(
-    `SELECT id, is_active FROM subscription_plans WHERE id = ?`, [id]
+    `SELECT id, name, is_active FROM subscription_plans WHERE id = ?`, [id]
   );
   if (!existing) throw new Error("Plan not found");
 
@@ -151,5 +160,6 @@ export const togglePlanService = async (id) => {
     success:   true,
     is_active: newStatus,
     message:   `Plan ${newStatus ? "activated" : "deactivated"} successfully`,
+    planName:  existing.name,
   };
 };

@@ -13,6 +13,7 @@ import {
   resetPasswordService,
   deleteAccountService,
   confirmDeleteAccountService,
+  updateProfileService,
 } from "./user.auth.services.js"
   
 import db from "../../../config/db.js";  
@@ -246,6 +247,11 @@ export const updateProfile = async (req, res) => {
       success: true,
       message: "Profile updated successfully",
       data:    updated,
+    });
+
+    /* ── Send profile updated notification email ── */
+    await updateProfileService(updated).catch((err) => {
+      console.error("Profile update email failed:", err.message);
     });
 
   } catch (err) {

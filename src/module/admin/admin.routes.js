@@ -22,4 +22,4 @@ router.use("/admin-reports",adminLimiter, adminAuth(["super_admin"]),adminReport
 
 router.use("/reports",adminLimiter, adminAuth(["super_admin"]),reportsRoutes)
 
-export default router;
+export default router; 

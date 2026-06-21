@@ -7,6 +7,7 @@ import db from "../../../config/db.js";
              Recent Activity, Today's Match UCTs
    (No financial/revenue data here)
    ═══════════════════════════════════════════════════ */
+   
 export const getDashboardReport = async (req, res) => {
   try {
 
@@ -2192,6 +2193,116 @@ export const deleteLeague = async (req, res) => {
     await db.execute(`DELETE FROM leagues_catalog WHERE id = ?`, [id]);
 
     return res.status(200).json({ success: true, message: "League deleted successfully" });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+
+//....
+
+
+/* ═══════════════════════════════════════════════════
+   GET /admin/activity-log?category=all|packs|finance|payments|catalog|users|admin
+                           &page=1&limit=20
+   Sections: KPI cards, Admin actions table (filterable by category)
+
+   NOTE: The logAdminActivity() helper used to write into this table
+   lives in /utils/activityLogger.js — import it from there inside
+   any controller that performs a create/edit/delete/refund/credential
+   change action.
+   ═══════════════════════════════════════════════════ */
+
+export const getActivityLog = async (req, res) => {
+  try {
+    const { category = "all", page = 1, limit = 20 } = req.query;
+
+    const validCategories = ["all", "packs", "finance", "payments", "catalog", "users", "admin"];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid category. Allowed: ${validCategories.join(", ")}`,
+      });
+    }
+
+    const limitNum  = Number(limit);
+    const offsetNum = (Number(page) - 1) * limitNum;
+
+    /* ── KPI cards ── */
+    const [[kpi]] = await db.execute(
+      `SELECT
+         COUNT(*)                                                                AS total_actions,
+         SUM(CASE WHEN admin_role = 'Super Admin' THEN 1 ELSE 0 END)            AS by_super_admin,
+         SUM(CASE WHEN admin_role != 'Super Admin' THEN 1 ELSE 0 END)           AS by_sub_admins
+       FROM admin_activity_logs`
+    );
+
+    /* ── Category counts (for tab badges, always on full set) ── */
+    const [categoryRows] = await db.execute(
+      `SELECT category, COUNT(*) AS cnt
+       FROM admin_activity_logs
+       GROUP BY category`
+    );
+    const categoryCounts = { all: Number(kpi.total_actions) };
+    for (const cat of ["packs", "finance", "payments", "catalog", "users", "admin"]) {
+      categoryCounts[cat] = 0;
+    }
+    for (const row of categoryRows) {
+      categoryCounts[row.category] = Number(row.cnt);
+    }
+
+    /* ── Filtered list ── */
+    const whereClause = category === "all" ? "" : `WHERE category = ?`;
+    const params = category === "all" ? [] : [category];
+
+    const [rows] = await db.execute(
+      `SELECT id, admin_name, admin_role, category, action, details, created_at
+       FROM admin_activity_logs
+       ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT ${limitNum} OFFSET ${offsetNum}`,
+      params
+    );
+
+    const [[{ total }]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM admin_activity_logs
+       ${whereClause}`,
+      params
+    );
+
+    return res.status(200).json({
+      success: true,
+
+      kpis: {
+        actions_logged: Number(kpi.total_actions),
+        by_super_admin: Number(kpi.by_super_admin),
+        by_sub_admins:  Number(kpi.by_sub_admins),
+      },
+
+      category_counts: categoryCounts,
+
+      pagination: {
+        total:       Number(total),
+        page:        Number(page),
+        limit:       limitNum,
+        total_pages: Math.ceil(Number(total) / limitNum),
+      },
+
+      filters: { category },
+
+      actions: rows.map((r) => ({
+        id:         r.id,
+        when:       r.created_at,
+        admin_name: r.admin_name,
+        admin_role: r.admin_role,
+        category:   r.category,
+        action:     r.action,
+        details:    r.details,
+      })),
+    });
 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
