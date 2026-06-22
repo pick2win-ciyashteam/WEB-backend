@@ -556,10 +556,13 @@ export const getMyTeams = async (req, res) => {
     const uniqueByName = (arr) =>
       Object.values(arr.reduce((acc, p) => { acc[p.original_name] = p; return acc; }, {}));
 
+ 
+
     /* ── Detect captaincy mode ── */
     const isCVCMode = allPlayers.some((p) => p.captain_mode === "CVC");
 
     const substitutes        = uniqueByName(allPlayers.filter((p) => p.status === "substitute" && p.selected));
+    
     const mandateYes         = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
     const mandateNo          = uniqueByName(mandateNoPlayers);
     const captainPlayers     = uniqueByName(allPlayers.filter((p) => p.captain_mode === "C"));

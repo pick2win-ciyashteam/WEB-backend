@@ -153,9 +153,12 @@ export const getProfileService = async (adminId) => {
   }
 
   return {
-    success: true,
-    data: admin,
-  };
+  success: true,
+  data: {
+    ...admin,
+    currency: 0,
+  },
+};
 };
 
 /* ================= GET ALL ADMINS ================= */
@@ -502,4 +505,4 @@ export const exportAdminsCSV = async () => {
   );
 
   return [headers.join(","), ...csvRows].join("\n");
-};
+};  

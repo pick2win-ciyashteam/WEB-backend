@@ -22,7 +22,17 @@ import {
   getAdminSeries,
   getCoinPackPurchasesByCountry,
   updateUserAccountStatus,
-  getActivityLog
+  getActivityLog,
+  getRevenue,
+  getExpensesByMonth,
+  getExpensesFyReport,
+  addExpenseCategory,
+  deleteExpenseCategory,
+  addExpenseRole,
+  deleteExpenseRole,
+  upsertExpenseEntry,
+  getFyProfit,
+  getProfitStatement
 } from "../admin-reports/reports.controller.js";
 
 const router = express.Router();
@@ -105,5 +115,41 @@ router.delete("/leagues/:id", deleteLeague);
 
 router.get("/activity-log", getActivityLog);
 
+//REVENUE
+
+// revenue?tab=today" 
+// revenue?tab=by_month&month=7&year=2026
+// revenue?tab=fy_report&year=2026
+
+router.get("/revenue", getRevenue);
+
+
+/* GET by month */
+router.get("/by-month",   getExpensesByMonth);
+ 
+/* GET FY report */
+router.get("/fy-report",  getExpensesFyReport);
+ 
+/* Category CRUD */
+router.post  ("/category",     addExpenseCategory);
+router.delete("/category/:id", deleteExpenseCategory);
+ 
+/* Role CRUD (under a category) */
+router.post  ("/category/:id/role", addExpenseRole);
+router.delete("/role/:id",           deleteExpenseRole);
+ 
+/* Upsert monthly amount entry */
+router.patch("/entry", upsertExpenseEntry);
+
+
+// PROFIT
+
+/* FY month-by-month profit table + KPI cards */
+router.get("/profit/fy", getFyProfit);
+ 
+/* Selected month profit statement + where revenue goes */
+router.get("/profit/statement", getProfitStatement);
+
 export default router;
 
+ 
