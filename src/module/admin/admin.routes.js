@@ -6,8 +6,8 @@ import countryRoutes         from "./country/country.route.js";
 import bannerRoutes          from "./banners/banners.route.js";
 import subscriptionRoutes    from "./subscription/subscription.route.js";
 import feedbackRoutes        from  "./feedback/feedback.route.js"
-import adminReportsRoutes    from  "./admin-reports/admin.reports.route.js"
-import reportsRoutes         from  "../admin/admin-reports/reports.route.js"
+
+import reportsRoutes         from  "./admin-reports/reports.route.js"
 
 const router = Router();
 
@@ -16,8 +16,7 @@ router.use("/sportmonks",  adminLimiter, adminAuth(["super_admin"]), sportmonksR
 router.use("/country",   countryRoutes);
 router.use("/banners",bannerRoutes);
 router.use("/subscription", subscriptionRoutes);
-router.use("/feedback",feedbackRoutes)
-router.use("/admin-reports",adminLimiter, adminAuth(["super_admin"]),adminReportsRoutes)
+router.use("/feedback",feedbackRoutes) 
 
 
 router.use("/reports",adminLimiter, adminAuth(["super_admin"]),reportsRoutes)

@@ -2308,3 +2308,755 @@ export const getActivityLog = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+
+
+
+/* ═══════════════════════════════════════════════════
+   GET /admin/finance/revenue?tab=today|by_month|fy_report
+                              &month=7&year=2026
+ 
+   3 tabs:
+   - today     : today's revenue by pack
+   - by_month  : selected month revenue by pack
+   - fy_report : full FY month-by-month table + by pack breakdown
+ 
+   No share%, no INR — USD only
+   ═══════════════════════════════════════════════════ */
+export const getRevenue = async (req, res) => {
+  try {
+    const { tab = "today", month, year } = req.query;
+ 
+    const validTabs = ["today", "by_month", "fy_report"];
+    if (!validTabs.includes(tab)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid tab. Allowed: ${validTabs.join(", ")}`,
+      });
+    }
+ 
+    const now          = new Date();
+    const targetMonth  = month ? Number(month) : now.getMonth() + 1;
+    const targetYear   = year  ? Number(year)  : now.getFullYear();
+ 
+    /* ── Indian FY: Apr 1 → Mar 31 ── */
+    const fyStartYear  = targetMonth >= 4 ? targetYear : targetYear - 1;
+    const fyStart      = `${fyStartYear}-04-01`;
+    const fyEnd        = `${fyStartYear + 1}-04-01`;
+    const fyLabel      = `FY ${fyStartYear}-${String(fyStartYear + 1).slice(2)}`;
+ 
+    /* ── KPI cards (always shown, independent of tab) ── */
+    const [[kpiToday]] = await db.execute(
+      `SELECT COALESCE(SUM(amount), 0) AS total
+       FROM user_subscriptions
+       WHERE amount > 0 AND DATE(created_at) = CURDATE()`
+    );
+ 
+    const [[kpiMonth]] = await db.execute(
+      `SELECT COALESCE(SUM(amount), 0) AS total
+       FROM user_subscriptions
+       WHERE amount > 0
+         AND MONTH(created_at) = ? AND YEAR(created_at) = ?`,
+      [targetMonth, targetYear]
+    );
+ 
+    const [[kpiFy]] = await db.execute(
+      `SELECT COALESCE(SUM(amount), 0) AS total
+       FROM user_subscriptions
+       WHERE amount > 0
+         AND created_at >= ? AND created_at < ?`,
+      [fyStart, fyEnd]
+    );
+ 
+    const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+ 
+    /* helper: per-pack revenue for a date range */
+    const getPackRevenue = async (dateCondition, params) => {
+      const [rows] = await db.execute(
+        `SELECT
+           us.plan_name,
+           us.coins,
+           COALESCE(SUM(us.amount), 0) AS revenue_usd
+         FROM user_subscriptions us
+         WHERE us.amount > 0 AND ${dateCondition}
+         GROUP BY us.plan_name, us.coins
+         ORDER BY us.coins ASC`,
+        params
+      );
+ 
+      const totalUsd = rows.reduce((s, r) => s + Number(r.revenue_usd), 0);
+ 
+      return {
+        packs: rows.map((r) => ({
+          name:        r.plan_name,
+          coins:        Number(r.coins),
+          revenue_usd:  Number(r.revenue_usd).toFixed(2),
+        })),
+        total_usd: totalUsd.toFixed(2),
+      };
+    };
+ 
+    let responseData = {};
+ 
+    /* ════════════════════
+       TAB: TODAY
+    ════════════════════ */
+    if (tab === "today") {
+      const packData = await getPackRevenue(`DATE(us.created_at) = CURDATE()`, []);
+ 
+      responseData = {
+        tab,
+        label:       `Today · ${now.toISOString().slice(0, 10)}`,
+        by_pack:      packData,
+      };
+    }
+ 
+    /* ════════════════════
+       TAB: BY MONTH
+    ════════════════════ */
+    else if (tab === "by_month") {
+      const packData = await getPackRevenue(
+        `MONTH(us.created_at) = ? AND YEAR(us.created_at) = ?`,
+        [targetMonth, targetYear]
+      );
+ 
+      responseData = {
+        tab,
+        month:       targetMonth,
+        year:         targetYear,
+        label:        `${monthNames[targetMonth]} ${targetYear}`,
+        by_pack:       packData,
+      };
+    }
+ 
+    /* ════════════════════
+       TAB: FY REPORT
+    ════════════════════ */
+    else {
+      /* Month-by-month FY table */
+      const [monthRows] = await db.execute(
+        `SELECT
+           MONTH(created_at) AS m,
+           YEAR(created_at)  AS y,
+           COALESCE(SUM(amount), 0) AS revenue_usd
+         FROM user_subscriptions
+         WHERE amount > 0
+           AND created_at >= ? AND created_at < ?
+         GROUP BY YEAR(created_at), MONTH(created_at)
+         ORDER BY y ASC, m ASC`,
+        [fyStart, fyEnd]
+      );
+ 
+      /* Build cumulative running total */
+      let cumulative = 0;
+      const fyMonths = monthRows.map((r) => {
+        cumulative += Number(r.revenue_usd);
+        return {
+          month_label:      `${monthNames[r.m]} ${r.y}`,
+          month:             Number(r.m),
+          year:              Number(r.y),
+          revenue_usd:       Number(r.revenue_usd).toFixed(2),
+          cumulative_usd:    cumulative.toFixed(2),
+        };
+      });
+ 
+      /* Per-pack breakdown for full FY */
+      const packData = await getPackRevenue(
+        `us.created_at >= ? AND us.created_at < ?`,
+        [fyStart, fyEnd]
+      );
+ 
+      responseData = {
+        tab,
+        fy_label:       fyLabel,
+        fy_start:        fyStart,
+        fy_end:          fyEnd,
+        fy_total_usd:    packData.total_usd,
+        months:           fyMonths,
+        by_pack:          packData,
+      };
+    }
+ 
+    return res.status(200).json({
+      success: true,
+ 
+      kpis: {
+        revenue_today_usd:  Number(kpiToday.total).toFixed(2),
+        revenue_month_usd:  Number(kpiMonth.total).toFixed(2),
+        revenue_fy_usd:      Number(kpiFy.total).toFixed(2),
+        month_label:         `${monthNames[targetMonth]} ${targetYear}`,
+        fy_label:             fyLabel,
+      },
+ 
+      ...responseData,
+    });
+ 
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+ 
+
+const usdToInr = 95.36; 
+
+/* ═══════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════ */
+
+/* Indian FY: Apr → Mar */
+const getFyRange = (year) => ({
+  start: `${year}-04-01`,
+  end:   `${year + 1}-04-01`,
+  fyStartYear: year,
+});
+
+const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/* ═══════════════════════════════════════════════════
+   1. GET BY MONTH
+   GET /admin/finance/expenses?tab=by_month&month=4&year=2026
+   Returns categories + roles with amounts for that month + FY totals
+   ═══════════════════════════════════════════════════ */
+export const getExpensesByMonth = async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const now          = new Date();
+    const targetMonth  = month ? Number(month) : now.getMonth() + 1;
+    const targetYear   = year  ? Number(year)  : now.getFullYear();
+
+    const fyStartYear  = targetMonth >= 4 ? targetYear : targetYear - 1;
+    const { start: fyStart, end: fyEnd } = getFyRange(fyStartYear);  
+    const fyLabel = `FY ${fyStartYear}-${String(fyStartYear + 1).slice(2)}`;
+
+    /* ── Categories ── */
+    const [categories] = await db.execute(
+      `SELECT * FROM expense_categories ORDER BY sort_order ASC, id ASC`
+    );
+
+    /* ── Roles per category ── */
+    const [roles] = await db.execute(
+      `SELECT * FROM expense_roles ORDER BY id ASC`
+    );
+
+    /* ── Monthly entries for selected month ── */
+    const [monthEntries] = await db.execute(
+      `SELECT category_id, role_id, amount_inr
+       FROM expense_entries
+       WHERE month = ? AND year = ?`,
+      [targetMonth, targetYear]
+    );
+
+    /* ── FY totals per category + role ── */
+    const [fyEntries] = await db.execute(
+      `SELECT category_id, role_id, SUM(amount_inr) AS fy_total
+       FROM expense_entries
+       WHERE created_at >= ? AND created_at < ?
+       GROUP BY category_id, role_id`,
+      [fyStart, fyEnd]
+    );
+
+    /* ── Build lookup maps ── */
+    const monthMap = {};
+    for (const e of monthEntries) {
+      const key = `${e.category_id}_${e.role_id || "null"}`;
+      monthMap[key] = Number(e.amount_inr);
+    }
+    const fyMap = {};
+    for (const e of fyEntries) {
+      const key = `${e.category_id}_${e.role_id || "null"}`;
+      fyMap[key] = Number(e.fy_total);
+    }
+
+    /* ── Assemble response ── */
+    let monthTotal = 0;
+    let fyTotal    = 0;
+
+    const categoryList = categories.map((cat) => {
+      const catRoles = roles.filter((r) => r.category_id === cat.id);
+      let catMonthAmount = 0;
+      let catFyAmount    = 0;
+
+      let rolesData = [];
+      if (cat.has_roles && catRoles.length) {
+        rolesData = catRoles.map((r) => {
+          const mKey  = `${cat.id}_${r.id}`;
+          const ma    = monthMap[mKey] || 0;
+          const fa    = fyMap[mKey]    || 0;
+          catMonthAmount += ma;
+          catFyAmount    += fa;
+          return {
+            role_id:      r.id,
+            name:          r.name,
+            amount_inr:    ma,
+            fy_total_inr:  fa,
+          };
+        });
+      } else {
+        const mKey  = `${cat.id}_null`;
+        catMonthAmount = monthMap[mKey] || 0;
+        catFyAmount    = fyMap[mKey]    || 0;
+      }
+
+      monthTotal += catMonthAmount;
+      fyTotal    += catFyAmount;
+
+      return {
+        id:             cat.id,
+        name:            cat.name,
+        frequency:       cat.frequency,
+        frequency_months: cat.frequency_months,
+        is_auto:          Boolean(cat.is_auto),
+        has_roles:        Boolean(cat.has_roles),
+        amount_inr:       catMonthAmount,
+        fy_total_inr:     catFyAmount,
+        roles:             rolesData,
+      };
+    });
+
+    /* ── KPI cards ── */
+    const [[revenueMonth]] = await db.execute(
+      `SELECT COALESCE(SUM(amount), 0) AS total
+       FROM user_subscriptions
+       WHERE amount > 0 AND MONTH(created_at) = ? AND YEAR(created_at) = ?`,
+      [targetMonth, targetYear]
+    );
+
+    const expenseRatioPct = Number(revenueMonth.total) > 0
+      ? Number(((monthTotal / (Number(revenueMonth.total) * usdToInr)) * 100).toFixed(1))
+      : 0;
+
+    const largestCat = categoryList.reduce(
+      (max, c) => c.fy_total_inr > max.fy_total_inr ? c : max,
+      { name: "—", fy_total_inr: 0 }
+    );
+
+    return res.status(200).json({
+      success: true,
+
+      kpis: {
+        expenses_month_inr:  monthTotal,
+        expenses_fy_inr:      fyTotal,
+        expense_ratio_pct:    expenseRatioPct,
+        largest_cost_fy:       { name: largestCat.name, amount_inr: largestCat.fy_total_inr },
+      },
+
+      tab:         "by_month",
+      month:        targetMonth,
+      year:          targetYear,
+      month_label:   `${monthNames[targetMonth]} ${targetYear}`,
+      fy_label:       fyLabel,
+      month_total_inr: monthTotal,
+      fy_total_inr:    fyTotal,
+
+      categories: categoryList,
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   2. GET FY REPORT
+   GET /admin/finance/expenses?tab=fy_report&year=2026
+   Returns category-wise FY totals (donut + table)
+   ═══════════════════════════════════════════════════ */
+export const getExpensesFyReport = async (req, res) => {
+  try {
+    const { year } = req.query;
+    const now = new Date();
+    const fyStartYear = year ? Number(year) : (now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1);
+    const { start: fyStart, end: fyEnd } = getFyRange(fyStartYear);
+    const fyLabel = `FY ${fyStartYear}-${String(fyStartYear + 1).slice(2)}`;
+
+    const [fyTotals] = await db.execute(
+      `SELECT ec.id, ec.name, ec.frequency, ec.is_auto,
+              COALESCE(SUM(ee.amount_inr), 0) AS fy_total_inr
+       FROM expense_categories ec
+       LEFT JOIN expense_entries ee ON ee.category_id = ec.id
+         AND ee.created_at >= ? AND ee.created_at < ?
+       GROUP BY ec.id, ec.name, ec.frequency, ec.is_auto
+       ORDER BY fy_total_inr DESC`,
+      [fyStart, fyEnd]
+    );
+
+    const grandTotal = fyTotals.reduce((s, c) => s + Number(c.fy_total_inr), 0);
+
+    return res.status(200).json({
+      success: true,
+      tab:       "fy_report",
+      fy_label:   fyLabel,
+      fy_start:   fyStart,
+      fy_end:     fyEnd,
+      total_inr:  grandTotal,
+      total_usd:  (grandTotal / usdToInr).toFixed(2),
+
+      categories: fyTotals.map((c) => ({
+        id:            c.id,
+        name:           c.name,
+        frequency:      c.frequency,
+        is_auto:         Boolean(c.is_auto),
+        fy_total_inr:    Number(c.fy_total_inr),
+        fy_total_usd:    (Number(c.fy_total_inr) / usdToInr).toFixed(2),
+        share_pct:       grandTotal > 0
+          ? Number(((Number(c.fy_total_inr) / grandTotal) * 100).toFixed(1))
+          : 0,
+      })),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   3. ADD CATEGORY
+   POST /admin/finance/expenses/category
+   body: { name, frequency, frequency_months, has_roles }
+   ═══════════════════════════════════════════════════ */
+export const addExpenseCategory = async (req, res) => {
+  try {
+    const { name, frequency = "every_month", frequency_months, has_roles = 0 } = req.body;
+    if (!name?.trim()) return res.status(400).json({ success: false, message: "name required" });
+
+    const [result] = await db.execute(
+      `INSERT INTO expense_categories (name, frequency, frequency_months, has_roles)
+       VALUES (?, ?, ?, ?)`,
+      [name.trim(), frequency, frequency_months || null, has_roles ? 1 : 0]
+    );
+
+    return res.status(200).json({ success: true, message: "Category added", id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   4. DELETE CATEGORY
+   DELETE /admin/finance/expenses/category/:id
+   ═══════════════════════════════════════════════════ */
+export const deleteExpenseCategory = async (req, res) => {
+  try {
+    await db.execute(`DELETE FROM expense_categories WHERE id = ?`, [req.params.id]);
+    return res.status(200).json({ success: true, message: "Category deleted" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   5. ADD ROLE (under a category)
+   POST /admin/finance/expenses/category/:id/role
+   body: { name }
+   ═══════════════════════════════════════════════════ */
+export const addExpenseRole = async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name?.trim()) return res.status(400).json({ success: false, message: "name required" });
+
+    const [result] = await db.execute(
+      `INSERT INTO expense_roles (category_id, name) VALUES (?, ?)`,
+      [req.params.id, name.trim()]
+    );
+
+    return res.status(200).json({ success: true, message: "Role added", id: result.insertId });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   6. REMOVE ROLE
+   DELETE /admin/finance/expenses/role/:id
+   ═══════════════════════════════════════════════════ */
+export const deleteExpenseRole = async (req, res) => {
+  try {
+    await db.execute(`DELETE FROM expense_roles WHERE id = ?`, [req.params.id]);
+    return res.status(200).json({ success: true, message: "Role removed" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   7. UPSERT ENTRY (save/update monthly amount)
+   PATCH /admin/finance/expenses/entry
+   body: { category_id, role_id (optional), month, year, amount_inr }
+   ═══════════════════════════════════════════════════ */
+export const upsertExpenseEntry = async (req, res) => {
+  try {
+    const { category_id, role_id = null, month, year, amount_inr } = req.body;
+    if (!category_id || !month || !year) {
+      return res.status(400).json({ success: false, message: "category_id, month, year required" });
+    }
+
+    await db.execute(
+      `INSERT INTO expense_entries (category_id, role_id, month, year, amount_inr)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE amount_inr = VALUES(amount_inr)`,
+      [category_id, role_id, month, year, Number(amount_inr) || 0]
+    );
+
+    return res.status(200).json({ success: true, message: "Entry saved" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+
+
+/* FY months in order: Apr→Mar */
+const fyMonthOrder = (fyStartYear) => {
+  const months = [];
+  for (let i = 0; i < 12; i++) {
+    const m = ((3 + i) % 12) + 1; // 4,5,6,7,8,9,10,11,12,1,2,3
+    const y = m >= 4 ? fyStartYear : fyStartYear + 1;
+    months.push({ m, y });
+  }
+  return months;
+};
+
+/* ═══════════════════════════════════════════════════
+   1. FY PROFIT — MONTH-BY-MONTH TABLE
+   GET /admin/finance/profit/fy?year=2026
+   Sections: KPI cards, FY month-by-month revenue/expenses/profit table
+   ═══════════════════════════════════════════════════ */
+export const getFyProfit = async (req, res) => {
+  try {
+    const { year } = req.query;
+    const now = new Date();
+    const fyStartYear = year
+      ? Number(year)
+      : now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    const { start: fyStart, end: fyEnd, fyLabel } = getFyRange(fyStartYear);
+
+    /* ── Revenue per month (from user_subscriptions) ── */
+    const [revenueRows] = await db.execute(
+      `SELECT MONTH(created_at) AS m, YEAR(created_at) AS y,
+              COALESCE(SUM(amount), 0) AS total_usd
+       FROM user_subscriptions
+       WHERE amount > 0 AND created_at >= ? AND created_at < ?
+       GROUP BY YEAR(created_at), MONTH(created_at)`,
+      [fyStart, fyEnd]
+    );
+
+    /* ── Expenses per month (from expense_entries) ── */
+    const [expenseRows] = await db.execute(
+      `SELECT month AS m, year AS y,
+              COALESCE(SUM(amount_inr), 0) AS total_inr
+       FROM expense_entries
+       WHERE (year = ? AND month >= 4) OR (year = ? AND month <= 3)
+       GROUP BY year, month`,
+      [fyStartYear, fyStartYear + 1]
+    );
+
+    /* ── Build lookup maps ── */
+    const revMap = {};
+    for (const r of revenueRows) revMap[`${r.m}_${r.y}`] = Number(r.total_usd);
+
+    const expMap = {};
+    for (const e of expenseRows) expMap[`${e.m}_${e.y}`] = Number(e.total_inr);
+
+    /* ── Assemble month-by-month table ── */
+    let fyRevUsd  = 0;
+    let fyExpInr  = 0;
+    let fyExpUsd  = 0;
+    let fyProfUsd = 0;
+
+    const now2 = new Date();
+    const currentM = now2.getMonth() + 1;
+    const currentY = now2.getFullYear();
+
+    const months = fyMonthOrder(fyStartYear).map(({ m, y }) => {
+      const revUsd   = revMap[`${m}_${y}`] || 0;
+      const expInr   = expMap[`${m}_${y}`] || 0;
+      const expUsd   = expInr / usdToInr;
+      const profUsd  = revUsd - expUsd;
+      const margin   = revUsd > 0 ? Number(((profUsd / revUsd) * 100).toFixed(1)) : 0;
+      const isCurrent = m === currentM && y === currentY;
+
+      fyRevUsd  += revUsd;
+      fyExpInr  += expInr;
+      fyExpUsd  += expUsd;
+      fyProfUsd += profUsd;
+
+      return {
+        month_label:  `${monthNames[m]}${isCurrent ? " · current" : ""}`,
+        month:         m,
+        year:          y,
+        is_current:    isCurrent,
+        revenue_usd:   revUsd.toFixed(2),
+        revenue_inr:   (revUsd * usdToInr).toFixed(2),
+        expenses_usd:  expUsd.toFixed(2),
+        expenses_inr:  expInr.toFixed(2),
+        profit_usd:    profUsd.toFixed(2),
+        profit_inr:    (profUsd * usdToInr).toFixed(2),
+        margin_pct:    margin,
+        is_loss:       profUsd < 0,
+      };
+    });
+
+    const fyMargin = fyRevUsd > 0
+      ? Number(((fyProfUsd / fyRevUsd) * 100).toFixed(1))
+      : 0;
+
+    return res.status(200).json({
+      success: true,
+
+      kpis: {
+        revenue_fy_usd:   fyRevUsd.toFixed(2),
+        revenue_fy_inr:   (fyRevUsd * usdToInr).toFixed(2),
+        expenses_fy_usd:  fyExpUsd.toFixed(2),
+        expenses_fy_inr:  fyExpInr.toFixed(2),
+        profit_fy_usd:    fyProfUsd.toFixed(2),
+        profit_fy_inr:    (fyProfUsd * usdToInr).toFixed(2),
+      },
+
+      fy_label:   fyLabel,
+      fy_start:   fyStart,
+      fy_end:     fyEnd,
+
+      months,
+
+      totals: {
+        revenue_usd:  fyRevUsd.toFixed(2),
+        revenue_inr:  (fyRevUsd * usdToInr).toFixed(2),
+        expenses_usd: fyExpUsd.toFixed(2),
+        expenses_inr: fyExpInr.toFixed(2),
+        profit_usd:   fyProfUsd.toFixed(2),
+        profit_inr:   (fyProfUsd * usdToInr).toFixed(2),
+        margin_pct:   fyMargin,
+        is_loss:      fyProfUsd < 0,
+      },
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   2. PROFIT STATEMENT — SELECTED MONTH
+   GET /admin/finance/profit/statement?month=7&year=2026
+   Sections: Profit statement line items,
+             "Where revenue goes" breakdown
+   ═══════════════════════════════════════════════════ */
+export const getProfitStatement = async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const now = new Date();
+    const targetMonth = month ? Number(month) : now.getMonth() + 1;
+    const targetYear  = year  ? Number(year)  : now.getFullYear();
+
+    const fyStartYear = targetMonth >= 4 ? targetYear : targetYear - 1;
+    const { start: fyStart, end: fyEnd, fyLabel } = getFyRange(fyStartYear);
+
+    /* ── Selected month revenue ── */
+    const [[monthRev]] = await db.execute(
+      `SELECT COALESCE(SUM(amount), 0) AS total_usd
+       FROM user_subscriptions
+       WHERE amount > 0 AND MONTH(created_at) = ? AND YEAR(created_at) = ?`,
+      [targetMonth, targetYear]
+    );
+
+    /* ── Selected month expenses ── */
+    const [[monthExp]] = await db.execute(
+      `SELECT COALESCE(SUM(amount_inr), 0) AS total_inr
+       FROM expense_entries
+       WHERE month = ? AND year = ?`,
+      [targetMonth, targetYear]
+    );
+
+    /* ── FY revenue ── */
+    const [[fyRev]] = await db.execute(
+      `SELECT COALESCE(SUM(amount), 0) AS total_usd
+       FROM user_subscriptions
+       WHERE amount > 0 AND created_at >= ? AND created_at < ?`,
+      [fyStart, fyEnd]
+    );
+
+    /* ── FY expenses ── */
+    const [[fyExp]] = await db.execute(
+      `SELECT COALESCE(SUM(amount_inr), 0) AS total_inr
+       FROM expense_entries
+       WHERE (year = ? AND month >= 4) OR (year = ? AND month <= 3)`,
+      [fyStartYear, fyStartYear + 1]
+    );
+
+    const mRevUsd  = Number(monthRev.total_usd);
+    const mExpInr  = Number(monthExp.total_inr);
+    const mExpUsd  = mExpInr / usdToInr;
+    const mProfUsd = mRevUsd - mExpUsd;
+    const mMargin  = mRevUsd > 0 ? Number(((mProfUsd / mRevUsd) * 100).toFixed(1)) : 0;
+
+    const fyRevUsd  = Number(fyRev.total_usd);
+    const fyExpInr  = Number(fyExp.total_inr);
+    const fyExpUsd  = fyExpInr / usdToInr;
+    const fyProfUsd = fyRevUsd - fyExpUsd;
+    const fyMargin  = fyRevUsd > 0 ? Number(((fyProfUsd / fyRevUsd) * 100).toFixed(1)) : 0;
+
+    const monthLabel = `${monthNames[targetMonth]} ${targetYear}`;
+
+    return res.status(200).json({
+      success: true,
+
+      month:        targetMonth,
+      year:          targetYear,
+      month_label:   monthLabel,
+      fy_label:       fyLabel,
+
+      /* ── Profit statement line items ── */
+      statement: {
+        line_items: [
+          {
+            label:       "Coin revenue",
+            month_usd:    mRevUsd.toFixed(2),
+            month_inr:    (mRevUsd * usdToInr).toFixed(2),
+            fy_usd:        fyRevUsd.toFixed(2),
+            fy_inr:        (fyRevUsd * usdToInr).toFixed(2),
+          },
+          {
+            label:       "Operating expenses",
+            month_usd:    `-${mExpUsd.toFixed(2)}`,
+            month_inr:    `-${mExpInr.toFixed(2)}`,
+            fy_usd:        `-${fyExpUsd.toFixed(2)}`,
+            fy_inr:        `-${fyExpInr.toFixed(2)}`,
+          },
+        ],
+        profit_before_tax: {
+          month_usd:  mProfUsd.toFixed(2),
+          month_inr:  (mProfUsd * usdToInr).toFixed(2),
+          fy_usd:      fyProfUsd.toFixed(2),
+          fy_inr:      (fyProfUsd * usdToInr).toFixed(2),
+        },
+        margin: {
+          month_pct: mMargin,
+          fy_pct:    fyMargin,
+        },
+      },
+
+      /* ── Where revenue goes (bar chart data) ── */
+      where_revenue_goes: {
+        total_revenue_usd: mRevUsd.toFixed(2),
+        total_revenue_inr: (mRevUsd * usdToInr).toFixed(2),
+        operating_expenses: {
+          usd:     mExpUsd.toFixed(2),
+          inr:     mExpInr.toFixed(2),
+          pct:     mRevUsd > 0 ? Number(((mExpUsd / mRevUsd) * 100).toFixed(1)) : 0,
+        },
+        profit_before_tax: {
+          usd:     mProfUsd.toFixed(2),
+          inr:     (mProfUsd * usdToInr).toFixed(2),
+          pct:     mMargin,
+          is_loss: mProfUsd < 0,
+        },
+      },
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
