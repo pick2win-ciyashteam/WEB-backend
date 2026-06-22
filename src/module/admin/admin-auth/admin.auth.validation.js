@@ -87,6 +87,7 @@ export const updateProfile = (req, res, next) => {
   const schema = Joi.object({
     name:   Joi.string().min(3).max(100),
     mobile: Joi.string().min(10).max(15),
+    currency:Joi.string/min(3).max(20)
   }).min(1);
   const { error } = schema.validate(req.body);
   if (error) return res.status(400).json({ success: false, message: error.details[0].message });

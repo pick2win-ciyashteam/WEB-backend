@@ -465,14 +465,6 @@ const completeRegistration = async (sessionId) => {
 
   const newUserId = result.insertId;
 
-  /* ── Gift welcome coin ── */
-  await db.execute(    
-    `INSERT INTO user_coins
-       (user_id, coins, total_coins, used_coins, available_coins, updated_at)
-     VALUES (?, 1, 1, 0, 1, NOW())`,
-    [newUserId]
-  );
-
   /* ── Send welcome email ── */
   await sendNoreplyMail({
     to:      session.email,
