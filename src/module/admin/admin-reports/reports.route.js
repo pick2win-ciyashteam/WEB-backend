@@ -123,12 +123,13 @@ router.get("/activity-log", getActivityLog);
 
 router.get("/revenue", getRevenue);
 
+//EXPENSES
 
 /* GET by month */
-router.get("/by-month",   getExpensesByMonth);
+router.get("/expenses/by-month",   getExpensesByMonth);
  
 /* GET FY report */
-router.get("/fy-report",  getExpensesFyReport);
+router.get("/expenses/fy-report",  getExpensesFyReport);
  
 /* Category CRUD */
 router.post  ("/category",     addExpenseCategory);
