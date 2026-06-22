@@ -158,7 +158,7 @@ router.get("/profit/statement", getProfitStatement);
 /* Payments summary: ?tab=today|by_month|fy_report&month=7&year=2026 */
 router.get("/payments/summary", getPaymentsSummary);
 
-/* Transaction log: ?tab=today|by_month|fy_report&month=7&year=2026&status=all|success|failed_declined|failed_charged|refunded|pending&page=1&limit=20 */
+/* Transaction log: ?tab=all|today|by_month|fy_report&month=7&year=2026&status=all|success|failed_declined|failed_charged|refunded|pending&page=1&limit=20 */
 router.get("/payments/transactions", getTransactionLog);
 
 export default router;

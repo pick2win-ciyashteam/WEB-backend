@@ -3300,7 +3300,7 @@ export const getPaymentsSummary = async (req, res) => {
 /* ═══════════════════════════════════════════════════
    2. TRANSACTION LOG
    GET /admin/finance/payments/transactions
-       ?tab=today|by_month|fy_report
+       ?tab=all|today|by_month|fy_report
        &month=7&year=2026
        &status=all|success|failed_declined|failed_charged|refunded|pending
        &page=1&limit=20
@@ -3309,7 +3309,7 @@ export const getPaymentsSummary = async (req, res) => {
 export const getTransactionLog = async (req, res) => {
   try {
     const {
-      tab    = "today",
+      tab    = "all",
       month,
       year,
       status = "all",
@@ -3330,23 +3330,25 @@ export const getTransactionLog = async (req, res) => {
     let dateCondition;
     const params = [];
 
-    if (tab === "today") {
-      dateCondition = `DATE(us.created_at) = CURDATE()`;
+    if (tab === "all") {
+      dateCondition = `1 = 1`;
+    } else if (tab === "today") {
+      dateCondition = `DATE(ct.created_at) = CURDATE()`;
     } else if (tab === "by_month") {
-      dateCondition = `MONTH(us.created_at) = ? AND YEAR(us.created_at) = ?`;
+      dateCondition = `MONTH(ct.created_at) = ? AND YEAR(ct.created_at) = ?`;
       params.push(targetMonth, targetYear);
     } else {
-      dateCondition = `us.created_at >= ? AND us.created_at < ?`;
+      dateCondition = `ct.created_at >= ? AND ct.created_at < ?`;
       params.push(fyStart, fyEnd);
     }
 
     /* ── Status filter ── */
     const statusMap = {
-      success:         `us.status = 'active'`,
-      failed_declined: `us.status = 'failed' AND (us.payment_reference IS NULL OR us.payment_reference = '')`,
-      failed_charged:  `us.status = 'failed' AND us.payment_reference IS NOT NULL AND us.payment_reference != ''`,
-      refunded:        `us.status = 'expired'`,
-      pending:          `us.status = 'pending'`,
+      success:         `ct.status = 'success'`,
+      failed_declined: `ct.status = 'failed' AND (ct.reference_id IS NULL OR ct.reference_id = '')`,
+      failed_charged:  `ct.status = 'failed' AND ct.reference_id IS NOT NULL AND ct.reference_id != ''`,
+      refunded:        `ct.status = 'refunded'`,
+      pending:          `ct.status = 'pending'`,
     };
 
     const statusCondition = status !== "all" && statusMap[status]
@@ -3355,46 +3357,54 @@ export const getTransactionLog = async (req, res) => {
 
     /* ── Status counts for tab badges ── */
     const [countRows] = await db.execute(
-      `SELECT us.status, COUNT(*) AS cnt
-       FROM user_subscriptions us
-       WHERE ${dateCondition} ${statusCondition}
-       GROUP BY us.status`,
+      `SELECT
+         CASE
+           WHEN ct.status = 'success' THEN 'success'
+           WHEN ct.status = 'failed' AND (ct.reference_id IS NULL OR ct.reference_id = '') THEN 'failed_declined'
+           WHEN ct.status = 'failed' AND ct.reference_id IS NOT NULL AND ct.reference_id != '' THEN 'failed_charged'
+           WHEN ct.status = 'refunded' THEN 'refunded'
+           WHEN ct.status = 'pending' THEN 'pending'
+           ELSE ct.status
+         END AS mapped_status,
+         COUNT(*) AS cnt
+       FROM coins_transactions ct
+       WHERE ct.coins > 0 AND ${dateCondition}
+       GROUP BY mapped_status`,
       params
     );
 
     const counts = { all: 0, success: 0, failed_declined: 0, failed_charged: 0, refunded: 0, pending: 0 };
     for (const r of countRows) {
       counts.all += Number(r.cnt);
-      if (r.status === "active")  counts.success += Number(r.cnt);
-      if (r.status === "failed")  counts.failed_declined += Number(r.cnt);
-      if (r.status === "expired") counts.refunded += Number(r.cnt);
-      if (r.status === "pending") counts.pending += Number(r.cnt);
+      if (counts[r.mapped_status] !== undefined) counts[r.mapped_status] += Number(r.cnt);
     }
 
     /* ── Transaction list ── */
     const [rows] = await db.execute(
       `SELECT
-         us.id,
-         us.plan_name,
-         us.coins,
-         us.amount,
-         us.status,
-         us.payment_reference,
-         us.created_at,
-         u.fullname,
-         u.country
-       FROM user_subscriptions us
-       JOIN users u ON u.id = us.user_id
-       WHERE ${dateCondition} ${statusCondition}
-       ORDER BY us.created_at DESC
+         ct.id,
+         ct.plan_id,
+         ct.coins,
+         ct.amount,
+         ct.status,
+         ct.reference_id,
+         ct.created_at,
+         COALESCE(ct.user_name, u.fullname) AS fullname,
+         u.country,
+         sp.name AS plan_name
+       FROM coins_transactions ct
+       LEFT JOIN users u ON u.id = ct.user_id
+       LEFT JOIN subscription_plans sp ON sp.id = ct.plan_id
+       WHERE ct.coins > 0 AND ${dateCondition} ${statusCondition}
+       ORDER BY ct.created_at DESC
        LIMIT ${limitNum} OFFSET ${offsetNum}`,
       params
     );
 
     const [[{ total }]] = await db.execute(
       `SELECT COUNT(*) AS total
-       FROM user_subscriptions us
-       WHERE ${dateCondition} ${statusCondition}`,
+       FROM coins_transactions ct
+       WHERE ct.coins > 0 AND ${dateCondition} ${statusCondition}`,
       params
     );
 
@@ -3414,6 +3424,8 @@ export const getTransactionLog = async (req, res) => {
       tab,
       period_label: tab === "today"
         ? `Today`
+        : tab === "all"
+        ? `All transactions`
         : tab === "by_month"
         ? `${monthNames[targetMonth]} ${targetYear}`
         : `FY ${fyStartYear}-${String(fyStartYear + 1).slice(2)}`,
