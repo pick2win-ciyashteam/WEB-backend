@@ -14,7 +14,7 @@ import teamsRoutes       from "./teams/teams.route.js";
 const router = Router();
 
 router.use("/user-auth",   userAuthRoutes);
-router.use("/series", authenticate, seriesRoutes);
+router.use("/series", seriesRoutes);
 router.use("/countries",  countriesRoutes);
 router.use("/matches",authenticate,matchesRoutes);
 router.use("/banner",bannerRoutes);

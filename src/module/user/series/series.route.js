@@ -9,7 +9,7 @@ const router = express.Router();
 
 /* User token required — returns only visible leagues */
 
-router.get("/leagues", authenticate, getVisibleLeagues);
+router.get("/leagues", getVisibleLeagues);
 
 
 router.get("/:seriesid", authenticate,  getSeriesById);

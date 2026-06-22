@@ -2043,7 +2043,8 @@ export const getAdminSeries = async (req, res) => {
 
 /* ═══════════════════════════════════════════════════
    TABLE: leagues_catalog
-   id, name, region, tier, matches_30d, is_visible, created_at
+   id, name, short_name, region, tier, from_month_year, to_month_year,
+   description, matches_30d, is_visible, created_at
    ═══════════════════════════════════════════════════ */
 
 /* ═══════════════════════════════════════════════════
@@ -2054,7 +2055,8 @@ export const getLeagues = async (req, res) => {
   try {
 
     const [leagues] = await db.execute(
-      `SELECT id, name, region, tier, matches_30d, is_visible, created_at
+      `SELECT id, name, short_name, region, tier, from_month_year, to_month_year,
+              description, matches_30d, is_visible, created_at
        FROM leagues_catalog
        ORDER BY id ASC`
     );
@@ -2080,8 +2082,12 @@ export const getLeagues = async (req, res) => {
         id:           l.id,
         league_code:  `LG-${String(l.id).padStart(2, "0")}`,
         name:         l.name,
+        short_name:   l.short_name,
         region:       l.region,
         tier:         l.tier,
+        from_month_year: l.from_month_year,
+        to_month_year:   l.to_month_year,
+        description:  l.description,
         matches_30d:  Number(l.matches_30d || 0),
         is_visible:   l.is_visible === 1,
         created_at:   l.created_at,
@@ -2096,20 +2102,40 @@ export const getLeagues = async (req, res) => {
 /* ═══════════════════════════════════════════════════
    2. ADD LEAGUE
    POST /admin/leagues
-   body: { name, region, tier, matches_30d }
+   body: { name, short_name, region, tier, from_month_year, to_month_year, description, matches_30d }
    ═══════════════════════════════════════════════════ */
 export const addLeague = async (req, res) => {
   try {
-    const { name, region, tier, matches_30d } = req.body;
+    const {
+      name,
+      short_name,
+      region,
+      tier,
+      from_month_year,
+      to_month_year,
+      description,
+      matches_30d,
+    } = req.body;
 
     if (!name?.trim() || !region?.trim() || !tier?.trim()) {
       return res.status(400).json({ success: false, message: "name, region, tier required" });
     }
 
     const [result] = await db.execute(
-      `INSERT INTO leagues_catalog (name, region, tier, matches_30d, is_visible)
-       VALUES (?, ?, ?, ?, 1)`,
-      [name.trim(), region.trim(), tier.trim(), Number(matches_30d) || 0]
+      `INSERT INTO leagues_catalog
+         (name, short_name, region, tier, from_month_year, to_month_year,
+          description, matches_30d, is_visible)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+      [
+        name.trim(),
+        short_name?.trim() || null,
+        region.trim(),
+        tier.trim(),
+        from_month_year?.trim() || null,
+        to_month_year?.trim() || null,
+        description?.trim() || null,
+        Number(matches_30d) || 0,
+      ]
     );
 
     return res.status(200).json({
@@ -2126,18 +2152,43 @@ export const addLeague = async (req, res) => {
 /* ═══════════════════════════════════════════════════
    3. EDIT LEAGUE
    PATCH /admin/leagues/:id
-   body: { name, region, tier, matches_30d }
+   body: { name, short_name, region, tier, from_month_year, to_month_year, description, matches_30d }
    ═══════════════════════════════════════════════════ */
 export const editLeague = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, region, tier, matches_30d } = req.body;
+    const {
+      name,
+      short_name,
+      region,
+      tier,
+      from_month_year,
+      to_month_year,
+      description,
+      matches_30d,
+    } = req.body;
+
+    if (!name?.trim() || !region?.trim() || !tier?.trim()) {
+      return res.status(400).json({ success: false, message: "name, region, tier required" });
+    }
 
     await db.execute(
       `UPDATE leagues_catalog
-       SET name = ?, region = ?, tier = ?, matches_30d = ?
+       SET name = ?, short_name = ?, region = ?, tier = ?,
+           from_month_year = ?, to_month_year = ?, description = ?,
+           matches_30d = ?
        WHERE id = ?`,
-      [name.trim(), region.trim(), tier.trim(), Number(matches_30d) || 0, id]
+      [
+        name.trim(),
+        short_name?.trim() || null,
+        region.trim(),
+        tier.trim(),
+        from_month_year?.trim() || null,
+        to_month_year?.trim() || null,
+        description?.trim() || null,
+        Number(matches_30d) || 0,
+        id,
+      ]
     );
 
     return res.status(200).json({ success: true, message: "League updated successfully" });
