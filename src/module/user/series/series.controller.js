@@ -266,7 +266,8 @@ export const getVisibleLeagues = async (req, res) => {
   try {
  
     const [leagues] = await db.execute(
-      `SELECT id, name, region, tier, matches_30d
+      `SELECT id, name, short_name, region, tier, from_month_year, to_month_year,
+              description, matches_30d
        FROM leagues_catalog
        WHERE is_visible = 1
        ORDER BY tier ASC, name ASC`
@@ -276,11 +277,15 @@ export const getVisibleLeagues = async (req, res) => {
       success: true,
       total: leagues.length,
       leagues: leagues.map((l) => ({
-        id:          l.id,
-        name:        l.name,
-        region:      l.region,
-        tier:        l.tier,
-        matches_30d: Number(l.matches_30d || 0),
+        id:              l.id,
+        name:            l.name,
+        short_name:      l.short_name,
+        region:          l.region,
+        tier:            l.tier,
+        from_month_year: l.from_month_year,
+        to_month_year:   l.to_month_year,
+        description:     l.description,
+        matches_30d:     Number(l.matches_30d || 0),
       })),
     });
  

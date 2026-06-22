@@ -96,13 +96,13 @@ router.get("/countrywise-coin",getCoinPackPurchasesByCountry)
 /* GET /admin/series?status=all|live|upcoming|completed */
 router.get("/series", getAdminSeries);
 
-/* List + KPIs */
+/* List + KPIs: includes short_name, from_month_year, to_month_year, description */
 router.get("/leagues", getLeagues);
 
-/* Add new league */
+/* Add new league: body { name, short_name, region, tier, from_month_year, to_month_year, description, matches_30d } */
 router.post("/leagues", addLeague);
 
-/* Edit league */
+/* Edit league: body { name, short_name, region, tier, from_month_year, to_month_year, description, matches_30d } */
 router.patch("/leagues/:id", editLeague);
 
 /* Toggle shown/hidden on website */
