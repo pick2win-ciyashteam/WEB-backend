@@ -137,6 +137,7 @@ export const getProfileService = async (adminId) => {
         name,
         email,
         mobile,
+        currency,
         role,
         access_level,
         status,
@@ -154,10 +155,7 @@ export const getProfileService = async (adminId) => {
 
   return {
   success: true,
-  data: {
-    ...admin,
-    currency: 0,
-  },
+  data: admin,
 };
 };
 
@@ -443,7 +441,7 @@ export const updateCredentialsService = async (adminId, data, ip) => {
 
 /* ================= UPDATE OWN PROFILE (PRIMARY ADMIN) ================= */
 export const updateProfileService = async (adminId, data) => {
-  const ALLOWED = ["name", "mobile"];
+  const ALLOWED = ["name", "mobile", "currency"];
   const sanitized = {};
   for (const key of ALLOWED) {
     if (data[key] !== undefined) sanitized[key] = data[key];

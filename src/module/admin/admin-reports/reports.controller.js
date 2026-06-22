@@ -3111,3 +3111,338 @@ export const getProfitStatement = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+
+
+
+/* ═══════════════════════════════════════════════════
+   1. PAYMENTS SUMMARY
+   GET /admin/finance/payments/summary?tab=today|by_month|fy_report
+                                       &month=7&year=2026
+   Sections: KPI cards, by-status breakdown table
+   ═══════════════════════════════════════════════════ */
+export const getPaymentsSummary = async (req, res) => {
+  try {
+    const { tab = "today", month, year } = req.query;
+
+    const validTabs = ["today", "by_month", "fy_report"];
+    if (!validTabs.includes(tab)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid tab. Allowed: ${validTabs.join(", ")}`,
+      });
+    }
+
+    const now         = new Date();
+    const targetMonth = month ? Number(month) : now.getMonth() + 1;
+    const targetYear  = year  ? Number(year)  : now.getFullYear();
+
+    const fyStartYear = targetMonth >= 4 ? targetYear : targetYear - 1;
+    const { start: fyStart, end: fyEnd } = getFyRange(fyStartYear);
+    const fyLabel = `FY ${fyStartYear}-${String(fyStartYear + 1).slice(2)}`;
+
+    /* ── KPI cards (always computed) ── */
+    const [[kpiToday]] = await db.execute(
+      `SELECT
+         COALESCE(SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END), 0)  AS net_usd,
+         COALESCE(SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END), 0) * ? AS net_inr
+       FROM user_subscriptions
+       WHERE DATE(created_at) = CURDATE()`,
+      [usdToInr]
+    );
+
+    const [[kpiMonth]] = await db.execute(
+      `SELECT COALESCE(SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END), 0) AS net_usd
+       FROM user_subscriptions
+       WHERE MONTH(created_at) = ? AND YEAR(created_at) = ?`,
+      [targetMonth, targetYear]
+    );
+
+    const [[kpiFy]] = await db.execute(
+      `SELECT COALESCE(SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END), 0) AS net_usd
+       FROM user_subscriptions
+       WHERE created_at >= ? AND created_at < ?`,
+      [fyStart, fyEnd]
+    );
+
+    /* ── Needs refund: failed+charged ── */
+    const [[needsRefund]] = await db.execute(
+      `SELECT COUNT(*) AS cnt,
+              COALESCE(SUM(amount), 0) AS total_usd
+       FROM user_subscriptions
+       WHERE status = 'failed' AND payment_reference IS NOT NULL
+         AND payment_reference != ''`
+    );
+
+    /* ── Resolve date condition for selected tab ── */
+    let dateCondition;
+    const dateParams = [];
+    let periodLabel;
+
+    if (tab === "today") {
+      dateCondition = `DATE(us.created_at) = CURDATE()`;
+      periodLabel = `Today · ${now.toISOString().slice(0, 10)}`;
+    } else if (tab === "by_month") {
+      dateCondition = `MONTH(us.created_at) = ? AND YEAR(us.created_at) = ?`;
+      dateParams.push(targetMonth, targetYear);
+      periodLabel = `${monthNames[targetMonth]} ${targetYear}`;
+    } else {
+      dateCondition = `us.created_at >= ? AND us.created_at < ?`;
+      dateParams.push(fyStart, fyEnd);
+      periodLabel = fyLabel;
+    }
+
+    /* ── By-status breakdown ── */
+    const [statusRows] = await db.execute(
+      `SELECT
+         us.status,
+         COUNT(*)                                                                 AS count,
+         COALESCE(SUM(CASE WHEN us.status = 'active'   THEN us.amount ELSE 0 END), 0) AS success_usd,
+         COALESCE(SUM(CASE WHEN us.status = 'expired'  THEN us.amount ELSE 0 END), 0) AS refunded_usd
+       FROM user_subscriptions us
+       WHERE ${dateCondition}
+       GROUP BY us.status`,
+      dateParams
+    );
+
+    /* ── Compute net collected ── */
+    let successCount    = 0;
+    let successUsd      = 0;
+    let failedDeclined  = 0;
+    let failedCharged   = 0;
+    let refundedCount   = 0;
+    let pendingCount    = 0;
+
+    for (const r of statusRows) {
+      if (r.status === "active") {
+        successCount = Number(r.count);
+        successUsd   = Number(r.success_usd);
+      } else if (r.status === "failed") {
+        failedDeclined = Number(r.count);
+      } else if (r.status === "expired") {
+        refundedCount = Number(r.count);
+      } else if (r.status === "pending") {
+        pendingCount = Number(r.count);
+      }
+    }
+
+    const netUsd = successUsd;
+
+    return res.status(200).json({
+      success: true,
+
+      kpis: {
+        net_today_usd:   Number(kpiToday.net_usd).toFixed(2),
+        net_today_inr:   Number(kpiToday.net_inr).toFixed(2),
+        net_month_usd:   Number(kpiMonth.net_usd).toFixed(2),
+        net_month_inr:   (Number(kpiMonth.net_usd) * usdToInr).toFixed(2),
+        net_fy_usd:       Number(kpiFy.net_usd).toFixed(2),
+        net_fy_inr:       (Number(kpiFy.net_usd) * usdToInr).toFixed(2),
+        needs_refund: {
+          count:     Number(needsRefund.cnt),
+          total_usd: Number(needsRefund.total_usd).toFixed(2),
+        },
+        month_label: `${monthNames[targetMonth]} ${targetYear}`,
+        fy_label:     fyLabel,
+      },
+
+      tab,
+      period_label: periodLabel,
+
+      by_status: {
+        period_net_usd:   netUsd.toFixed(2),
+        period_net_inr:   (netUsd * usdToInr).toFixed(2),
+        breakdown: [
+          {
+            status:      "Success",
+            count:        successCount,
+            value_usd:    successUsd.toFixed(2),
+            value_inr:    (successUsd * usdToInr).toFixed(2),
+            note:          null,
+          },
+          {
+            status:      "Failed · declined",
+            count:        failedDeclined,
+            value_usd:    null,
+            value_inr:    null,
+            note:          "no charge",
+          },
+          {
+            status:      "Failed · charged",
+            count:        failedCharged,
+            value_usd:    null,
+            value_inr:    null,
+            note:          "needs refund",
+          },
+          {
+            status:      "Refunded",
+            count:        refundedCount,
+            value_usd:    null,
+            value_inr:    null,
+            note:          null,
+          },
+          {
+            status:      "Pending",
+            count:        pendingCount,
+            value_usd:    null,
+            value_inr:    null,
+            note:          "in-flight",
+          },
+        ],
+      },
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ═══════════════════════════════════════════════════
+   2. TRANSACTION LOG
+   GET /admin/finance/payments/transactions
+       ?tab=today|by_month|fy_report
+       &month=7&year=2026
+       &status=all|success|failed_declined|failed_charged|refunded|pending
+       &page=1&limit=20
+   Section: Transaction log table
+   ═══════════════════════════════════════════════════ */
+export const getTransactionLog = async (req, res) => {
+  try {
+    const {
+      tab    = "today",
+      month,
+      year,
+      status = "all",
+      page   = 1,
+      limit  = 20,
+    } = req.query;
+
+    const now         = new Date();
+    const targetMonth = month ? Number(month) : now.getMonth() + 1;
+    const targetYear  = year  ? Number(year)  : now.getFullYear();
+    const limitNum    = Number(limit);
+    const offsetNum   = (Number(page) - 1) * limitNum;
+
+    const fyStartYear = targetMonth >= 4 ? targetYear : targetYear - 1;
+    const { start: fyStart, end: fyEnd } = getFyRange(fyStartYear);
+
+    /* ── Date condition ── */
+    let dateCondition;
+    const params = [];
+
+    if (tab === "today") {
+      dateCondition = `DATE(us.created_at) = CURDATE()`;
+    } else if (tab === "by_month") {
+      dateCondition = `MONTH(us.created_at) = ? AND YEAR(us.created_at) = ?`;
+      params.push(targetMonth, targetYear);
+    } else {
+      dateCondition = `us.created_at >= ? AND us.created_at < ?`;
+      params.push(fyStart, fyEnd);
+    }
+
+    /* ── Status filter ── */
+    const statusMap = {
+      success:         `us.status = 'active'`,
+      failed_declined: `us.status = 'failed' AND (us.payment_reference IS NULL OR us.payment_reference = '')`,
+      failed_charged:  `us.status = 'failed' AND us.payment_reference IS NOT NULL AND us.payment_reference != ''`,
+      refunded:        `us.status = 'expired'`,
+      pending:          `us.status = 'pending'`,
+    };
+
+    const statusCondition = status !== "all" && statusMap[status]
+      ? `AND ${statusMap[status]}`
+      : "";
+
+    /* ── Status counts for tab badges ── */
+    const [countRows] = await db.execute(
+      `SELECT us.status, COUNT(*) AS cnt
+       FROM user_subscriptions us
+       WHERE ${dateCondition} ${statusCondition}
+       GROUP BY us.status`,
+      params
+    );
+
+    const counts = { all: 0, success: 0, failed_declined: 0, failed_charged: 0, refunded: 0, pending: 0 };
+    for (const r of countRows) {
+      counts.all += Number(r.cnt);
+      if (r.status === "active")  counts.success += Number(r.cnt);
+      if (r.status === "failed")  counts.failed_declined += Number(r.cnt);
+      if (r.status === "expired") counts.refunded += Number(r.cnt);
+      if (r.status === "pending") counts.pending += Number(r.cnt);
+    }
+
+    /* ── Transaction list ── */
+    const [rows] = await db.execute(
+      `SELECT
+         us.id,
+         us.plan_name,
+         us.coins,
+         us.amount,
+         us.status,
+         us.payment_reference,
+         us.created_at,
+         u.fullname,
+         u.country
+       FROM user_subscriptions us
+       JOIN users u ON u.id = us.user_id
+       WHERE ${dateCondition} ${statusCondition}
+       ORDER BY us.created_at DESC
+       LIMIT ${limitNum} OFFSET ${offsetNum}`,
+      params
+    );
+
+    const [[{ total }]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM user_subscriptions us
+       WHERE ${dateCondition} ${statusCondition}`,
+      params
+    );
+
+    const txStatusLabel = (us) => {
+      if (us.status === "active")  return "Success";
+      if (us.status === "expired") return "Refunded";
+      if (us.status === "pending") return "Pending";
+      if (us.status === "failed") {
+        return us.payment_reference ? "Failed · charged" : "Failed · declined";
+      }
+      return us.status;
+    };
+
+    return res.status(200).json({
+      success: true,
+
+      tab,
+      period_label: tab === "today"
+        ? `Today`
+        : tab === "by_month"
+        ? `${monthNames[targetMonth]} ${targetYear}`
+        : `FY ${fyStartYear}-${String(fyStartYear + 1).slice(2)}`,
+
+      status_counts: counts,
+
+      pagination: {
+        total:       Number(total),
+        page:        Number(page),
+        limit:       limitNum,
+        total_pages: Math.ceil(Number(total) / limitNum),
+      },
+
+      transactions: rows.map((r) => ({
+        tx_id:             `TX-${r.id}`,
+        fullname:           r.fullname,
+        country:            r.country,
+        pack:               r.plan_name,
+        coins:              Number(r.coins),
+        amount_usd:         Number(r.amount).toFixed(2),
+        amount_inr:         (Number(r.amount) * usdToInr).toFixed(2),
+        status:             txStatusLabel(r),
+        payment_reference:  r.payment_reference,
+        date:               r.created_at,
+        can_refund:         r.status === "failed" && r.payment_reference,
+      })),
+    });
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
