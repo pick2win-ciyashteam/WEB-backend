@@ -1,9 +1,9 @@
-// teams controlelr 
+// teams.controller.js
 import db from "../../../config/db.js";
 import axios from "axios";
-import { sendNoreplyMail, uctTeamsGeneratedEmailHtml, } from "../../../utils/mailer.js";
+import { sendNoreplyMail, uctTeamsGeneratedEmailHtml } from "../../../utils/mailer.js";
 
- 
+/* ================= GENERATE TEAMS ================= */
 export const generateTeams = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -21,20 +21,20 @@ export const generateTeams = async (req, res) => {
       return res.status(400).json({ success: false, message: "team_a and team_b must have at least 1 player each" });
     }
 
-    /* ── 2. Validate substitutes max 3 total ── */
-    const substitutesA     = team_a.filter((p) => p.is_substitute === true);
-    const substitutesB     = team_b.filter((p) => p.is_substitute === true);
-    const totalSubstitutes = substitutesA.length + substitutesB.length;
+    /* ── Validate substitutes max 3 ── */
+    const totalSubstitutes =
+      team_a.filter((p) => p.is_substitute === true).length +
+      team_b.filter((p) => p.is_substitute === true).length;
 
     if (totalSubstitutes > 3) {
       return res.status(400).json({ success: false, message: "Maximum 3 substitutes allowed in total across both teams" });
     }
 
-    /* ── 3. Remove duplicates ── */
+    /* ── Remove duplicates ── */
     const uniqueTeamA = team_a.filter((p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx);
     const uniqueTeamB = team_b.filter((p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx);
 
-    /* ── 4. Match check ── */
+    /* ── Match check ── */
     const [[match]] = await db.execute(
       `SELECT id, status, lineupavailable, lineup_status, start_time FROM matches WHERE id = ?`,
       [match_id]
@@ -56,14 +56,14 @@ export const generateTeams = async (req, res) => {
       return res.status(400).json({ success: false, message: "Playing XI not announced yet. Please wait for lineup confirmation." });
     }
 
-    /* ── 5. Already generated check ── */
+    /* ── Already generated ── */
     const [[existing]] = await db.execute(
       `SELECT id FROM match_generation_log WHERE match_id = ? AND user_id = ?`,
       [match_id, userId]
     );
     if (existing) return res.status(400).json({ success: false, message: "Teams already generated for this match" });
 
-    /* ── 6. Coins check ── */
+    /* ── Coins check ── */
     const [[wallet]] = await db.execute(
       `SELECT available_coins, used_coins, total_coins FROM user_coins WHERE user_id = ?`,
       [userId]
@@ -72,11 +72,11 @@ export const generateTeams = async (req, res) => {
       return res.status(400).json({ success: false, message: "Insufficient coins. Please buy coins to generate teams." });
     }
 
-    /* ── 7. Free trial check ── */
+    /* ── Free trial check ── */
     const [[userRow]] = await db.execute(`SELECT free_trial_used FROM users WHERE id = ?`, [userId]);
     const isFreeTrial = userRow && userRow.free_trial_used === 0;
 
-    /* ── 8. Subscription check ── */
+    /* ── Subscription check ── */
     if (!isFreeTrial) {
       const [[subscription]] = await db.execute(
         `SELECT id, plan_name, expiry_date, matches_allowed, matches_used
@@ -91,13 +91,13 @@ export const generateTeams = async (req, res) => {
       }
     }
 
-    /* ── 9. Convert real names → coded names ── */
+    /* ── Convert real names → coded names ── */
     const toUCT = (players, side) => {
       const counters = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
       return players.map((p) => {
         const role = p.role || "MID";
         counters[role] = (counters[role] || 0) + 1;
-        const prefix   = role === "GK" ? "GK" : role === "DEF" ? "D" : role === "MID" ? "M" : "F";
+        const prefix    = role === "GK" ? "GK" : role === "DEF" ? "D" : role === "MID" ? "M" : "F";
         const codedName = `${prefix}${counters[role]}_${side}`;
         console.log(`Mapping: ${codedName} → ${p.name}`);
         return {
@@ -116,7 +116,7 @@ export const generateTeams = async (req, res) => {
     const uctTeamB  = toUCT(uniqueTeamB, "B");
     const allMapped = [...uctTeamA, ...uctTeamB];
 
-    /* ── 10. Resolve cap ── */
+    /* ── Resolve cap ── */
     const resolveCapForUCT = (capValue) => {
       if (!capValue) return undefined;
       if (capValue === "C")   return "C";
@@ -125,7 +125,7 @@ export const generateTeams = async (req, res) => {
       return undefined;
     };
 
-    /* ── 11. Validate C/VC candidates ── */
+    /* ── Validate C/VC candidates ── */
     const cCandidates  = allMapped.filter((p) => p.captain === "C"  || p.captain === "CVC");
     const vcCandidates = allMapped.filter((p) => p.captain === "VC" || p.captain === "CVC");
 
@@ -139,10 +139,9 @@ export const generateTeams = async (req, res) => {
 
     let captaincyMode = "C & VC";
     if (hasCVC && !hasC && !hasVC) captaincyMode = "CVC";
-    else if (hasC && hasVC && !hasCVC) captaincyMode = "C & VC";
-    else captaincyMode = "MIXED";
+    else if (hasC || hasVC)        captaincyMode = "C & VC";
 
-    /* ── 12. Build UCT payload ── */
+    /* ── Build UCT payload ── */
     const buildUCTPlayer = (p) => {
       const obj = { name: p.name, role: p.role };
       const cap = resolveCapForUCT(p.captain);
@@ -159,25 +158,24 @@ export const generateTeams = async (req, res) => {
 
     console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
 
-    /* ── 13. Build maps ── */
+    /* ── Build maps ── */
     const nameMap     = {};
-    const capMap      = {};   // user selected captain mode (C/VC/CVC)
+    const capMap      = {}; // original user selection: C/VC/CVC
     const mandateMap  = {};
     const sideMap     = {};
     const selectedMap = {};
 
     allMapped.forEach((p) => {
       nameMap[p.name]     = p._original || p.name;
-      capMap[p.name]      = p.captain   || null;  // original CVC/C/VC
+      capMap[p.name]      = p.captain   || null;
       mandateMap[p.name]  = p.mandate   || null;
       sideMap[p.name]     = p._side;
       selectedMap[p.name] = p.is_substitute ? 1 : 0;
     });
 
-    /* ── mandate="NO" players — save separately ── */
     const mandateNoPlayers = allMapped.filter((p) => p.mandate === "NO");
 
-    /* ── 14. Call UCT API ── */
+    /* ── Call UCT API ── */
     const startTime = Date.now();
     let uctTeams    = [];
 
@@ -185,7 +183,10 @@ export const generateTeams = async (req, res) => {
       const response = await axios.post(
         `${process.env.UCT_API}/football/teams`,
         uctPayload,
-        { headers: { "Content-Type": "application/json", "x-api-key": process.env.UCT_API_KEY }, timeout: 60000 }
+        {
+          headers: { "Content-Type": "application/json", "x-api-key": process.env.UCT_API_KEY },
+          timeout: 60000,
+        }
       );
       uctTeams = response.data || [];
       console.log(`✅ UCT API Success — ${uctTeams.length} records received`);
@@ -228,12 +229,10 @@ export const generateTeams = async (req, res) => {
       lines.push(`Total teams   : ${totalTeamsCount}`);
       lines.push("");
 
-      /* ── Captaincy mode summary ── */
       lines.push("********************");
       lines.push(`CAPTAINCY MODE : ${captaincyMode}`);
 
       if (captaincyMode === "CVC") {
-        /* CVC mode — show CVC pool players */
         const cvcPool = allMapped.filter((p) => p.captain === "CVC");
         lines.push("CVC POOL PLAYERS (rotate as C & VC across teams)");
         cvcPool.forEach((p, i) => {
@@ -242,8 +241,7 @@ export const generateTeams = async (req, res) => {
           lines.push(`${i + 1}. ${realName} (${side} - ${p.role})`);
         });
       } else {
-        /* C & VC mode */
-        const captains    = allMapped.filter((p) => p.captain === "C");
+        const captains     = allMapped.filter((p) => p.captain === "C");
         const viceCaptains = allMapped.filter((p) => p.captain === "VC");
         lines.push("CAPTAINS");
         captains.forEach((p, i) => {
@@ -257,7 +255,6 @@ export const generateTeams = async (req, res) => {
       lines.push("********************");
       lines.push("");
 
-      /* ── Substitutes ── */
       const subPlayers = allMapped.filter((p) => p.is_substitute);
       if (subPlayers.length) {
         lines.push("SUBSTITUTES");
@@ -267,7 +264,6 @@ export const generateTeams = async (req, res) => {
         lines.push("");
       }
 
-      /* ── Mandate ── */
       const mYes = allMapped.filter((p) => p.mandate === "YES");
       const mNo  = allMapped.filter((p) => p.mandate === "NO");
 
@@ -288,7 +284,6 @@ export const generateTeams = async (req, res) => {
         lines.push("");
       }
 
-      /* ── Teams table ── */
       lines.push("TEAM\tDT_NO\tCODE\tNAME\tROLE\tCAP\tMODE\tSELECTED\tSIDE");
 
       const teamsByDtNo = {};
@@ -304,20 +299,18 @@ export const generateTeams = async (req, res) => {
           const players = teamsByDtNo[dtNo];
           players.sort((a, b) => a.role.localeCompare(b.role) || String(a.name).localeCompare(b.name));
           players.forEach((player) => {
-            const realName     = nameMap[player.name]    || player.name;
-            /* ── cap in TXT = UCT response cap (C/VC) ── */
-            const capInTxt     = player.cap && player.cap !== "" ? player.cap : "-";
-            /* ── mode = user original selection (CVC/C/VC) ── */
-            const modeInTxt    = capMap[player.name]     || "-";
-            const mandateValue = mandateMap[player.name] || "-";
-            const selectedVal  = selectedMap[player.name] ? "1" : "0";
-            const sideVal      = sideMap[player.name]    || (player.name.endsWith("_A") ? "team_a" : "team_b");
+            const realName    = nameMap[player.name]    || player.name;
+            const capInTxt    = player.cap && player.cap !== "" ? player.cap : "-";
+            const modeInTxt   = capMap[player.name]     || "-";
+            const mandateVal  = mandateMap[player.name] || "-";
+            const selectedVal = selectedMap[player.name] ? "1" : "0";
+            const sideVal     = sideMap[player.name]    || (player.name.endsWith("_A") ? "team_a" : "team_b");
 
             lines.push([
               `Team ${dtNo}`, dtNo,
               player.name, realName, player.role || "-",
               capInTxt,
-              modeInTxt === "-" ? formatMandateText(mandateValue) : modeInTxt,
+              modeInTxt === "-" ? formatMandateText(mandateVal) : modeInTxt,
               selectedVal, sideVal,
             ].join("\t"));
           });
@@ -326,7 +319,7 @@ export const generateTeams = async (req, res) => {
       return lines.join("\n");
     };
 
-    /* ── 15. Transaction ── */
+    /* ── Transaction ── */
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
@@ -362,18 +355,20 @@ export const generateTeams = async (req, res) => {
 
       /* ── Store UCT teams ── */
       for (const player of uctTeams) {
-        const realName = nameMap[player.name]  || player.name;
-        /* cap column = UCT response cap (actual C or VC assigned) */
-        const capValue = player.cap && player.cap !== "" ? player.cap : null;
-        const selected = selectedMap[player.name] || 0;
-        const mandate  = mandateMap[player.name]  || null;
-        const teamSide = sideMap[player.name]     || (player.name.endsWith("_A") ? "team_a" : "team_b");
+        const realName    = nameMap[player.name]  || player.name;
+        const capValue    = player.cap && player.cap !== "" ? player.cap : null;
+        const selected    = selectedMap[player.name] || 0;
+        const mandate     = mandateMap[player.name]  || null;
+        const teamSide    = sideMap[player.name]     || (player.name.endsWith("_A") ? "team_a" : "team_b");
+        const captainMode = capMap[player.name]      || null; // original CVC/C/VC
 
         await conn.query(
           `INSERT INTO user_teams
-             (match_id, user_id, dt_no, name, role, cap, original_name, selected, mandate, team_side)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [match_id, userId, player.dt_no, player.name, player.role, capValue, realName, selected, mandate, teamSide]
+             (match_id, user_id, dt_no, name, role, cap, original_name,
+              selected, mandate, team_side, captain_mode)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [match_id, userId, player.dt_no, player.name, player.role,
+           capValue, realName, selected, mandate, teamSide, captainMode]
         );
       }
 
@@ -382,8 +377,9 @@ export const generateTeams = async (req, res) => {
         const realName = nameMap[p.name] || p.name;
         await conn.query(
           `INSERT INTO user_teams
-             (match_id, user_id, dt_no, name, role, cap, original_name, selected, mandate, team_side)
-           VALUES (?, ?, 0, ?, ?, NULL, ?, 0, 'NO', ?)`,
+             (match_id, user_id, dt_no, name, role, cap, original_name,
+              selected, mandate, team_side, captain_mode)
+           VALUES (?, ?, 0, ?, ?, NULL, ?, 0, 'NO', ?, NULL)`,
           [match_id, userId, p.name, p.role, realName, sideMap[p.name] || null]
         );
       }
@@ -418,11 +414,11 @@ export const generateTeams = async (req, res) => {
             subject: "UCT Teams Generated Successfully",
             html:    uctTeamsGeneratedEmailHtml({
               fullname:          user.fullname || "User",
-              leagueName:        matchInfo.seriesname    || "-",
-              homeTeam:          matchInfo.hometeamname  || "-",
-              awayTeam:          matchInfo.awayteamname  || "-",
-              matchDate:         matchInfo.matchdate   ? new Date(matchInfo.matchdate).toLocaleDateString("en-IN")   : "-",
-              kickoffTime:       matchInfo.start_time  ? new Date(matchInfo.start_time).toLocaleTimeString("en-IN")  : "-",
+              leagueName:        matchInfo.seriesname   || "-",
+              homeTeam:          matchInfo.hometeamname || "-",
+              awayTeam:          matchInfo.awayteamname || "-",
+              matchDate:         matchInfo.matchdate  ? new Date(matchInfo.matchdate).toLocaleDateString("en-IN")  : "-",
+              kickoffTime:       matchInfo.start_time ? new Date(matchInfo.start_time).toLocaleTimeString("en-IN") : "-",
               teamsGenerated:    totalTeams,
               coinsConsumed:     1,
               generatedOn:       new Date().toLocaleString("en-IN"),
@@ -469,88 +465,68 @@ export const generateTeams = async (req, res) => {
   }
 };
 
+/* ================= GET MY TEAMS ================= */
 export const getMyTeams = async (req, res) => {
   try {
     const { matchId } = req.params;
-    const userId = req.user.id;
+    const userId      = req.user.id;
 
     if (!matchId) {
-      return res.status(400).json({
-        success: false,
-        message: "matchId is required",
-      });
+      return res.status(400).json({ success: false, message: "matchId is required" });
     }
 
-  const [[match]] = await db.execute(
-  `SELECT
-      hometeamname,
-      awayteamname
-   FROM matches
-   WHERE id = ?
-   LIMIT 1`,
-  [matchId]
-);
+    const [[match]] = await db.execute(
+      `SELECT hometeamname, awayteamname FROM matches WHERE id = ? LIMIT 1`,
+      [matchId]
+    );
 
-const [players] = await db.execute(
-  `SELECT
-     ut.id,
-     ut.match_id,
-     ut.dt_no,
-     ut.name,
-     ut.original_name,
-     ut.role,
-     ut.cap,
-     ut.selected,
-     ut.mandate,
-     ut.team_side,
-     ut.provider_player_id,
-     mp.logo AS player_image,
-     CASE
-       WHEN mp.is_playing    = 1 THEN 'playing_xi'
-       WHEN mp.is_substitute = 1 THEN 'substitute'
-       ELSE 'unknown'
-     END AS status
-   FROM user_teams ut
-   LEFT JOIN match_players mp
-          ON mp.match_id = ut.match_id
-         AND mp.player_name = ut.original_name
-   WHERE ut.match_id = ?
-     AND ut.user_id = ?
-   ORDER BY ut.dt_no, ut.role`,
-  [matchId, userId]
-);
+    const [players] = await db.execute(
+      `SELECT
+         ut.id, ut.match_id, ut.dt_no, ut.name, ut.original_name,
+         ut.role, ut.cap, ut.selected, ut.mandate, ut.team_side,
+         ut.provider_player_id, ut.captain_mode,
+         mp.logo AS player_image,
+         CASE
+           WHEN mp.is_playing    = 1 THEN 'playing_xi'
+           WHEN mp.is_substitute = 1 THEN 'substitute'
+           ELSE 'unknown'
+         END AS status
+       FROM user_teams ut
+       LEFT JOIN match_players mp
+              ON mp.match_id    = ut.match_id
+             AND mp.player_name = ut.original_name
+       WHERE ut.match_id = ? AND ut.user_id = ?
+       ORDER BY ut.dt_no, ut.role`,
+      [matchId, userId]
+    );
 
     if (!players.length) {
-      return res.status(404).json({
-        success: false,
-        message: "No teams found for this match",
-      });
+      return res.status(404).json({ success: false, message: "No teams found for this match" });
     }
 
     /* ── Build teams map — dt_no=0 skip ── */
     const teamsMap = {};
 
     for (const player of players) {
-      if (player.dt_no === 0) continue; // mandate="no" players skip
+      if (player.dt_no === 0) continue;
 
-      if (!teamsMap[player.dt_no]) {
-        teamsMap[player.dt_no] = [];
-      }
+      if (!teamsMap[player.dt_no]) teamsMap[player.dt_no] = [];
 
       teamsMap[player.dt_no].push({
-        id: player.id,
-        match_id: player.match_id,
-        dt_no: player.dt_no,
-        name: player.name,
-        original_name: player.original_name,
-        role: player.role,
-        cap: player.cap || null,
-        selected: Boolean(player.selected),
-        mandate: player.mandate ? String(player.mandate).trim().toLowerCase() : null,
-        team_side: player.team_side || null,
+        id:                 player.id,
+        match_id:           player.match_id,
+        dt_no:              player.dt_no,
+        name:               player.name,
+        original_name:      player.original_name,
+        role:               player.role,
+        cap:                player.cap          || null,
+        captain_mode:       player.captain_mode || null,
+        selected:           Boolean(player.selected),
+        mandate:            player.mandate ? String(player.mandate).trim().toLowerCase() : null,
+        team_side:          player.team_side || null,
         provider_player_id: player.provider_player_id || null,
-        player_image: player.player_image || null,
-        status: player.status,
+        player_image:       player.player_image || null,
+        status:             player.status,
       });
     }
 
@@ -559,110 +535,90 @@ const [players] = await db.execute(
       .filter((p) => p.dt_no === 0)
       .map((p) => ({
         original_name: p.original_name,
-        role: p.role,
-        player_image: p.player_image || null,
-        team_side: p.team_side || null,
-        mandate: "no",
+        role:          p.role,
+        player_image:  p.player_image || null,
+        team_side:     p.team_side    || null,
+        mandate:       "no",
       }));
 
-    const teams = Object.entries(teamsMap).map(([dt_no, teamPlayers]) => {
-      const homeCount = teamPlayers.filter((p) => p.team_side === "team_a").length;
-      const awayCount = teamPlayers.filter((p) => p.team_side === "team_b").length;
+    const teams = Object.entries(teamsMap).map(([dt_no, teamPlayers]) => ({
+      team_no:      Number(dt_no),
+      captain:      teamPlayers.find((p) => p.cap === "C")?.original_name  || null,
+      vice_captain: teamPlayers.find((p) => p.cap === "VC")?.original_name || null,
+      home_players: teamPlayers.filter((p) => p.team_side === "team_a").length,
+      away_players: teamPlayers.filter((p) => p.team_side === "team_b").length,
+      players:      teamPlayers,
+    }));
 
-      return {
-        team_no: Number(dt_no),
-        captain: teamPlayers.find((p) => p.cap === "C")?.original_name || null,
-        vice_captain: teamPlayers.find((p) => p.cap === "VC")?.original_name || null,
-        home_players: homeCount,
-        away_players: awayCount,
-        players: teamPlayers,
-      };
-    });
-
-    /* ── Preview calculations ── */
+    /* ── Preview ── */
     const allPlayers = teams.flatMap((t) => t.players);
 
     const uniqueByName = (arr) =>
-      Object.values(
-        arr.reduce((acc, p) => {
-          acc[p.original_name] = p;
-          return acc;
-        }, {})
-      );
+      Object.values(arr.reduce((acc, p) => { acc[p.original_name] = p; return acc; }, {}));
 
-    const substitutes = uniqueByName(allPlayers.filter((p) => p.status === "substitute"));
-    const mandateYes = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
-    const mandateNo = uniqueByName(mandateNoPlayers);
-    const captainPlayers = uniqueByName(allPlayers.filter((p) => p.cap === "C"));
-    const viceCaptainPlayers = uniqueByName(allPlayers.filter((p) => p.cap === "VC"));
-    const cvcPlayers = uniqueByName(allPlayers.filter((p) => p.cap === "CVC"));
+    /* ── Detect captaincy mode ── */
+    const isCVCMode = allPlayers.some((p) => p.captain_mode === "CVC");
+
+    const substitutes        = uniqueByName(allPlayers.filter((p) => p.status === "substitute" && p.selected));
+    const mandateYes         = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
+    const mandateNo          = uniqueByName(mandateNoPlayers);
+    const captainPlayers     = uniqueByName(allPlayers.filter((p) => p.captain_mode === "C"));
+    const viceCaptainPlayers = uniqueByName(allPlayers.filter((p) => p.captain_mode === "VC"));
+    const cvcPlayers         = uniqueByName(allPlayers.filter((p) => p.captain_mode === "CVC"));
 
     const captaincyPool = uniqueByName(
-      allPlayers.filter((p) => p.cap === "C" || p.cap === "VC" || p.cap === "CVC")
+      allPlayers.filter((p) => p.captain_mode === "C" || p.captain_mode === "VC" || p.captain_mode === "CVC")
     );
 
     const preview = {
       substitutes_count: substitutes.length,
       mandate_yes_count: mandateYes.length,
-      mandate_no_count: mandateNo.length,
-      captaincy_count: captaincyPool.length,
- substitutes: substitutes.map((p) => ({
-  name: p.original_name,
-  role: p.role,
-  image: p.player_image,
-  side: p.team_side,
-  team_name:
-    p.team_side === "team_a"
-      ? match?.hometeamname
-      : match?.awayteamname,
-})),
+      mandate_no_count:  mandateNo.length,
+      captaincy_count:   captaincyPool.length,
+      captaincy_mode:    isCVCMode ? "CVC" : "C & VC",
+
+      substitutes: substitutes.map((p) => ({
+        name:      p.original_name,
+        role:      p.role,
+        image:     p.player_image,
+        side:      p.team_side,
+        team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+      })),
 
       mandate_yes: mandateYes.map((p) => ({
-  name: p.original_name,
-  role: p.role,
-  image: p.player_image,
-  side: p.team_side,
-  team_name:
-    p.team_side === "team_a"
-      ? match?.hometeamname
-      : match?.awayteamname,
-})),
+        name:      p.original_name,
+        role:      p.role,
+        image:     p.player_image,
+        side:      p.team_side,
+        team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+      })),
+
       mandate_no: mandateNo.map((p) => ({
-  name: p.original_name,
-  role: p.role,
-  image: p.player_image,
-  side: p.team_side,
-  team_name:
-    p.team_side === "team_a"
-      ? match?.hometeamname
-      : match?.awayteamname,
-})),
-
-      captains: captainPlayers.map((p) => ({
-        name: p.original_name,
-        role: p.role,
-        image: p.player_image,
-        side: p.team_side,
+        name:      p.original_name,
+        role:      p.role,
+        image:     p.player_image,
+        side:      p.team_side,
+        team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
       })),
 
-      vice_captains: viceCaptainPlayers.map((p) => ({
-        name: p.original_name,
-        role: p.role,
-        image: p.player_image,
-        side: p.team_side,
+      /* CVC mode లో captains/vice_captains empty */
+      captains: isCVCMode ? [] : captainPlayers.map((p) => ({
+        name: p.original_name, role: p.role, image: p.player_image, side: p.team_side,
       })),
 
-      cvc_players: cvcPlayers.map((p) => ({
-        name: p.original_name,
-        role: p.role,
-        image: p.player_image,
-        side: p.team_side,
+      vice_captains: isCVCMode ? [] : viceCaptainPlayers.map((p) => ({
+        name: p.original_name, role: p.role, image: p.player_image, side: p.team_side,
       })),
+
+      /* CVC mode లో cvc_players filled */
+      cvc_players: isCVCMode ? cvcPlayers.map((p) => ({
+        name: p.original_name, role: p.role, image: p.player_image, side: p.team_side,
+      })) : [],
     };
 
     return res.status(200).json({
-      success: true,
-      match_id: Number(matchId),
+      success:     true,
+      match_id:    Number(matchId),
       total_teams: teams.length,
       preview,
       teams,
@@ -670,20 +626,15 @@ const [players] = await db.execute(
 
   } catch (error) {
     console.error("getMyTeams Error:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message,
-    });
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
 /* ================= GET MY GENERATED MATCHES ================= */
-
 export const getMyGeneratedMatches = async (req, res) => {
   try {
     const userId = req.user?.id;
-    if (!userId)
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+    if (!userId) return res.status(401).json({ success: false, message: "Unauthorized" });
 
     const [rows] = await db.execute(
       `SELECT
@@ -695,10 +646,8 @@ export const getMyGeneratedMatches = async (req, res) => {
          s.name          AS series_name,
          COALESCE(ht.short_name,  ht.name,  'TBA') AS home_team,
          COALESCE(awt.short_name, awt.name, 'TBA') AS away_team,
-
-         COALESCE(m.hometeamname, ht.name, 'TBA') AS home_full_team_name,
+         COALESCE(m.hometeamname, ht.name,  'TBA') AS home_full_team_name,
          COALESCE(m.awayteamname, awt.name, 'TBA') AS away_full_team_name,
-
          ht.logo   AS home_logo,
          awt.logo  AS away_logo
        FROM match_generation_log mgl
@@ -713,21 +662,20 @@ export const getMyGeneratedMatches = async (req, res) => {
 
     res.json({
       success: true,
-      total: rows.length,
-      data: rows.map((r) => ({
-        match_id: r.match_id,
-        series_name: r.series_name,
-        home_team: r.home_team,
-        away_team: r.away_team,
-         home_full_team_name: r.home_full_team_name,
+      total:   rows.length,
+      data:    rows.map((r) => ({
+        match_id:            r.match_id,
+        series_name:         r.series_name,
+        home_team:           r.home_team,
+        away_team:           r.away_team,
+        home_full_team_name: r.home_full_team_name,
         away_full_team_name: r.away_full_team_name,
-
-        home_logo: r.home_logo,
-        away_logo: r.away_logo,
-        start_time: r.start_time,
-        status: r.status,
-        teams_generated: r.total_teams,
-        generated_at: r.generated_at,
+        home_logo:           r.home_logo,
+        away_logo:           r.away_logo,
+        start_time:          r.start_time,
+        status:              r.status,
+        teams_generated:     r.total_teams,
+        generated_at:        r.generated_at,
       })),
     });
 
@@ -736,10 +684,10 @@ export const getMyGeneratedMatches = async (req, res) => {
   }
 };
 
-/* ================= GET MY 20 TEAMS ================= */
+/* ================= GET MY GENERATED TEAMS ================= */
 export const getMyGeneratedTeams = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId  = req.user.id;
     const { matchId } = req.params;
 
     const [teams] = await db.execute(
@@ -752,24 +700,22 @@ export const getMyGeneratedTeams = async (req, res) => {
          SUM(utp.is_vice_captain) AS has_vc
        FROM user_teams ut
        LEFT JOIN user_team_players utp ON utp.user_team_id = ut.id
-       WHERE ut.user_id  = ?
-         AND ut.match_id = ?
+       WHERE ut.user_id  = ? AND ut.match_id = ?
        GROUP BY ut.id
        ORDER BY ut.id ASC`,
       [userId, matchId]
     );
 
-    if (!teams.length)
-      return res.json({ success: true, total: 0, data: [] });
+    if (!teams.length) return res.json({ success: true, total: 0, data: [] });
 
     res.json({
       success: true,
-      total: teams.length,
-      data: teams.map((t) => ({
-        team_id: t.team_id,
-        team_name: t.team_name,
+      total:   teams.length,
+      data:    teams.map((t) => ({
+        team_id:       t.team_id,
+        team_name:     t.team_name,
         total_players: t.total_players,
-        created_at: t.created_at,
+        created_at:    t.created_at,
       })),
     });
 
@@ -778,24 +724,19 @@ export const getMyGeneratedTeams = async (req, res) => {
   }
 };
 
-
+/* ================= GET TEAM PLAYERS ================= */
 export const getTeamPlayers = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId  = req.user.id;
     const { teamId } = req.params;
 
     const [[team]] = await db.execute(
       `SELECT id, name AS team_name, match_id, team_side, created_at
-   FROM user_teams
-   WHERE id = ?
-   LIMIT 1`,
+       FROM user_teams WHERE id = ? LIMIT 1`,
       [teamId]
     );
 
-    if (!team)
-      return res.status(404).json({ success: false, message: "Team not found" });
-
-    const latestAt = team.created_at;
+    if (!team) return res.status(404).json({ success: false, message: "Team not found" });
 
     const [players] = await db.execute(
       `SELECT id, name, role, mandate, captain, team_side
@@ -811,20 +752,19 @@ export const getTeamPlayers = async (req, res) => {
     );
 
     res.json({
-      success: true,
-      team_id: team.id,
+      success:   true,
+      team_id:   team.id,
       team_name: team.team_name,
-      match_id: team.match_id,
+      match_id:  team.match_id,
       team_side: team.team_side,
-      total: players.length,
-      captain: players.find((p) => p.captain === "C") || null,
-      vc: players.find((p) => p.captain === "VC") || null,
+      total:     players.length,
+      captain:   players.find((p) => p.captain === "C")  || null,
+      vc:        players.find((p) => p.captain === "VC") || null,
       players,
     });
 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-};
-
+};  
 
