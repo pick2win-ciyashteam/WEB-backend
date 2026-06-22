@@ -132,15 +132,15 @@ router.get("/expenses/by-month",   getExpensesByMonth);
 router.get("/expenses/fy-report",  getExpensesFyReport);
  
 /* Category CRUD */
-router.post  ("/category",     addExpenseCategory);
-router.delete("/category/:id", deleteExpenseCategory);
+router.post  ("/expenses/category",     addExpenseCategory);
+router.delete("/expenses/category/:id", deleteExpenseCategory);
  
 /* Role CRUD (under a category) */
-router.post  ("/category/:id/role", addExpenseRole);
-router.delete("/role/:id",           deleteExpenseRole);
+router.post  ("/expenses/category/:id/role", addExpenseRole);
+router.delete("/expenses/role/:id",           deleteExpenseRole);
  
 /* Upsert monthly amount entry */
-router.patch("/entry", upsertExpenseEntry);
+router.patch("/expenses/entry", upsertExpenseEntry);
 
 
 // PROFIT
