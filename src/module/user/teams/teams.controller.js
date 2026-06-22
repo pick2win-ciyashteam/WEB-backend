@@ -158,22 +158,49 @@ export const generateTeams = async (req, res) => {
 
     console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
 
-    /* ── Build maps ── */
-    const nameMap     = {};
-    const capMap      = {}; // original user selection: C/VC/CVC
-    const mandateMap  = {};
-    const sideMap     = {};
-    const selectedMap = {};
 
-    allMapped.forEach((p) => {
-      nameMap[p.name]     = p._original || p.name;
-      capMap[p.name]      = p.captain   || null;
-      mandateMap[p.name]  = p.mandate   || null;
-      sideMap[p.name]     = p._side;
-      selectedMap[p.name] = p.is_substitute ? 1 : 0;
-    });
+    /* ── Fetch substitute players from match_players ── */
+const [substituteRows] = await db.execute(
+  `SELECT player_name FROM match_players 
+   WHERE match_id = ? AND is_substitute = 1`,
+  [match_id]
+);
+const substituteNames = new Set(substituteRows.map((r) => r.player_name));
 
-    const mandateNoPlayers = allMapped.filter((p) => p.mandate === "NO");
+/* ── 13. Build maps ── */
+const nameMap     = {};
+const capMap      = {};
+const mandateMap  = {};
+const sideMap     = {};
+const selectedMap = {};
+
+allMapped.forEach((p) => {
+  nameMap[p.name]     = p._original || p.name;
+  capMap[p.name]      = p.captain   || null;
+  mandateMap[p.name]  = p.mandate   || null;
+  sideMap[p.name]     = p._side;
+  selectedMap[p.name] = substituteNames.has(p._original) ? 1 : 0; // ← fix
+});
+
+const mandateNoPlayers = allMapped.filter((p) => p.mandate === "NO");
+
+    // /* ── Build maps ── */
+    // const nameMap     = {};
+    // const capMap      = {}; // original user selection: C/VC/CVC
+    // const mandateMap  = {};
+    // const sideMap     = {};
+    // const selectedMap = {};
+
+    // allMapped.forEach((p) => {
+    //   nameMap[p.name]     = p._original || p.name;
+    //   capMap[p.name]      = p.captain   || null;
+    //   mandateMap[p.name]  = p.mandate   || null;
+    //   sideMap[p.name]     = p._side;
+    //   // selectedMap[p.name] = p.is_substitute ? 1 : 0;
+    //   selectedMap[p.name] = p.is_substitute ? 1 : 0;  // ✅ substitute = 1
+    // });
+
+    // const mandateNoPlayers = allMapped.filter((p) => p.mandate === "NO");
 
     /* ── Call UCT API ── */
     const startTime = Date.now();
@@ -561,7 +588,10 @@ export const getMyTeams = async (req, res) => {
     /* ── Detect captaincy mode ── */
     const isCVCMode = allPlayers.some((p) => p.captain_mode === "CVC");
 
-    const substitutes        = uniqueByName(allPlayers.filter((p) => p.status === "substitute" && p.selected));
+    // const substitutes        = uniqueByName(allPlayers.filter((p) => p.status === "substitute" && p.selected));
+    const substitutes = uniqueByName(
+  allPlayers.filter((p) => p.selected === true)
+);
     
     const mandateYes         = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
     const mandateNo          = uniqueByName(mandateNoPlayers);
