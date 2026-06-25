@@ -30,7 +30,7 @@ const allowedOrigins = [
   "https://pick2win.io",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
-
+//
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
