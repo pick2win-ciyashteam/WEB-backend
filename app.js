@@ -26,6 +26,8 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
   "http://localhost:4200",
+  "https://pick2win.uk",
+  "https://pick2win.io",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
