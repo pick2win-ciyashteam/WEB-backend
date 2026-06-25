@@ -131,7 +131,7 @@ router.get("/revenue", getRevenue);
 router.get("/expenses/by-month",   getExpensesByMonth);
  
 /* GET FY report */
-router.get("/expenses/fy-report",  getExpensesFyReport);
+router.get("/expenses/fy-report",  getExpensesFyReport);  
  
 /* Category CRUD */
 router.post  ("/expenses/category",     addExpenseCategory);
@@ -148,7 +148,7 @@ router.patch("/expenses/entry", upsertExpenseEntry);
 // PROFIT
 
 /* FY month-by-month profit table + KPI cards */
-router.get("/profit/fy", getFyProfit);
+router.get("/profit/fy", getFyProfit);  
  
 /* Selected month profit statement + where revenue goes */
 router.get("/profit/statement", getProfitStatement);
@@ -163,4 +163,3 @@ router.get("/payments/transactions", getTransactionLog);
 
 export default router;
 
- 
