@@ -28,6 +28,7 @@ const allowedOrigins = [
   "http://localhost:4200",
   "https://pick2win.uk",
   "https://pick2win.io",
+  "www.pick2win.io",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 //
@@ -51,3 +52,4 @@ app.use(cors({
 app.use("/api", routes);
 
 export default app;                                     
+   

@@ -1646,7 +1646,7 @@ export const updateDetailedFeedbackStatus = async (req, res) => {
 export const getCoinPackPurchases = async (req, res) => {
   try {
     const { period = "today", month, year } = req.query;
-
+ 
     const validPeriods = ["today", "monthly", "yearly"];
     if (!validPeriods.includes(period)) {
       return res.status(400).json({
@@ -1654,11 +1654,11 @@ export const getCoinPackPurchases = async (req, res) => {
         message: `Invalid period. Allowed: ${validPeriods.join(", ")}`,
       });
     }
-
+ 
     const today = new Date();
     const targetMonth = month ? Number(month) : today.getMonth() + 1;
     const targetYear  = year  ? Number(year)  : today.getFullYear();
-
+ 
     /* ── KPI cards: purchased today, this month MTD, all-time ── */
     const [[kpiToday]] = await db.execute(
       `SELECT COUNT(*) AS total
@@ -1666,7 +1666,7 @@ export const getCoinPackPurchases = async (req, res) => {
        WHERE amount > 0
          AND DATE(created_at) = CURDATE()`
     );
-
+ 
     const [[kpiMtd]] = await db.execute(
       `SELECT COUNT(*) AS total
        FROM user_subscriptions
@@ -1674,17 +1674,17 @@ export const getCoinPackPurchases = async (req, res) => {
          AND MONTH(created_at) = MONTH(NOW())
          AND YEAR(created_at)  = YEAR(NOW())`
     );
-
+ 
     const [[kpiAllTime]] = await db.execute(
       `SELECT COUNT(*) AS total
        FROM user_subscriptions
        WHERE amount > 0`
     );
-
+ 
     /* ── Resolve date range based on selected period ── */
     let dateCondition, periodLabel;
     const params = [];
-
+ 
     if (period === "today") {
       dateCondition = `DATE(us.created_at) = CURDATE()`;
       periodLabel = `Today`;
@@ -1699,24 +1699,25 @@ export const getCoinPackPurchases = async (req, res) => {
       params.push(`${targetYear}-04-01`, `${targetYear + 1}-04-01`);
       periodLabel = `FY ${targetYear}-${String(targetYear + 1).slice(2)}`;
     }
-
+ 
     /* ── Per-pack purchase counts for selected period ── */
     const [packs] = await db.execute(
       `SELECT
          us.plan_id,
          us.plan_name,
-         us.coins,
+         MAX(sp.coins) AS coins,
          COUNT(*) AS users_purchased
        FROM user_subscriptions us
+       LEFT JOIN subscription_plans sp ON sp.id = us.plan_id
        WHERE us.amount > 0
          AND ${dateCondition}
-       GROUP BY us.plan_id, us.plan_name, us.coins
-       ORDER BY us.coins ASC`,
+       GROUP BY us.plan_id, us.plan_name
+       ORDER BY MAX(sp.coins) ASC`,
       params
     );
-
+ 
     const totalPeriodPurchases = packs.reduce((s, p) => s + Number(p.users_purchased), 0);
-
+ 
     const packList = packs.map((p) => ({
       plan_id:          p.plan_id,
       name:             p.plan_name,
@@ -1726,37 +1727,38 @@ export const getCoinPackPurchases = async (req, res) => {
         ? Number(((Number(p.users_purchased) / totalPeriodPurchases) * 100).toFixed(1))
         : 0,
     }));
-
+ 
     return res.status(200).json({
       success: true,
-
+ 
       kpis: {
         purchased_today:    Number(kpiToday.total),
         this_month_mtd:      Number(kpiMtd.total),
         all_time_purchases:  Number(kpiAllTime.total),
       },
-
+ 
       period: {
         type:   period,
         label:  periodLabel,
         month:  period === "monthly" ? targetMonth : null,
         year:   period !== "today" ? targetYear : null,
       },
-
+ 
       total_purchased: totalPeriodPurchases,
-
+ 
       packs: packList,
-
+ 
       totals: {
         users_purchased: totalPeriodPurchases,
         share_pct:       100,
       },
     });
-
+ 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+ 
 
 /* ═══════════════════════════════════════════════════
    2. PACK PURCHASES BY COUNTRY
@@ -1786,18 +1788,18 @@ export const getCoinPackPurchases = async (req, res) => {
 // http://localhost:3000/api/admin/reports/countrywise-coin?country=India&period=yearly&year=2026
 
 
-
+ 
 export const getCoinPackPurchasesByCountry = async (req, res) => {
   try {
     const { country = "", period = "monthly", month, year } = req.query;
-
+ 
     const today = new Date();
     const targetMonth = month ? Number(month) : today.getMonth() + 1;
     const targetYear  = year  ? Number(year)  : today.getFullYear();
-
+ 
     let dateCondition;
     const dateParams = [];
-
+ 
     if (period === "today") {
       dateCondition = `DATE(us.created_at) = CURDATE()`;
     } else if (period === "yearly") {
@@ -1807,10 +1809,10 @@ export const getCoinPackPurchasesByCountry = async (req, res) => {
       dateCondition = `MONTH(us.created_at) = ? AND YEAR(us.created_at) = ?`;
       dateParams.push(targetMonth, targetYear);
     }
-
+ 
     const countryCondition = country ? `AND u.country = ?` : "";
     const params = country ? [...dateParams, country] : dateParams;
-
+ 
     /* ── Per-country, per-pack purchase counts ── */
     const [rows] = await db.execute(
       `SELECT
@@ -1825,14 +1827,14 @@ export const getCoinPackPurchasesByCountry = async (req, res) => {
        GROUP BY u.country, us.plan_name`,
       params
     );
-
+ 
     /* ── Pivot into { country: { Starter: x, Basic: y, ... } } ── */
     const countryMap = {};
     for (const row of rows) {
       if (!countryMap[row.country]) countryMap[row.country] = {};
       countryMap[row.country][row.plan_name] = Number(row.cnt);
     }
-
+ 
     const byCountry = Object.entries(countryMap).map(([countryName, packs]) => {
       const total = Object.values(packs).reduce((s, v) => s + v, 0);
       return {
@@ -1841,7 +1843,7 @@ export const getCoinPackPurchasesByCountry = async (req, res) => {
         total,
       };
     }).sort((a, b) => b.total - a.total);
-
+ 
     /* ── Grand totals per pack across all countries ── */
     const grandTotals = {};
     let grandTotal = 0;
@@ -1851,7 +1853,7 @@ export const getCoinPackPurchasesByCountry = async (req, res) => {
       }
       grandTotal += c.total;
     }
-
+ 
     return res.status(200).json({
       success: true,
       filters: { country, period, month: targetMonth, year: targetYear },
@@ -1862,12 +1864,11 @@ export const getCoinPackPurchasesByCountry = async (req, res) => {
         total: grandTotal,
       },
     });
-
+ 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
- 
 
 /* ═══════════════════════════════════════════════════
    GET /admin/series?status=all|live|upcoming|completed
