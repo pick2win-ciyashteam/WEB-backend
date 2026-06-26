@@ -1869,8 +1869,8 @@ export const getCoinPackPurchasesByCountry = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
  
+
 /* ═══════════════════════════════════════════════════
    GET /admin/series?status=all|live|upcoming|completed
    Sections: KPI cards, Series table (live/upcoming/completed history)
@@ -1915,11 +1915,13 @@ export const getAdminSeries = async (req, res) => {
          MIN(m.start_time) AS first_match_date,
          MAX(m.start_time) AS last_match_date,
 
-         /* derive status from series dates */
+         /* derive status — use series dates if available, fallback to match dates */
          CASE
-           WHEN s.start_date > NOW()                          THEN 'Upcoming'
-           WHEN s.start_date <= NOW() AND s.end_date >= NOW() THEN 'Live'
-           WHEN s.end_date < NOW()                            THEN 'Completed'
+           WHEN COALESCE(s.start_date, MIN(m.start_time)) > NOW()
+             THEN 'Upcoming'
+           WHEN COALESCE(s.start_date, MIN(m.start_time)) <= NOW()
+            AND COALESCE(s.end_date,   MAX(m.start_time)) >= NOW()
+             THEN 'Live'
            ELSE 'Completed'
          END AS derived_status
 
