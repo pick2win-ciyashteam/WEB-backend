@@ -1672,7 +1672,7 @@ export const getCoinPackPurchases = async (req, res) => {
        FROM user_subscriptions
        WHERE amount > 0
          AND MONTH(created_at) = MONTH(NOW())
-         AND YEAR(created_at)  = YEAR(NOW())`
+         AND YEAR(created_at)  = YEAR(NOW())`  
     );
  
     const [[kpiAllTime]] = await db.execute(
