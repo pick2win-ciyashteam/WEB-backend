@@ -225,6 +225,32 @@ const syncLineupStatus = async () => {
   }
 };
 
+/* ================= JOB 6 — SERIES DATES ================= */
+const syncSeriesDates = async () => {
+  try {
+    const [result] = await db.execute(
+      `UPDATE series s
+       INNER JOIN (
+         SELECT
+           series_id,
+           MIN(start_time) AS first_match,
+           MAX(start_time) AS last_match
+         FROM matches
+         WHERE is_active = 1
+         GROUP BY series_id
+       ) m ON m.series_id = s.seriesid
+       SET
+         s.start_date = m.first_match,
+         s.end_date   = m.last_match
+       WHERE s.start_date IS NULL
+          OR s.end_date   IS NULL`
+    );
+
+    console.log(`✅ [SeriesDatesCron] Updated ${result.affectedRows} series`);
+  } catch (err) {
+    console.error("❌ [SeriesDatesCron] Error:", err.message);
+  }
+};
 
  
 
@@ -237,7 +263,7 @@ export const startCronJobs = () => {
   cron.schedule(SCHEDULES.DAILY_2AM_UTC, cleanupOldInactiveMatches, { scheduled: true, timezone: "UTC" });
   cron.schedule("0 0 * * *",             syncSubscriptionExpiry,    { scheduled: true, timezone: "UTC" });
   cron.schedule("0 3 * * *",             cleanExpiredBlacklistTokens, { scheduled: true, timezone: "UTC" })
-
+ cron.schedule(SCHEDULES.EVERY_5_MINS, syncSeriesDates, { scheduled: true, timezone: "UTC" });
   console.log("✅ [CRON] All jobs registered");
 };   
 

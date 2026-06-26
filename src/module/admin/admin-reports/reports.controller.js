@@ -1870,6 +1870,7 @@ export const getCoinPackPurchasesByCountry = async (req, res) => {
   }
 };
 
+ 
 /* ═══════════════════════════════════════════════════
    GET /admin/series?status=all|live|upcoming|completed
    Sections: KPI cards, Series table (live/upcoming/completed history)
@@ -1903,60 +1904,42 @@ export const getAdminSeries = async (req, res) => {
          s.seriesid,
          s.name,
          s.category,
+         s.country_name,
          s.start_date     AS series_start_date,
          s.end_date        AS series_end_date,
-         lc.name            AS league_name,
 
-         COUNT(DISTINCT m.id)                                                   AS total_matches,
-         COUNT(DISTINCT mgl.user_id)                                            AS participants,
-         COUNT(DISTINCT mgl.id)                                                 AS ucts_used,
+         COUNT(DISTINCT m.id)           AS total_matches,
+         COUNT(DISTINCT mgl.user_id)    AS participants,
+         COUNT(DISTINCT mgl.id)         AS ucts_used,
 
-         SUM(CASE WHEN m.status = 'LIVE'     THEN 1 ELSE 0 END)                AS live_matches,
-         SUM(CASE WHEN m.status = 'UPCOMING' THEN 1 ELSE 0 END)                AS upcoming_matches,
-         SUM(CASE WHEN m.status = 'RESULT'   THEN 1 ELSE 0 END)                AS completed_matches,
+         MIN(m.start_time) AS first_match_date,
+         MAX(m.start_time) AS last_match_date,
 
-         MIN(m.start_time)                                                      AS first_match_date,
-         MAX(m.start_time)                                                      AS last_match_date
+         /* derive status from series dates */
+         CASE
+           WHEN s.start_date > NOW()                          THEN 'Upcoming'
+           WHEN s.start_date <= NOW() AND s.end_date >= NOW() THEN 'Live'
+           WHEN s.end_date < NOW()                            THEN 'Completed'
+           ELSE 'Completed'
+         END AS derived_status
 
        FROM series s
-       LEFT JOIN leagues_catalog lc        ON lc.name = s.category
-       LEFT JOIN matches m                  ON m.series_id = s.seriesid AND m.is_active = 1
-       LEFT JOIN match_generation_log mgl   ON mgl.match_id = m.id
+       LEFT JOIN matches m                ON m.series_id = s.seriesid AND m.is_active = 1
+       LEFT JOIN match_generation_log mgl ON mgl.match_id = m.id
 
        WHERE s.status = 'active'
-       GROUP BY s.id, s.seriesid, s.name, s.category, s.start_date, s.end_date, lc.name
+       GROUP BY s.id, s.seriesid, s.name, s.category, s.country_name,
+                s.start_date, s.end_date
        ORDER BY s.start_date DESC`
     );
 
-    /* ── Derive a single display status per series ── */
-    const seriesWithStatus = seriesRows.map((s) => {
-      let derivedStatus;
-      if (Number(s.live_matches) > 0) {
-        derivedStatus = "Live";
-      } else if (Number(s.upcoming_matches) > 0 && Number(s.completed_matches) === 0) {
-        derivedStatus = "Upcoming";
-      } else if (
-        Number(s.completed_matches) > 0 &&
-        Number(s.upcoming_matches) === 0 &&
-        Number(s.live_matches) === 0
-      ) {
-        derivedStatus = "Completed";
-      } else if (Number(s.upcoming_matches) > 0) {
-        derivedStatus = "Upcoming";
-      } else {
-        derivedStatus = "Completed";
-      }
+    const seriesWithStatus = seriesRows;
 
-      return { ...s, derived_status: derivedStatus };
-    });
-
-    /* ── Apply status filter ── */
     const filterMap = { live: "Live", upcoming: "Upcoming", completed: "Completed" };
     const filtered = status === "all"
       ? seriesWithStatus
       : seriesWithStatus.filter((s) => s.derived_status === filterMap[status]);
 
-    /* ── Counts for tab badges (always computed on full set, not filtered) ── */
     const counts = {
       all:       seriesWithStatus.length,
       live:      seriesWithStatus.filter((s) => s.derived_status === "Live").length,
@@ -2009,7 +1992,7 @@ export const getAdminSeries = async (req, res) => {
           id:           s.id,
           series_code:  `SR-${s.seriesid}`,
           name:         s.name,
-          league:       s.league_name || s.category,
+          league:       s.country_name || s.name,
 
           /* series catalog window (from series.start_date / end_date) */
           series_window: {
