@@ -1813,7 +1813,7 @@ export const getCoinPackPurchasesByCountry = async (req, res) => {
     const countryCondition = country ? `AND u.country = ?` : "";
     const params = country ? [...dateParams, country] : dateParams;
  
-    /* ── Per-country, per-pack purchase counts... ── */
+    /* ── Per-country, per-pack purchase counts ── */
     const [rows] = await db.execute(
       `SELECT
          u.country,
