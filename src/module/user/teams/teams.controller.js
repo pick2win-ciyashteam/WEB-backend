@@ -214,7 +214,7 @@ const mandateNoPlayers = allMapped.filter((p) => p.mandate === "NO");
           headers: { "Content-Type": "application/json", "x-api-key": process.env.UCT_API_KEY },
           timeout: 60000,
         }
-      );
+      );  
       uctTeams = response.data || [];
       console.log(`✅ UCT API Success — ${uctTeams.length} records received`);
     } catch (apiError) {
@@ -661,7 +661,7 @@ export const getMyTeams = async (req, res) => {
     console.error("getMyTeams Error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
-};
+};  
 
 /* ================= GET MY GENERATED MATCHES ================= */
 export const getMyGeneratedMatches = async (req, res) => {
@@ -801,3 +801,4 @@ export const getTeamPlayers = async (req, res) => {
   }
 };  
 
+  
