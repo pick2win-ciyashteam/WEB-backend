@@ -208,7 +208,7 @@ const mandateNoPlayers = allMapped.filter((p) => p.mandate === "NO");
 
     try {
       const response = await axios.post(
-        `${process.env.UCT_API}/football/teams`,
+        `${process.env.UCT_API}`,
         uctPayload,
         {
           headers: { "Content-Type": "application/json", "x-api-key": process.env.UCT_API_KEY },

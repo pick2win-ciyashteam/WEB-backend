@@ -23,7 +23,7 @@ router.use("/subscription",adminLimiter,adminAuth(["super_admin"]),subscriptionR
 
 router.use("/feedback", feedbackRoutes) 
 
-  //
+  
 router.use("/reports", adminLimiter, adminAuth(["super_admin"]), reportsRoutes)
 
 export default router;    
