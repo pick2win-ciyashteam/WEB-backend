@@ -499,26 +499,179 @@ export const generateTeams = async (req, res) => {
     const userId = req.user.id;
     const { match_id, team_a, team_b } = req.body;
 
-    /* ── 1. Basic input check ── */
-    if (!match_id || !Array.isArray(team_a) || !Array.isArray(team_b)) {
-      return res.status(400).json({ success: false, message: "match_id, team_a, team_b required" });
+    /* ══════════════════════════════════════════
+       1. BASIC INPUT CHECK
+    ══════════════════════════════════════════ */
+    if (!match_id) {
+      return res.status(400).json({ success: false, message: "match_id is required" });
+    }
+    if (!team_a || !Array.isArray(team_a)) {
+      return res.status(400).json({ success: false, message: "team_a is required and must be an array" });
+    }
+    if (!team_b || !Array.isArray(team_b)) {
+      return res.status(400).json({ success: false, message: "team_b is required and must be an array" });
     }
 
-    /* ── 2. Remove duplicates within same team ── */
+    /* ══════════════════════════════════════════
+       2. REMOVE DUPLICATES WITHIN SAME TEAM
+    ══════════════════════════════════════════ */
     const uniqueTeamA = team_a.filter((p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx);
     const uniqueTeamB = team_b.filter((p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx);
+    const allInput    = [...uniqueTeamA, ...uniqueTeamB];
+    const totalSquad  = allInput.length;
 
-    const allInput   = [...uniqueTeamA, ...uniqueTeamB];
-    const totalSquad = allInput.length;
+    /* ══════════════════════════════════════════
+       3. SQUAD SIZE: 10 – 22
+    ══════════════════════════════════════════ */
+    if (totalSquad < 10) {
+      return res.status(400).json({
+        success: false,
+        message: `Squad too small. Minimum 10 players required, got ${totalSquad}`,
+      });
+    }
+    if (totalSquad > 22) {
+      return res.status(400).json({
+        success: false,
+        message: `Squad too large. Maximum 22 players allowed, got ${totalSquad}`,
+      });
+    }
 
-    /* ── 3. Match check ── */
+    /* ══════════════════════════════════════════
+       4. VALID ROLES CHECK
+    ══════════════════════════════════════════ */
+    const VALID_ROLES = ["GK", "DEF", "MID", "FWD"];
+    for (const p of allInput) {
+      if (!p.name || !p.name.trim()) {
+        return res.status(400).json({ success: false, message: "All players must have a name" });
+      }
+      if (!VALID_ROLES.includes(p.role)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid role "${p.role}" for player "${p.name}". Allowed roles: GK, DEF, MID, FWD`,
+        });
+      }
+    }
+
+    /* ══════════════════════════════════════════
+       5. EACH TEAM MUST HAVE MIN 1 OF EACH ROLE
+    ══════════════════════════════════════════ */
+    const teamARoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    const teamBRoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    uniqueTeamA.forEach(p => { if (teamARoles[p.role] !== undefined) teamARoles[p.role]++; });
+    uniqueTeamB.forEach(p => { if (teamBRoles[p.role] !== undefined) teamBRoles[p.role]++; });
+
+    if (teamARoles.GK  < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Goalkeeper (GK)" });
+    if (teamARoles.DEF < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Defender (DEF)" });
+    if (teamARoles.MID < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Midfielder (MID)" });
+    if (teamARoles.FWD < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Forward (FWD)" });
+
+    if (teamBRoles.GK  < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Goalkeeper (GK)" });
+    if (teamBRoles.DEF < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Defender (DEF)" });
+    if (teamBRoles.MID < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Midfielder (MID)" });
+    if (teamBRoles.FWD < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Forward (FWD)" });
+
+    /* ══════════════════════════════════════════
+       6. PER-TEAM ROLE MAX LIMITS
+          GK  → max 1  (Sorare: exactly 1 GK per generated team)
+          DEF → max 4
+          MID → max 4
+          FWD → max 4
+    ══════════════════════════════════════════ */
+    if (teamARoles.GK  > 1) return res.status(400).json({ success: false, message: `Team A: maximum 1 GK allowed, got ${teamARoles.GK}` });
+    if (teamARoles.DEF > 4) return res.status(400).json({ success: false, message: `Team A: maximum 4 DEF allowed, got ${teamARoles.DEF}` });
+    if (teamARoles.MID > 4) return res.status(400).json({ success: false, message: `Team A: maximum 4 MID allowed, got ${teamARoles.MID}` });
+    if (teamARoles.FWD > 4) return res.status(400).json({ success: false, message: `Team A: maximum 4 FWD allowed, got ${teamARoles.FWD}` });
+
+    if (teamBRoles.GK  > 1) return res.status(400).json({ success: false, message: `Team B: maximum 1 GK allowed, got ${teamBRoles.GK}` });
+    if (teamBRoles.DEF > 4) return res.status(400).json({ success: false, message: `Team B: maximum 4 DEF allowed, got ${teamBRoles.DEF}` });
+    if (teamBRoles.MID > 4) return res.status(400).json({ success: false, message: `Team B: maximum 4 MID allowed, got ${teamBRoles.MID}` });
+    if (teamBRoles.FWD > 4) return res.status(400).json({ success: false, message: `Team B: maximum 4 FWD allowed, got ${teamBRoles.FWD}` });
+
+    /* ══════════════════════════════════════════
+       7. SUBSTITUTE RULES
+          - Max 3 substitutes total (across both teams)
+          - Only DEF, MID, FWD allowed as substitutes (no GK)
+          - Substitute flag: p.is_substitute === true (or handle in frontend)
+    ══════════════════════════════════════════ */
+    const substitutePlayers = allInput.filter(p => p.is_substitute === true);
+    if (substitutePlayers.length > 3) {
+      return res.status(400).json({
+        success: false,
+        message: `Maximum 3 substitute players allowed, got ${substitutePlayers.length}`,
+      });
+    }
+    const gkSubs = substitutePlayers.filter(p => p.role === "GK");
+    if (gkSubs.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Goalkeepers cannot be selected as substitutes. Remove: ${gkSubs.map(p => p.name).join(", ")}`,
+      });
+    }
+
+    /* ══════════════════════════════════════════
+       8. CAPTAIN POOL: 2 – 6
+    ══════════════════════════════════════════ */
+    const captainPool    = allInput.filter(p => p.captain === "C");
+    const teamACaptains  = uniqueTeamA.filter(p => p.captain === "C");
+    const teamBCaptains  = uniqueTeamB.filter(p => p.captain === "C");
+
+    if (captainPool.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: `Captain pool needs minimum 2 players, got ${captainPool.length}`,
+      });
+    }
+    if (captainPool.length > 6) {
+      return res.status(400).json({
+        success: false,
+        message: `Captain pool maximum 6 players allowed, got ${captainPool.length}`,
+      });
+    }
+    if (teamACaptains.length < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Team A must have at least 1 captain candidate (C)",
+      });
+    }
+    if (teamBCaptains.length < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Team B must have at least 1 captain candidate (C)",
+      });
+    }
+
+    /* ══════════════════════════════════════════
+       9. MANDATE (M-YES) RULES
+          - Max 2 total
+          - Max 1 GK as M-YES
+          - Two GKs cannot both be M-YES
+    ══════════════════════════════════════════ */
+    const mandatePlayers = allInput.filter(p => p.mandate === "YES");
+    if (mandatePlayers.length > 2) {
+      return res.status(400).json({
+        success: false,
+        message: `Maximum 2 Mandatory (M-YES) players allowed, got ${mandatePlayers.length}`,
+      });
+    }
+    const mandateGKs = mandatePlayers.filter(p => p.role === "GK");
+    if (mandateGKs.length > 1) {
+      return res.status(400).json({
+        success: false,
+        message: "Maximum 1 Goalkeeper can be selected as Mandatory (M-YES)",
+      });
+    }
+
+    /* ══════════════════════════════════════════
+       10. MATCH CHECK
+    ══════════════════════════════════════════ */
     const [[match]] = await db.execute(
       `SELECT id, status, lineupavailable, start_time FROM matches WHERE id = ?`,
       [match_id]
     );
 
-    if (!match) return res.status(404).json({ success: false, message: "Match not found" });
-
+    if (!match) {
+      return res.status(404).json({ success: false, message: "Match not found" });
+    }
     if (match.status !== "UPCOMING") {
       return res.status(400).json({
         success: false,
@@ -528,7 +681,6 @@ export const generateTeams = async (req, res) => {
                                       "Teams can only be generated for upcoming matches.",
       });
     }
-
     if (Number(match.lineupavailable) !== 1) {
       return res.status(400).json({
         success: false,
@@ -536,14 +688,20 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    /* ── 4. Already generated ── */
+    /* ══════════════════════════════════════════
+       11. ALREADY GENERATED CHECK
+    ══════════════════════════════════════════ */
     const [[existing]] = await db.execute(
       `SELECT id FROM match_generation_log WHERE match_id = ? AND user_id = ?`,
       [match_id, userId]
     );
-    if (existing) return res.status(400).json({ success: false, message: "Teams already generated for this match" });
+    if (existing) {
+      return res.status(400).json({ success: false, message: "Teams already generated for this match" });
+    }
 
-    /* ── 5. Coins check ── */
+    /* ══════════════════════════════════════════
+       12. COINS CHECK
+    ══════════════════════════════════════════ */
     const [[wallet]] = await db.execute(
       `SELECT available_coins, used_coins, total_coins FROM user_coins WHERE user_id = ?`,
       [userId]
@@ -555,11 +713,15 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    /* ── 6. Free trial check ── */
+    /* ══════════════════════════════════════════
+       13. FREE TRIAL CHECK
+    ══════════════════════════════════════════ */
     const [[userRow]] = await db.execute(`SELECT free_trial_used FROM users WHERE id = ?`, [userId]);
     const isFreeTrial = userRow && userRow.free_trial_used === 0;
 
-    /* ── 7. Subscription check — skip if free trial ── */
+    /* ══════════════════════════════════════════
+       14. SUBSCRIPTION CHECK (skip if free trial)
+    ══════════════════════════════════════════ */
     if (!isFreeTrial) {
       const [[subscription]] = await db.execute(
         `SELECT id, plan_name, expiry_date, matches_allowed, matches_used
@@ -582,7 +744,9 @@ export const generateTeams = async (req, res) => {
       }
     }
 
-    /* ── 8. Convert real names → coded names ── */
+    /* ══════════════════════════════════════════
+       15. CONVERT REAL NAMES → CODED NAMES
+    ══════════════════════════════════════════ */
     const toUCT = (players, side) => {
       const counters = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
       return players.map((p) => {
@@ -600,8 +764,8 @@ export const generateTeams = async (req, res) => {
         return {
           name:      codedName,
           role,
-          captain:   p.captain || null,
-          mandate:   p.mandate ? String(p.mandate).trim().toUpperCase() : null,
+          captain:   p.captain  || null,
+          mandate:   p.mandate  ? String(p.mandate).trim().toUpperCase() : null,
           _original: p.name,
           _side:     side === "A" ? "team_a" : "team_b",
         };
@@ -612,7 +776,9 @@ export const generateTeams = async (req, res) => {
     const uctTeamB  = toUCT(uniqueTeamB, "B");
     const allMapped = [...uctTeamA, ...uctTeamB];
 
-    /* ── 9. Build maps ── */
+    /* ══════════════════════════════════════════
+       16. BUILD MAPS
+    ══════════════════════════════════════════ */
     const nameMap    = {};
     const capMap     = {};
     const mandateMap = {};
@@ -625,7 +791,9 @@ export const generateTeams = async (req, res) => {
       sideMap[p.name]    = p._side;
     });
 
-    /* ── 10. Fetch substitutes ── */
+    /* ══════════════════════════════════════════
+       17. FETCH SUBSTITUTES FROM DB
+    ══════════════════════════════════════════ */
     const [substituteRows] = await db.execute(
       `SELECT player_name FROM match_players WHERE match_id = ? AND is_substitute = 1`,
       [match_id]
@@ -637,7 +805,9 @@ export const generateTeams = async (req, res) => {
       selectedMap[p.name] = substituteNames.has(p._original) ? 1 : 0;
     });
 
-    /* ── 11. Build UCT payload ── */
+    /* ══════════════════════════════════════════
+       18. BUILD UCT PAYLOAD
+    ══════════════════════════════════════════ */
     const buildUCTPlayer = (p) => {
       const obj = { name: p.name, role: p.role };
       if (p.captain === "C")   obj.captain = "C";
@@ -652,7 +822,9 @@ export const generateTeams = async (req, res) => {
 
     console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
 
-    /* ── 12. Call UCT API ── */
+    /* ══════════════════════════════════════════
+       19. CALL UCT API
+    ══════════════════════════════════════════ */
     const startTime = Date.now();
     let uctTeams    = [];
 
@@ -697,7 +869,9 @@ export const generateTeams = async (req, res) => {
       return res.status(400).json({ success: false, message: "UCT API returned no teams" });
     }
 
-    /* ── 13. TXT helpers ── */
+    /* ══════════════════════════════════════════
+       20. FORMAT DATE (IST)
+    ══════════════════════════════════════════ */
     const formatDateINDIA = (date = new Date()) =>
       new Date(date).toLocaleString("en-IN", {
         year: "numeric", month: "short", day: "numeric",
@@ -705,7 +879,9 @@ export const generateTeams = async (req, res) => {
         hour12: true, timeZone: "Asia/Kolkata",
       });
 
-    /* ── 14. Build TXT content ── */
+    /* ══════════════════════════════════════════
+       21. BUILD TXT CONTENT
+    ══════════════════════════════════════════ */
     const buildUctTxtContent = () => {
       const totalTeamsCount = [...new Set(uctTeams.map((p) => p.dt_no))].length;
       const lines = [];
@@ -717,7 +893,6 @@ export const generateTeams = async (req, res) => {
       lines.push(`Squad size    : ${totalSquad} players`);
       lines.push("");
 
-      /* ── Captain Pool ── */
       const cPoolMapped = allMapped.filter(p => p.captain === "C");
       if (cPoolMapped.length) {
         lines.push("********************");
@@ -729,7 +904,6 @@ export const generateTeams = async (req, res) => {
         lines.push("");
       }
 
-      /* ── Mandate YES ── */
       const mYesMapped = allMapped.filter(p => p.mandate === "YES");
       if (mYesMapped.length) {
         lines.push("MANDATORY PLAYERS (M-YES)");
@@ -739,7 +913,6 @@ export const generateTeams = async (req, res) => {
         lines.push("");
       }
 
-      /* ── Substitutes ── */
       const subPlayers = allMapped.filter(p => substituteNames.has(p._original));
       if (subPlayers.length) {
         lines.push("SUBSTITUTE PLAYERS");
@@ -749,7 +922,6 @@ export const generateTeams = async (req, res) => {
         lines.push("");
       }
 
-      /* ── Teams table ── */
       lines.push("TEAM\tDT_NO\tCODE\tNAME\tROLE\tCAP\tSELECTED\tSIDE");
 
       const teamsByDtNo = {};
@@ -769,7 +941,6 @@ export const generateTeams = async (req, res) => {
             const capInTxt    = player.cap && player.cap !== "" ? player.cap : "-";
             const selectedVal = selectedMap[player.name] ? "1" : "0";
             const sideVal     = sideMap[player.name]     || (player.name.endsWith("_A") ? "team_a" : "team_b");
-
             lines.push([
               `Team ${dtNo}`, dtNo,
               player.name, realName, player.role || "-",
@@ -781,7 +952,9 @@ export const generateTeams = async (req, res) => {
       return lines.join("\n");
     };
 
-    /* ── 15. Transaction ── */
+    /* ══════════════════════════════════════════
+       22. TRANSACTION — DEDUCT COIN & SAVE TEAMS
+    ══════════════════════════════════════════ */
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
@@ -823,7 +996,6 @@ export const generateTeams = async (req, res) => {
         [match_id, userId]
       );
 
-      /* ── Store teams ── */
       for (const player of uctTeams) {
         const realName    = nameMap[player.name]     || player.name;
         const capValue    = player.cap && player.cap !== "" ? player.cap : null;
@@ -929,7 +1101,6 @@ export const generateTeams = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
-
 
 /* ================= GET MY TEAMS ================= */
 export const getMyTeams = async (req, res) => {
