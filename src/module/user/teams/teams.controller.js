@@ -854,12 +854,30 @@ export const generateTeams = async (req, res) => {
 
     } catch (apiError) {
       console.error("❌ UCT API FAILED:", apiError.message, apiError.response?.data);
-      return res.status(500).json({
+
+      const uctDetail = apiError.response?.data?.detail || "";
+
+      // UCT API error → user-friendly validation message గా చూపించు
+      let userMessage = "Team generation failed. Please check your squad and try again.";
+
+      if (uctDetail.toLowerCase().includes("sorare team generation failed")) {
+        userMessage =
+          "Invalid squad configuration. Please ensure:" +
+          " each team has exactly 1 GK, max 4 DEF, max 4 MID, max 4 FWD," +
+          " captain pool has 2–6 players, and squad total is between 10–22 players.";
+      } else if (uctDetail.toLowerCase().includes("captain")) {
+        userMessage = "Captain pool is invalid. Please select 2–6 captain candidates and try again.";
+      } else if (uctDetail.toLowerCase().includes("mandate")) {
+        userMessage = "Mandatory player (M-YES) selection is invalid. Maximum 2 allowed (max 1 GK).";
+      } else if (uctDetail.toLowerCase().includes("goalkeeper") || uctDetail.toLowerCase().includes("gk")) {
+        userMessage = "Each team must have exactly 1 Goalkeeper. Please check your squad.";
+      } else if (uctDetail) {
+        userMessage = `Team generation failed: ${uctDetail}`;
+      }
+
+      return res.status(400).json({
         success: false,
-        message: "UCT API failed",
-        error:   apiError.message,
-        status:  apiError.response?.status || null,
-        details: apiError.response?.data   || null,
+        message: userMessage,
       });
     }
 
@@ -1101,6 +1119,7 @@ export const generateTeams = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
+
 
 /* ================= GET MY TEAMS ================= */
 export const getMyTeams = async (req, res) => {
