@@ -732,7 +732,7 @@ export const generateTeams = async (req, res) => {
           lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`);
         });
         lines.push("");
-      }
+      } 
 
       lines.push("TEAM\tDT_NO\tCODE\tNAME\tROLE\tCAP\tSELECTED\tSIDE");
 
