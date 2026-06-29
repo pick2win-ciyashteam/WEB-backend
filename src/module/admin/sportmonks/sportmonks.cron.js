@@ -36,16 +36,16 @@ const syncLineups = async () => {
     const now             = new Date();
     const ninetyMinsLater = new Date(now.getTime() + 90 * 60 * 1000);
 
-    const [matches] = await db.query(
-      `SELECT id, provider_match_id, start_time, lineup_status, status
-       FROM matches
-       WHERE is_active = 1
-         AND lineup_status != 'confirmed'
-         AND (
-           (status = 'UPCOMING' AND start_time <= ?)
-           OR status = 'LIVE'
-         )
-       ORDER BY start_time ASC`,
+   const [matches] = await db.query(
+  `SELECT m.id, m.provider_match_id, m.start_time, m.lineup_status, m.status
+   FROM matches m
+   /* ── ✅ Both teams must exist ── */
+   INNER JOIN teams ht ON ht.id = m.home_team_id
+   INNER JOIN teams awt ON awt.id = m.away_team_id
+   WHERE m.is_active = 1
+     AND m.lineup_status != 'confirmed'
+     AND m.status IN ('UPCOMING', 'LIVE', 'RESULT')
+   ORDER BY m.start_time ASC`
       [formatDateTime(ninetyMinsLater)]
     );
 
