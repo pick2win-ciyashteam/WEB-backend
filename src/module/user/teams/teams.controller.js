@@ -555,20 +555,20 @@ export const generateTeams = async (req, res) => {
     /* ══════════════════════════════════════════
        5. EACH TEAM MUST HAVE MIN 1 OF EACH ROLE
     ══════════════════════════════════════════ */
-    const teamARoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
-    const teamBRoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
-    uniqueTeamA.forEach(p => { if (teamARoles[p.role] !== undefined) teamARoles[p.role]++; });
-    uniqueTeamB.forEach(p => { if (teamBRoles[p.role] !== undefined) teamBRoles[p.role]++; });
+    // const teamARoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    // const teamBRoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+    // uniqueTeamA.forEach(p => { if (teamARoles[p.role] !== undefined) teamARoles[p.role]++; });
+    // uniqueTeamB.forEach(p => { if (teamBRoles[p.role] !== undefined) teamBRoles[p.role]++; });
 
-    if (teamARoles.GK  < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Goalkeeper (GK)" });
-    if (teamARoles.DEF < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Defender (DEF)" });
-    if (teamARoles.MID < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Midfielder (MID)" });
-    if (teamARoles.FWD < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Forward (FWD)" });
+    // if (teamARoles.GK  < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Goalkeeper (GK)" });
+    // if (teamARoles.DEF < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Defender (DEF)" });
+    // if (teamARoles.MID < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Midfielder (MID)" });
+    // if (teamARoles.FWD < 1) return res.status(400).json({ success: false, message: "Team A must have at least 1 Forward (FWD)" });
 
-    if (teamBRoles.GK  < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Goalkeeper (GK)" });
-    if (teamBRoles.DEF < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Defender (DEF)" });
-    if (teamBRoles.MID < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Midfielder (MID)" });
-    if (teamBRoles.FWD < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Forward (FWD)" });
+    // if (teamBRoles.GK  < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Goalkeeper (GK)" });
+    // if (teamBRoles.DEF < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Defender (DEF)" });
+    // if (teamBRoles.MID < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Midfielder (MID)" });
+    // if (teamBRoles.FWD < 1) return res.status(400).json({ success: false, message: "Team B must have at least 1 Forward (FWD)" });
 
     /* ══════════════════════════════════════════
        6. PER-TEAM ROLE MAX LIMITS
