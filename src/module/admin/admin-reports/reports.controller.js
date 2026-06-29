@@ -2140,41 +2140,40 @@ export const addLeague = async (req, res) => {
    PATCH /admin/leagues/:id
    body: { name, short_name, region, tier, from_month_year, to_month_year, description, matches_30d }
    ═══════════════════════════════════════════════════ */
-export const editLeague = async (req, res) => {
+
+   export const editLeague = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      name,
-      short_name,
-      region,
-      tier,
-      from_month_year,
-      to_month_year,
-      description,
-      matches_30d,
-    } = req.body;
 
-    if (!name?.trim() || !region?.trim() || !tier?.trim()) {
-      return res.status(400).json({ success: false, message: "name, region, tier required" });
+    const ALLOWED = [
+      "name", "short_name", "region", "tier",
+      "from_month_year", "to_month_year", "description", "matches_30d",
+    ];
+
+    const fields = {};
+    for (const key of ALLOWED) {
+      if (req.body[key] !== undefined) fields[key] = req.body[key];
     }
 
+    if (!Object.keys(fields).length)
+      return res.status(400).json({ success: false, message: "No valid fields to update" });
+
+    // sanitize
+    if (fields.name)           fields.name           = fields.name.trim();
+    if (fields.short_name)     fields.short_name     = fields.short_name.trim() || null;
+    if (fields.region)         fields.region         = fields.region.trim();
+    if (fields.tier)           fields.tier           = fields.tier.trim() || null;
+    if (fields.from_month_year) fields.from_month_year = fields.from_month_year.trim() || null;
+    if (fields.to_month_year)  fields.to_month_year  = fields.to_month_year.trim() || null;
+    if (fields.description)    fields.description    = fields.description.trim() || null;
+    if (fields.matches_30d !== undefined) fields.matches_30d = Number(fields.matches_30d) || 0;
+
+    const setClauses = Object.keys(fields).map((k) => `${k} = ?`).join(", ");
+    const setValues  = Object.values(fields);
+
     await db.execute(
-      `UPDATE leagues_catalog
-       SET name = ?, short_name = ?, region = ?, tier = ?,
-           from_month_year = ?, to_month_year = ?, description = ?,
-           matches_30d = ?
-       WHERE id = ?`,
-      [
-        name.trim(),
-        short_name?.trim() || null,
-        region.trim(),
-        tier.trim(),
-        from_month_year?.trim() || null,
-        to_month_year?.trim() || null,
-        description?.trim() || null,
-        Number(matches_30d) || 0,
-        id,
-      ]
+      `UPDATE leagues_catalog SET ${setClauses} WHERE id = ?`,
+      [...setValues, id]
     );
 
     return res.status(200).json({ success: true, message: "League updated successfully" });
