@@ -5,7 +5,8 @@ export const addPlan = (req, res, next) => {
     name:             Joi.string().min(2).max(100).required(),
     subtitle:         Joi.string().max(100).allow("", null),
     coins:            Joi.number().integer().min(1).required(),
-    matches:          Joi.number().integer().min(1).required(),
+    bonus_coins:      Joi.number().integer().min(0).default(0),   // optional, default 0
+    // matches → auto = coins + bonus_coins (no need to send)
     price:            Joi.number().positive().required(),
     currency:         Joi.string().max(10).default("GBP"),
     currency_symbol:  Joi.string().max(5).default("£"),
@@ -32,7 +33,8 @@ export const updatePlan = (req, res, next) => {
     name:             Joi.string().min(2).max(100),
     subtitle:         Joi.string().max(100).allow("", null),
     coins:            Joi.number().integer().min(1),
-    matches:          Joi.number().integer().min(1),
+    bonus_coins:      Joi.number().integer().min(0),
+    // matches → auto recalculated in service
     price:            Joi.number().positive(),
     currency:         Joi.string().max(10),
     currency_symbol:  Joi.string().max(5),
