@@ -4,15 +4,13 @@ import db from "../../../config/db.js";
 export const addPlanService = async (data) => {
   const {
     name, subtitle, coins, bonus_coins, price,
-    currency, currency_symbol, validity_days,
-    is_popular, is_pro, is_active, sort_order,
-    regular_price, offer_price, discount_pct,
-    offer_label, is_offer_active,
+    validity_days, is_popular, is_pro, is_active,
+    sort_order, offer_label,
   } = data;
 
   const parsedCoins  = parseInt(coins);
   const parsedBonus  = parseInt(bonus_coins ?? 0);
-  const totalMatches = parsedCoins + parsedBonus;          // auto calculate
+  const totalMatches = parsedCoins + parsedBonus;
   const price_per_coin = (parseFloat(price) / parsedCoins).toFixed(4);
 
   const [[existing]] = await db.execute(
@@ -23,31 +21,22 @@ export const addPlanService = async (data) => {
   const [result] = await db.execute(
     `INSERT INTO subscription_plans
        (name, subtitle, coins, bonus_coins, matches, price, price_per_coin,
-        currency, currency_symbol, validity_days,
-        is_popular, is_pro, is_active, sort_order,
-        regular_price, offer_price, discount_pct,
-        offer_label, is_offer_active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        validity_days, is_popular, is_pro, is_active, sort_order, offer_label)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name,
-      subtitle          || null,
+      subtitle    || null,
       parsedCoins,
       parsedBonus,
-      totalMatches,                 // coins + bonus_coins
+      totalMatches,
       price,
       price_per_coin,
-      currency          || "GBP",
-      currency_symbol   || "$",
-      validity_days     || 365,
-      is_popular        ?? 0,
-      is_pro            ?? 0,
-      is_active         ?? 1,
-      sort_order        ?? 0,
-      regular_price     || null,
-      offer_price       || null,
-      discount_pct      || null,
-      offer_label       || null,
-      is_offer_active   ?? 0,
+      validity_days ?? 365,
+      is_popular    ?? 0,
+      is_pro        ?? 0,
+      is_active     ?? 1,
+      sort_order    ?? 0,
+      offer_label   || null,
     ]
   );
 
@@ -55,23 +44,19 @@ export const addPlanService = async (data) => {
     success: true,
     id: result.insertId,
     message: "Plan added successfully",
-    coins: parsedCoins,
-    bonus_coins: parsedBonus,
-    total_matches: totalMatches,
   };
 };
 
 /* ================= GET ALL PLANS (admin) ================= */
- export const getAllPlansAdminService = async () => {
+export const getAllPlansAdminService = async () => {
   const [rows] = await db.execute(
     `SELECT
-       id, name, subtitle, coins, bonus_coins, matches, price, price_per_coin,
-       currency, currency_symbol, validity_days,
+       id, name, subtitle, coins, bonus_coins, matches,
+       price, price_per_coin, validity_days,
        is_popular, is_pro, is_active, sort_order,
-         
-        
-       created_at, updated_at
-     FROM subscription_plans ORDER BY sort_order ASC, created_at DESC`
+       offer_label, created_at, updated_at
+     FROM subscription_plans
+     ORDER BY sort_order ASC, created_at DESC`
   );
   return { success: true, total: rows.length, data: rows };
 };
@@ -80,11 +65,9 @@ export const addPlanService = async (data) => {
 export const getAllPlansUserService = async () => {
   const [rows] = await db.execute(
     `SELECT
-       id, name, subtitle, coins, bonus_coins, matches, price, price_per_coin,
-       currency, currency_symbol, validity_days,
-       is_popular, is_pro, sort_order,
-       regular_price, offer_price, discount_pct,
-       offer_label, is_offer_active
+       id, name, subtitle, coins, bonus_coins, matches,
+       price, price_per_coin, validity_days,
+       is_popular, is_pro, sort_order, offer_label
      FROM subscription_plans
      WHERE is_active = 1
      ORDER BY sort_order ASC`
@@ -93,16 +76,13 @@ export const getAllPlansUserService = async () => {
 };
 
 /* ================= GET PLAN BY ID ================= */
- 
 export const getPlanByIdService = async (id) => {
   const [[plan]] = await db.execute(
     `SELECT
-       id, name, subtitle, coins, bonus_coins, matches, price, price_per_coin,
-       currency, currency_symbol, validity_days,
+       id, name, subtitle, coins, bonus_coins, matches,
+       price, price_per_coin, validity_days,
        is_popular, is_pro, is_active, sort_order,
-       regular_price, offer_price, discount_pct,
-       offer_label, is_offer_active,
-       created_at, updated_at
+       offer_label, created_at, updated_at
      FROM subscription_plans WHERE id = ?`, [id]
   );
   if (!plan) throw new Error("Plan not found");
@@ -113,10 +93,8 @@ export const getPlanByIdService = async (id) => {
 export const updatePlanService = async (id, data) => {
   const ALLOWED = [
     "name", "subtitle", "coins", "bonus_coins", "price",
-    "currency", "currency_symbol", "validity_days",
-    "is_popular", "is_pro", "is_active", "sort_order",
-    "regular_price", "offer_price", "discount_pct",
-    "offer_label", "is_offer_active",
+    "validity_days", "is_popular", "is_pro", "is_active",
+    "sort_order", "offer_label",
   ];
 
   const sanitized = {};
@@ -132,17 +110,17 @@ export const updatePlanService = async (id, data) => {
   );
   if (!current) throw new Error("Plan not found");
 
-  // Recalculate price_per_coin if coins or price changed
+  // Recalculate price_per_coin
   if (sanitized.price !== undefined || sanitized.coins !== undefined) {
     const finalCoins = sanitized.coins !== undefined ? sanitized.coins : current.coins;
     const finalPrice = sanitized.price !== undefined ? sanitized.price : current.price;
     sanitized.price_per_coin = (parseFloat(finalPrice) / parseInt(finalCoins)).toFixed(4);
   }
 
-  // Recalculate matches if coins or bonus_coins changed
+  // Recalculate matches
   if (sanitized.coins !== undefined || sanitized.bonus_coins !== undefined) {
-    const finalCoins  = sanitized.coins       !== undefined ? parseInt(sanitized.coins)       : parseInt(current.coins);
-    const finalBonus  = sanitized.bonus_coins !== undefined ? parseInt(sanitized.bonus_coins) : parseInt(current.bonus_coins ?? 0);
+    const finalCoins = sanitized.coins       !== undefined ? parseInt(sanitized.coins)       : parseInt(current.coins);
+    const finalBonus = sanitized.bonus_coins !== undefined ? parseInt(sanitized.bonus_coins) : parseInt(current.bonus_coins ?? 0);
     sanitized.matches = finalCoins + finalBonus;
   }
 
