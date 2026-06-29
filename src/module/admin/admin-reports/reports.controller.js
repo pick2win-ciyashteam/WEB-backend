@@ -2103,8 +2103,8 @@ export const addLeague = async (req, res) => {
       matches_30d,
     } = req.body;
 
-    if (!name?.trim() || !region?.trim() || !tier?.trim()) {
-      return res.status(400).json({ success: false, message: "name, region, tier required" });
+    if (!name?.trim() || !region?.trim() ) {
+      return res.status(400).json({ success: false, message: "name, region, required" });
     }
 
     const [result] = await db.execute(
@@ -2116,7 +2116,7 @@ export const addLeague = async (req, res) => {
         name.trim(),
         short_name?.trim() || null,
         region.trim(),
-        tier.trim(),
+        tier?.trim() || null,
         from_month_year?.trim() || null,
         to_month_year?.trim() || null,
         description?.trim() || null,
