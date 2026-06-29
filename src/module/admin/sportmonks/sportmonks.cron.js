@@ -30,30 +30,30 @@ const SCHEDULES = {
 };
 
 /* ================= JOB 1 — LINEUP SYNC ================= */
-const syncLineups = async () => {
+ const syncLineups = async () => {
   console.log("⏰ [CRON] Lineup sync started:", new Date().toISOString());
   try {
     const now             = new Date();
     const ninetyMinsLater = new Date(now.getTime() + 90 * 60 * 1000);
 
-   const [matches] = await db.query(
-  `SELECT m.id, m.provider_match_id, m.start_time, m.lineup_status, m.status
-   FROM matches m
-   /* ── ✅ Both teams must exist ── */
-   INNER JOIN teams ht ON ht.id = m.home_team_id
-   INNER JOIN teams awt ON awt.id = m.away_team_id
-   WHERE m.is_active = 1
-     AND m.lineup_status != 'confirmed'
-     AND m.status IN ('UPCOMING', 'LIVE', 'RESULT')
-   ORDER BY m.start_time ASC`
-      [formatDateTime(ninetyMinsLater)]
+    const [matches] = await db.query(
+      `SELECT m.id, m.provider_match_id, m.start_time, m.lineup_status, m.status
+       FROM matches m
+       INNER JOIN teams ht  ON ht.id  = m.home_team_id
+       INNER JOIN teams awt ON awt.id = m.away_team_id
+       WHERE m.is_active = 1
+         AND m.lineup_status != 'confirmed'
+         AND m.start_time <= ?
+         AND m.status IN ('UPCOMING', 'LIVE', 'RESULT')
+       ORDER BY m.start_time ASC`,
+      [formatDateTime(ninetyMinsLater)]  // ✅ comma fix
     );
 
     if (!matches.length) {
-      console.log("✅ [CRON] No matches needing lineup sync");  
+      console.log("✅ [CRON] No matches needing lineup sync");
       return;
     }
-   
+
     console.log(`📋 [CRON] Lineup check for ${matches.length} match(es)`);
 
     for (const match of matches) {
