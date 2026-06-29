@@ -82,22 +82,22 @@ const positionIdMap = {
 
    
 export const syncPlayingXIService = async (providerMatchId) => {
- 
-  // 1. Get match from DB by provider_match_id (Sportmonks fixture id)
+
   const [[matchRow]] = await db.query(
     `SELECT id, provider_match_id, home_team_id, away_team_id
      FROM matches WHERE provider_match_id = ? LIMIT 1`,
     [String(providerMatchId)]
   );
- 
+
   if (!matchRow)
     return { count: 0, reason: `Match not found in DB: ${providerMatchId}` };
- 
-  // 2. Fetch lineups from Sportmonks
-  const data       = await apiGet(`/fixtures/${providerMatchId}`, { include: "lineups" });
+
+  const data       = await apiGet(`/fixtures/${providerMatchId}`, {
+    include: "lineups.player",
+  });
   const fixture    = data?.data;
   const allLineups = fixture?.lineups || [];
- 
+
   if (!allLineups.length) {
     await db.query(
       `UPDATE matches SET lineupavailable = 0, lineup_status = 'not_available' WHERE id = ?`,
@@ -105,76 +105,84 @@ export const syncPlayingXIService = async (providerMatchId) => {
     );
     return { count: 0, reason: "Lineup not published yet on Sportmonks" };
   }
- 
-  // 3. Split Starting XI vs Bench
+
   const startingXI = allLineups.filter(p => p.type_id === 11);
   const bench      = allLineups.filter(p => p.type_id === 12);
- 
+
   console.log(`📋 Match ${providerMatchId} — Starting XI: ${startingXI.length} | Bench: ${bench.length}`);
- 
-  // 4. Get team map (provider_team_id → internal team id)
+
   const [teamRows] = await db.query(
     `SELECT id, provider_team_id FROM teams WHERE id IN (?, ?)`,
     [matchRow.home_team_id, matchRow.away_team_id]
   );
   const teamMap = new Map(teamRows.map(t => [String(t.provider_team_id), t.id]));
- 
-  // 5. Clean slate
+
+  /* ── position map ── */
+  const positionIdMap = { 24: "GK", 25: "DEF", 26: "MID", 27: "FWD" };
+
+  /* ── duplicate prevention ── */
+  const seen = new Set();
+
   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
- 
-  // 6. Insert helper
+
   const insertPlayer = async (entry, isPlaying, isSubstitute) => {
+    const pid      = String(entry.player_id);
     const dbTeamId = teamMap.get(String(entry.team_id));
- 
+
     if (!dbTeamId) {
-      console.warn(`⚠️  Team not in DB: provider_team_id=${entry.team_id}`);
+      console.warn(`⚠️ Team not in DB: provider_team_id=${entry.team_id}`);
       return 0;
     }
- 
+
+    if (seen.has(pid)) {
+      console.warn(`⚠️ Duplicate skipped: player_id=${pid}`);
+      return 0;
+    }
+    seen.add(pid);
+
     const position = positionIdMap[entry.position_id] || "MID";
- 
+    const logo     = entry.player?.image_path || null;
+
     await db.query(
       `INSERT INTO match_players
          (match_id, team_id, player_name, position,
-          is_playing, is_substitute, is_pre_squad,
+          is_playing, is_substitute,
           provider_player_id, jersey_number, logo)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
-         is_playing        = VALUES(is_playing),
-         is_substitute     = VALUES(is_substitute),
-         is_pre_squad      = 0,
-         player_name       = VALUES(player_name),
-         position          = VALUES(position),
-         jersey_number     = VALUES(jersey_number)`,
+         is_playing    = VALUES(is_playing),
+         is_substitute = VALUES(is_substitute),
+         player_name   = VALUES(player_name),
+         position      = VALUES(position),
+         jersey_number = VALUES(jersey_number),
+         logo          = VALUES(logo)`,
       [
         matchRow.id,
         dbTeamId,
-        entry.player_name || `Player ${entry.player_id}`,
+        entry.player_name || entry.player?.display_name || `Player ${pid}`,
         position,
         isPlaying,
         isSubstitute,
-        String(entry.player_id),
+        pid,
         entry.jersey_number || null,
+        logo,
       ]
     );
     return 1;
   };
- 
-  // 7. Insert all players
+
   let count = 0;
   for (const p of startingXI) count += await insertPlayer(p, 1, 0);
   for (const p of bench)      count += await insertPlayer(p, 0, 1);
- 
-  // 8. Update match lineup status
+
   await db.query(
     `UPDATE matches SET lineupavailable = 1, lineup_status = 'confirmed' WHERE id = ?`,
     [matchRow.id]
   );
- 
+
   console.log(`✅ Playing XI synced: ${count} players for match ${providerMatchId}`);
   return { count, reason: null, type: "lineup" };
 };
-
 
 //  export const syncPlayingXIService = async (matchId) => {
 
