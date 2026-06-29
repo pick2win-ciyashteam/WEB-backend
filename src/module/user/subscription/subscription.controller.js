@@ -2,15 +2,14 @@ import db from "../../../config/db.js";
 
 import {  getMySubscriptionService } from "./subscription.service.js";
 
+
 export const getActivePlans = async (req, res) => {
   try {
     const [rows] = await db.execute(
       `SELECT
-         id, name, subtitle, coins, matches,
-         price, price_per_coin, currency, currency_symbol,
-         validity_days, is_popular, is_pro, sort_order,
-         regular_price, offer_price, discount_pct,
-         offer_label, is_offer_active
+         id, name, subtitle, coins, bonus_coins, matches,
+         price, price_per_coin, validity_days,
+         is_popular, is_pro, sort_order, offer_label
        FROM subscription_plans
        WHERE is_active = 1
        ORDER BY sort_order ASC`
