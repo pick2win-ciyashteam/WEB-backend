@@ -499,152 +499,21 @@ export const generateTeams = async (req, res) => {
     const userId = req.user.id;
     const { match_id, team_a, team_b } = req.body;
 
-    /* ── 1. Validate input ── */
-    if (!match_id || !team_a || !team_b) {
+    /* ── 1. Basic input check ── */
+    if (!match_id || !Array.isArray(team_a) || !Array.isArray(team_b)) {
       return res.status(400).json({ success: false, message: "match_id, team_a, team_b required" });
     }
 
-    if (!Array.isArray(team_a) || !Array.isArray(team_b)) {
-      return res.status(400).json({ success: false, message: "team_a and team_b must be arrays" });
-    }
-
-    if (team_a.length < 1 || team_b.length < 1) {
-      return res.status(400).json({ success: false, message: "team_a and team_b must have at least 1 player each" });
-    }
-
-    /* ── 2. Remove duplicates ── */
+    /* ── 2. Remove duplicates within same team ── */
     const uniqueTeamA = team_a.filter((p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx);
     const uniqueTeamB = team_b.filter((p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx);
 
-    /* ── 3. Squad size: 10-22 ── */
-    const totalSquad = uniqueTeamA.length + uniqueTeamB.length;
-    if (totalSquad < 10 || totalSquad > 22) {
-      return res.status(400).json({
-        success: false,
-        message: `Squad must have 10-22 players, got ${totalSquad}`,
-      });
-    }
+    const allInput   = [...uniqueTeamA, ...uniqueTeamB];
+    const totalSquad = allInput.length;
 
-    /* ── 3b. Per-team size: max 11 ── */
-    if (uniqueTeamA.length > 11) {
-      return res.status(400).json({
-        success: false,
-        message: `Team A maximum 11 players allowed, got ${uniqueTeamA.length}`,
-      });
-    }
-    if (uniqueTeamB.length > 11) {
-      return res.status(400).json({
-        success: false,
-        message: `Team B maximum 11 players allowed, got ${uniqueTeamB.length}`,
-      });
-    }
-
-    /* ── 3c. Valid roles check ── */
-    const VALID_ROLES = ["GK", "DEF", "MID", "FWD"];
-    for (const p of [...uniqueTeamA, ...uniqueTeamB]) {
-      if (!VALID_ROLES.includes(p.role)) {
-        return res.status(400).json({
-          success: false,
-          message: `Invalid role "${p.role}" for player "${p.name}". Allowed: GK, DEF, MID, FWD`,
-        });
-      }
-    }
-
-    /* ── 4. Min 1 per role (combined) ── */
-    const allInput = [...uniqueTeamA, ...uniqueTeamB];
-    const roleCounts = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
-    allInput.forEach(p => { if (roleCounts[p.role] !== undefined) roleCounts[p.role]++; });
-
-    if (roleCounts.GK  < 1) return res.status(400).json({ success: false, message: "Minimum 1 Goalkeeper (GK) required" });
-    if (roleCounts.DEF < 1) return res.status(400).json({ success: false, message: "Minimum 1 Defender (DEF) required" });
-    if (roleCounts.MID < 1) return res.status(400).json({ success: false, message: "Minimum 1 Midfielder (MID) required" });
-    if (roleCounts.FWD < 1) return res.status(400).json({ success: false, message: "Minimum 1 Forward (FWD) required" });
-
-    /* ── 4b. Each team కి min roles check ── */
-    const teamARoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
-    const teamBRoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
-
-    uniqueTeamA.forEach(p => { if (teamARoles[p.role] !== undefined) teamARoles[p.role]++; });
-    uniqueTeamB.forEach(p => { if (teamBRoles[p.role] !== undefined) teamBRoles[p.role]++; });
-
-    if (teamARoles.GK  < 1) return res.status(400).json({ success: false, message: "Team A needs minimum 1 GK" });
-    if (teamARoles.DEF < 1) return res.status(400).json({ success: false, message: "Team A needs minimum 1 DEF" });
-    if (teamARoles.MID < 1) return res.status(400).json({ success: false, message: "Team A needs minimum 1 MID" });
-    if (teamARoles.FWD < 1) return res.status(400).json({ success: false, message: "Team A needs minimum 1 FWD" });
-
-    if (teamBRoles.GK  < 1) return res.status(400).json({ success: false, message: "Team B needs minimum 1 GK" });
-    if (teamBRoles.DEF < 1) return res.status(400).json({ success: false, message: "Team B needs minimum 1 DEF" });
-    if (teamBRoles.MID < 1) return res.status(400).json({ success: false, message: "Team B needs minimum 1 MID" });
-    if (teamBRoles.FWD < 1) return res.status(400).json({ success: false, message: "Team B needs minimum 1 FWD" });
-
-   /* ── 4c. Per-team role max limits (Sorare rules) ── */
-const ROLE_MAX = { GK: 1, DEF: 4, MID: 5, FWD: 5 };
-
-for (const [role, max] of Object.entries(ROLE_MAX)) {
-  if (teamARoles[role] > max) {
-    return res.status(400).json({
-      success: false,
-      message: `Team A: maximum ${max} ${role} players allowed, got ${teamARoles[role]}`,
-    });
-  }
-  if (teamBRoles[role] > max) {
-    return res.status(400).json({
-      success: false,
-      message: `Team B: maximum ${max} ${role} players allowed, got ${teamBRoles[role]}`,
-    });
-  }
-}
-
-    /* ── 5. Captain pool: 2-6 ── */
-    const captainPool = allInput.filter(p => p.captain === "C");
-    if (captainPool.length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: `Captain pool needs minimum 2 players, got ${captainPool.length}`,
-      });
-    }
-    if (captainPool.length > 6) {
-      return res.status(400).json({
-        success: false,
-        message: `Captain pool maximum 6 players allowed, got ${captainPool.length}`,
-      });
-    }
-
-    /* ── 5b. At least 1 captain per team ── */
-    const teamACaptains = uniqueTeamA.filter(p => p.captain === "C");
-    const teamBCaptains = uniqueTeamB.filter(p => p.captain === "C");
-
-    if (teamACaptains.length < 1) {
-      return res.status(400).json({
-        success: false,
-        message: "Team A needs at least 1 captain (C)",
-      });
-    }
-    if (teamBCaptains.length < 1) {
-      return res.status(400).json({
-        success: false,
-        message: "Team B needs at least 1 captain (C)",
-      });
-    }
-
-    /* ── 6. Mandate YES: max 2, max 1 GK, GK substitute not allowed ── */
-    const mandateYesPlayers = allInput.filter(p => p.mandate === "YES");
-    if (mandateYesPlayers.length > 2) {
-      return res.status(400).json({
-        success: false,
-        message: `Maximum 2 Mandate (YES) players allowed, got ${mandateYesPlayers.length}`,
-      });
-    }
-    if (mandateYesPlayers.filter(p => p.role === "GK").length > 1) {
-      return res.status(400).json({
-        success: false,
-        message: "Maximum 1 Goalkeeper can be selected as Mandate (YES)",
-      });
-    }
-
-    /* ── 7. Match check ── */
+    /* ── 3. Match check ── */
     const [[match]] = await db.execute(
-      `SELECT id, status, lineupavailable, lineup_status, start_time FROM matches WHERE id = ?`,
+      `SELECT id, status, lineupavailable, start_time FROM matches WHERE id = ?`,
       [match_id]
     );
 
@@ -667,14 +536,14 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
       });
     }
 
-    /* ── 8. Already generated ── */
+    /* ── 4. Already generated ── */
     const [[existing]] = await db.execute(
       `SELECT id FROM match_generation_log WHERE match_id = ? AND user_id = ?`,
       [match_id, userId]
     );
     if (existing) return res.status(400).json({ success: false, message: "Teams already generated for this match" });
 
-    /* ── 9. Coins check ── */
+    /* ── 5. Coins check ── */
     const [[wallet]] = await db.execute(
       `SELECT available_coins, used_coins, total_coins FROM user_coins WHERE user_id = ?`,
       [userId]
@@ -686,11 +555,11 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
       });
     }
 
-    /* ── 10. Free trial check ── */
+    /* ── 6. Free trial check ── */
     const [[userRow]] = await db.execute(`SELECT free_trial_used FROM users WHERE id = ?`, [userId]);
     const isFreeTrial = userRow && userRow.free_trial_used === 0;
 
-    /* ── 11. Subscription check — skip if free trial ── */
+    /* ── 7. Subscription check — skip if free trial ── */
     if (!isFreeTrial) {
       const [[subscription]] = await db.execute(
         `SELECT id, plan_name, expiry_date, matches_allowed, matches_used
@@ -713,7 +582,7 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
       }
     }
 
-    /* ── 12. Convert real names → coded names ── */
+    /* ── 8. Convert real names → coded names ── */
     const toUCT = (players, side) => {
       const counters = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
       return players.map((p) => {
@@ -728,7 +597,6 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
           codedName = `${prefix}${counters[role]}_${side}`;
         }
 
-        console.log(`Mapping: ${codedName} → ${p.name}`);
         return {
           name:      codedName,
           role,
@@ -744,7 +612,7 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
     const uctTeamB  = toUCT(uniqueTeamB, "B");
     const allMapped = [...uctTeamA, ...uctTeamB];
 
-    /* ── 13. Build maps ── */
+    /* ── 9. Build maps ── */
     const nameMap    = {};
     const capMap     = {};
     const mandateMap = {};
@@ -757,7 +625,7 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
       sideMap[p.name]    = p._side;
     });
 
-    /* ── 14. Fetch substitutes ── */
+    /* ── 10. Fetch substitutes ── */
     const [substituteRows] = await db.execute(
       `SELECT player_name FROM match_players WHERE match_id = ? AND is_substitute = 1`,
       [match_id]
@@ -769,7 +637,7 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
       selectedMap[p.name] = substituteNames.has(p._original) ? 1 : 0;
     });
 
-    /* ── 15. Build UCT payload ── */
+    /* ── 11. Build UCT payload ── */
     const buildUCTPlayer = (p) => {
       const obj = { name: p.name, role: p.role };
       if (p.captain === "C")   obj.captain = "C";
@@ -784,14 +652,11 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
 
     console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
 
-    /* ── 16. Call UCT API ── */
+    /* ── 12. Call UCT API ── */
     const startTime = Date.now();
     let uctTeams    = [];
 
     try {
-      console.log("UCT URL:", process.env.UCT_API);
-      console.log("UCT Payload:", JSON.stringify(uctPayload, null, 2));
-
       const response = await axios.post(
         `${process.env.UCT_API}`,
         uctPayload,
@@ -832,7 +697,7 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
       return res.status(400).json({ success: false, message: "UCT API returned no teams" });
     }
 
-    /* ── 17. TXT helpers ── */
+    /* ── 13. TXT helpers ── */
     const formatDateINDIA = (date = new Date()) =>
       new Date(date).toLocaleString("en-IN", {
         year: "numeric", month: "short", day: "numeric",
@@ -840,7 +705,7 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
         hour12: true, timeZone: "Asia/Kolkata",
       });
 
-    /* ── 18. Build TXT content ── */
+    /* ── 14. Build TXT content ── */
     const buildUctTxtContent = () => {
       const totalTeamsCount = [...new Set(uctTeams.map((p) => p.dt_no))].length;
       const lines = [];
@@ -916,7 +781,7 @@ for (const [role, max] of Object.entries(ROLE_MAX)) {
       return lines.join("\n");
     };
 
-    /* ── 19. Transaction ── */
+    /* ── 15. Transaction ── */
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
