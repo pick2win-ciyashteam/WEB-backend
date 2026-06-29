@@ -508,9 +508,9 @@ export const generateTeams = async (req, res) => {
       return res.status(400).json({ success: false, message: "team_a and team_b must be arrays" });
     }
 
-    if (team_a.length < 1 || team_b.length < 1) {
-      return res.status(400).json({ success: false, message: "team_a and team_b must have at least 1 player each" });
-    }
+    // if (team_a.length < 1 || team_b.length < 1) {
+    //   return res.status(400).json({ success: false, message: "team_a and team_b must have at least 1 player each" });
+    // }
 
     /* ── 2. Remove duplicates ── */
     const uniqueTeamA = team_a.filter((p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx);
