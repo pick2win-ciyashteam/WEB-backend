@@ -536,6 +536,24 @@ export const generateTeams = async (req, res) => {
     if (roleCounts.MID < 1) return res.status(400).json({ success: false, message: "Minimum 1 Midfielder (MID) required" });
     if (roleCounts.FWD < 1) return res.status(400).json({ success: false, message: "Minimum 1 Forward (FWD) required" });
 
+
+/* ── Each team కి min roles check ── */
+const teamARoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+const teamBRoles = { GK: 0, DEF: 0, MID: 0, FWD: 0 };
+
+uniqueTeamA.forEach(p => { if (teamARoles[p.role] !== undefined) teamARoles[p.role]++; });
+uniqueTeamB.forEach(p => { if (teamBRoles[p.role] !== undefined) teamBRoles[p.role]++; });
+
+if (teamARoles.GK  < 1) return res.status(400).json({ success: false, message: "Team A needs minimum 1 GK" });
+if (teamARoles.DEF < 1) return res.status(400).json({ success: false, message: "Team A needs minimum 1 DEF" });
+if (teamARoles.MID < 1) return res.status(400).json({ success: false, message: "Team A needs minimum 1 MID" });
+if (teamARoles.FWD < 1) return res.status(400).json({ success: false, message: "Team A needs minimum 1 FWD" });
+
+if (teamBRoles.GK  < 1) return res.status(400).json({ success: false, message: "Team B needs minimum 1 GK" });
+if (teamBRoles.DEF < 1) return res.status(400).json({ success: false, message: "Team B needs minimum 1 DEF" });
+if (teamBRoles.MID < 1) return res.status(400).json({ success: false, message: "Team B needs minimum 1 MID" });
+if (teamBRoles.FWD < 1) return res.status(400).json({ success: false, message: "Team B needs minimum 1 FWD" });
+
     /* ── 5. Captain pool: 2-6 ── */
     const captainPool = allInput.filter(p => p.captain === "C");
     if (captainPool.length < 2) {
@@ -747,7 +765,7 @@ export const generateTeams = async (req, res) => {
       });
     }
 
-    const generationTimeMs = Date.now() - startTime;
+    const generationTimeMs = Date.now() - startTime;   
 
     if (!uctTeams.length) {
       return res.status(400).json({ success: false, message: "UCT API returned no teams" });
@@ -758,7 +776,7 @@ export const generateTeams = async (req, res) => {
       new Date(date).toLocaleString("en-IN", {
         year: "numeric", month: "short", day: "numeric",
         hour: "2-digit", minute: "2-digit", second: "2-digit",
-        hour12: true, timeZone: "Asia/Kolkata",
+        hour12: true, timeZone: "Asia/Kolkata", 
       });
 
     /* ── 18. Build TXT content ── */
@@ -984,7 +1002,7 @@ export const generateTeams = async (req, res) => {
     console.error("generateTeams error:", err.message);
     return res.status(500).json({ success: false, message: err.message });
   }
-};
+};  
 
 /* ================= GET MY TEAMS ================= */
 export const getMyTeams = async (req, res) => {
