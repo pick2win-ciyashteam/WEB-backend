@@ -6,7 +6,7 @@ import countryRoutes from "./country/country.route.js";
 import bannerRoutes from "./banners/banners.route.js";
 import subscriptionRoutes from "./subscription/subscription.route.js";
 import feedbackRoutes from "./feedback/feedback.route.js"
-
+import supportAdminRoutes from "./support/admin.support.route.js"
 import reportsRoutes from "./admin-reports/reports.route.js"
 
 const router = Router();
@@ -26,4 +26,6 @@ router.use("/feedback", feedbackRoutes)
   
 router.use("/reports", adminLimiter, adminAuth(["super_admin"]), reportsRoutes)
 
-export default router;    
+router.use("/support",adminLimiter, adminAuth(["super_admin"]),supportAdminRoutes)
+
+export default router;     
