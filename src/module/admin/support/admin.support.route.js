@@ -11,4 +11,4 @@ router.get  ("/:id",            getTicketById);
 router.patch("/:id/reply",      replyToTicket);
 router.patch("/:id/status",     updateTicketStatus);
 
-export default router;
+export default router;    
