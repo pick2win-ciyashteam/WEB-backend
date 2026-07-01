@@ -171,7 +171,7 @@ const syncLineupStatus = async () => {
     if (!matches.length) return;
 
     for (const match of matches) {
-      if (!match.lineupavailable) continue;
+      if (!match.lineupavailable) continue;       
 
       const minsLeft = Math.round((new Date(match.start_time) - now) / (1000 * 60));
 
