@@ -27,6 +27,8 @@ router.get("/export-admins-csv",  adminLimiter, adminAuth(["super_admin"]), c.ex
 router.post("/setup-2fa",  adminLimiter, adminAuth(ALL_ROLES), c.setup2FA);
 router.post("/verify-2fa", adminLimiter, adminAuth(ALL_ROLES), c.verify2FA);
 router.post("/logout",     adminLimiter, adminAuth(ALL_ROLES), c.logout);
+
+
     
 export default router;    
 

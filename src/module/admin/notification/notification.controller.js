@@ -1,0 +1,54 @@
+// src/module/admin/notification/notification.controller.js
+import {
+  sendPushToUser,
+  sendPushToAll,
+  sendPushNotification,
+} from "../../../utils/notification.js";
+
+/* ── Send to specific user ── */
+export const sendToUser = async (req, res) => {
+  try {
+    const { user_id, title, body, data } = req.body;
+
+    if (!user_id || !title || !body) {
+      return res.status(400).json({ success: false, message: "user_id, title, body required" });
+    }
+
+    const result = await sendPushToUser({ userId: user_id, title, body, data: data || {} });
+    return res.status(200).json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ── Send to all users ── */
+export const sendToAll = async (req, res) => {
+  try {
+    const { title, body, data } = req.body;
+
+    if (!title || !body) {
+      return res.status(400).json({ success: false, message: "title, body required" });
+    }
+
+    const result = await sendPushToAll({ title, body, data: data || {} });
+    return res.status(200).json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ── Send to single token ── */
+export const sendToToken = async (req, res) => {
+  try {
+    const { token, title, body, data } = req.body;
+
+    if (!token || !title || !body) {
+      return res.status(400).json({ success: false, message: "token, title, body required" });
+    }
+
+    const result = await sendPushNotification({ token, title, body, data: data || {} });
+    return res.status(200).json({ success: true, result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

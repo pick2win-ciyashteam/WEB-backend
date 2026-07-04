@@ -9,8 +9,7 @@ import planRoutes        from "../user/subscription/subscription.route.js";
 import depositeRoutes     from "../user/deposite/deposite.route.js";
 import lineupRoutes      from "./lineup/lineup.route.js";
 import teamsRoutes       from "./teams/teams.route.js";
-import supportUserRoutes from "../admin/support/user.support.route.js"
- 
+import supportUserRoutes from "../admin/support/user.support.route.js" 
 
 const router = Router();
 
@@ -23,7 +22,7 @@ router.use("/plans",planRoutes);
 router.use("/deposite",authenticate,depositeRoutes);
 router.use("/lineup",lineupRoutes);
 router.use("/teams",authenticate,teamsRoutes);
-router.use("/support",supportUserRoutes)
+router.use("/support",supportUserRoutes) 
 
 
 export default router;    

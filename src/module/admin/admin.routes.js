@@ -8,6 +8,7 @@ import subscriptionRoutes from "./subscription/subscription.route.js";
 import feedbackRoutes from "./feedback/feedback.route.js"
 import supportAdminRoutes from "./support/admin.support.route.js"
 import reportsRoutes from "./admin-reports/reports.route.js"
+import notificationRoutes from "./notification/notification.route.js"
 
 const router = Router();
 
@@ -27,5 +28,9 @@ router.use("/feedback", feedbackRoutes)
 router.use("/reports", adminLimiter, adminAuth(["super_admin"]), reportsRoutes)
 
 router.use("/support",adminLimiter, adminAuth(["super_admin"]),supportAdminRoutes)
+
+router.use("/notification", adminLimiter, adminAuth(["super_admin"]),notificationRoutes)
+
+
 
 export default router;       

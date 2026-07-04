@@ -34,5 +34,10 @@ router.post("/verify-mobile-change", authenticate, v.verifyChangeOtp,     c.veri
 router.post("/change-email",         authenticate, v.requestEmailChange,  c.requestEmailChange);
 router.post("/verify-email-change",  authenticate, v.verifyChangeOtp,     c.verifyEmailChange);
 
-export default router;
+//notifications
+
+router.post("/register-device", authenticate, c.registerDevice);
+
+ 
+export default router;  
   

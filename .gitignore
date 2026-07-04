@@ -93,3 +93,6 @@ src/uploads/
 .tmp/
 *.bak
 *.backup
+
+
+src/config/firebase-service-account.json
