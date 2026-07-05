@@ -11,7 +11,7 @@ router.post("/generate-teams", generateTeams);
 
 router.get("/generate-matches", getMyGeneratedMatches);
 
-router.get("/user-my-teams/:matchId", getMyTeams);
+router.get("/user-my-teams/:matchId/:game", getMyTeams);
 
 router.get ("/team-players/:teamId",     getTeamPlayers);
 

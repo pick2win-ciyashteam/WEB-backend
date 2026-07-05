@@ -11,4 +11,4 @@ export const getUCTEndpoint = (game) => {
   return UCT_ENDPOINTS[key] || UCT_ENDPOINTS.football;
 };           
 
-         
+            

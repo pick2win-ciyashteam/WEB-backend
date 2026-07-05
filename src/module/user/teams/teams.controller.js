@@ -937,25 +937,223 @@ export const generateTeams = async (req, res) => {
 
 /* ================= GET MY TEAMS ================= */
 
+// export const getMyTeams = async (req, res) => {
+//   try {
+//     const { matchId } = req.params;
+//     const userId      = req.user.id;
+
+//     if (!matchId) {
+//       return res.status(400).json({ success: false, message: "matchId is required" });
+//     }
+
+//     const [[match]] = await db.execute(
+//       `SELECT hometeamname, awayteamname FROM matches WHERE id = ? LIMIT 1`,
+//       [matchId]
+//     );
+
+//     const [players] = await db.execute(
+//       `SELECT
+//          ut.id, ut.match_id, ut.dt_no, ut.name, ut.original_name,
+//          ut.role, ut.cap, ut.selected, ut.mandate, ut.team_side,
+//          ut.provider_player_id, ut.captain_mode,
+//          mp.logo AS player_image,
+//          CASE
+//            WHEN mp.is_playing    = 1 THEN 'playing_xi'
+//            WHEN mp.is_substitute = 1 THEN 'substitute'
+//            ELSE 'unknown'
+//          END AS status
+//        FROM user_teams ut
+//        LEFT JOIN match_players mp
+//               ON mp.match_id    = ut.match_id
+//              AND mp.player_name = ut.original_name
+//        WHERE ut.match_id = ? AND ut.user_id = ?
+//        ORDER BY ut.dt_no, ut.role`,
+//       [matchId, userId]
+//     );
+
+//     if (!players.length) {
+//       return res.status(404).json({ success: false, message: "No teams found for this match" });
+//     }
+
+//     /* ── Build teams map — dt_no=0 skip ── */
+//     const teamsMap = {};
+
+//     for (const player of players) {
+//       if (player.dt_no === 0) continue;
+
+//       if (!teamsMap[player.dt_no]) teamsMap[player.dt_no] = [];
+
+//       /* ── team_side fix: name suffix బట్టి determine ── */
+//       const teamSide = player.team_side ||
+//         (player.name && player.name.endsWith("_A") ? "team_a" : "team_b");
+
+//       teamsMap[player.dt_no].push({
+//         id:                 player.id,
+//         match_id:           player.match_id,
+//         dt_no:              player.dt_no,
+//         name:               player.name,
+//         original_name:      player.original_name,
+//         role:               player.role,
+//         cap:                player.cap          || null,
+//         captain_mode:       player.captain_mode || null,
+//         selected:           Boolean(player.selected),
+//         mandate:            player.mandate ? String(player.mandate).trim().toLowerCase() : null,
+//         team_side:          teamSide,
+//         provider_player_id: player.provider_player_id || null,
+//         player_image:       player.player_image || null,
+//         status:             player.status,
+//       });
+//     }
+
+//     /* ── mandate_no — dt_no=0 players ── */
+//     const mandateNoPlayers = players
+//       .filter((p) => p.dt_no === 0)
+//       .map((p) => ({
+//         original_name: p.original_name,
+//         role:          p.role,
+//         player_image:  p.player_image || null,
+//         team_side:     p.team_side || (p.name?.endsWith("_A") ? "team_a" : "team_b"),
+//         mandate:       "no",
+//       }));
+
+//     const teams = Object.entries(teamsMap).map(([dt_no, teamPlayers]) => ({
+//       team_no:      Number(dt_no),
+//       captain:      teamPlayers.find((p) => p.cap === "C")?.original_name  || null,
+//       vice_captain: teamPlayers.find((p) => p.cap === "VC")?.original_name || null,
+//       home_players: teamPlayers.filter((p) => p.team_side === "team_a").length,
+//       away_players: teamPlayers.filter((p) => p.team_side === "team_b").length,
+//       players:      teamPlayers,
+//     }));
+
+//     /* ── Preview ── */
+//     const allPlayers = teams.flatMap((t) => t.players);
+
+//     const uniqueByName = (arr) =>
+//       Object.values(arr.reduce((acc, p) => {
+//         acc[p.original_name] = p;
+//         return acc;
+//       }, {}));
+
+//     const isCVCMode = allPlayers.some((p) => p.captain_mode === "CVC");
+
+//     const substitutes        = uniqueByName(allPlayers.filter((p) => p.selected === true));
+//     const mandateYes         = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
+//     const mandateNo          = uniqueByName(mandateNoPlayers);
+//     const captainPlayers     = uniqueByName(allPlayers.filter((p) => p.captain_mode === "C"));
+//     const viceCaptainPlayers = uniqueByName(allPlayers.filter((p) => p.captain_mode === "VC"));
+//     const cvcPlayers         = uniqueByName(allPlayers.filter((p) => p.captain_mode === "CVC"));
+
+//     const captaincyPool = uniqueByName(
+//       allPlayers.filter((p) =>
+//         p.captain_mode === "C" || p.captain_mode === "VC" || p.captain_mode === "CVC"
+//       )
+//     );
+
+//     const preview = {
+//       substitutes_count: substitutes.length,
+//       mandate_yes_count: mandateYes.length,
+//       mandate_no_count:  mandateNo.length,
+//       captaincy_count:   captaincyPool.length,
+//       captaincy_mode:    isCVCMode ? "CVC" : "C & VC",
+
+//       substitutes: substitutes.map((p) => ({
+//         name:      p.original_name,
+//         role:      p.role,
+//         image:     p.player_image,
+//         side:      p.team_side,
+//         team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+//       })),
+
+//       mandate_yes: mandateYes.map((p) => ({
+//         name:      p.original_name,
+//         role:      p.role,
+//         image:     p.player_image,
+//         side:      p.team_side,
+//         team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+//       })),
+
+//       mandate_no: mandateNo.map((p) => ({
+//         name:      p.original_name,
+//         role:      p.role,
+//         image:     p.player_image,
+//         side:      p.team_side,
+//         team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+//       })),
+
+//       captains: isCVCMode ? [] : captainPlayers.map((p) => ({
+//         name:  p.original_name,
+//         role:  p.role,
+//         image: p.player_image,
+//         side:  p.team_side,
+//       })),
+
+//       vice_captains: isCVCMode ? [] : viceCaptainPlayers.map((p) => ({
+//         name:  p.original_name,
+//         role:  p.role,
+//         image: p.player_image,
+//         side:  p.team_side,
+//       })),
+
+//       cvc_players: isCVCMode ? cvcPlayers.map((p) => ({
+//         name:  p.original_name,
+//         role:  p.role,
+//         image: p.player_image,
+//         side:  p.team_side,
+//       })) : [],
+//     };
+
+//     return res.status(200).json({
+//       success:     true,
+//       match_id:    Number(matchId),
+//       total_teams: teams.length,
+//       preview,
+//       teams,
+//     });
+
+//   } catch (error) {
+//     console.error("getMyTeams Error:", error);
+//     return res.status(500).json({ success: false, message: error.message });
+//   }
+// };
+
+
+/* ================= GET MY TEAMS ================= */
 export const getMyTeams = async (req, res) => {
   try {
-    const { matchId } = req.params;
-    const userId      = req.user.id;
+    const { matchId, game } = req.params;
+    const userId            = req.user.id;
+    const gameName          = game ? String(game).toLowerCase().trim() : null;
 
     if (!matchId) {
       return res.status(400).json({ success: false, message: "matchId is required" });
     }
 
     const [[match]] = await db.execute(
-      `SELECT hometeamname, awayteamname FROM matches WHERE id = ? LIMIT 1`,
+      `SELECT id, hometeamname, awayteamname FROM matches WHERE id = ? LIMIT 1`,
       [matchId]
     );
 
+    if (!match) {
+      return res.status(404).json({ success: false, message: "Match not found" });
+    }
+
+    /* ── Fetch players ── */
     const [players] = await db.execute(
       `SELECT
-         ut.id, ut.match_id, ut.dt_no, ut.name, ut.original_name,
-         ut.role, ut.cap, ut.selected, ut.mandate, ut.team_side,
-         ut.provider_player_id, ut.captain_mode,
+         ut.id,
+         ut.match_id,
+         ut.dt_no,
+         ut.name,
+         ut.original_name,
+         ut.role,
+         ut.cap,
+         ut.selected,
+         ut.mandate,
+         ut.team_side,
+         ut.provider_player_id,
+         ut.captain_mode,
+         ut.game,
+         ut.salary,
          mp.logo AS player_image,
          CASE
            WHEN mp.is_playing    = 1 THEN 'playing_xi'
@@ -966,14 +1164,23 @@ export const getMyTeams = async (req, res) => {
        LEFT JOIN match_players mp
               ON mp.match_id    = ut.match_id
              AND mp.player_name = ut.original_name
-       WHERE ut.match_id = ? AND ut.user_id = ?
-       ORDER BY ut.dt_no, ut.role`,
-      [matchId, userId]
+       WHERE ut.match_id = ?
+         AND ut.user_id  = ?
+         ${gameName ? "AND ut.game = ?" : ""}
+       ORDER BY ut.dt_no ASC, ut.role ASC`,
+      gameName ? [matchId, userId, gameName] : [matchId, userId]
     );
 
     if (!players.length) {
       return res.status(404).json({ success: false, message: "No teams found for this match" });
     }
+
+    /* ── Detect game from data ── */
+    const detectedGame = gameName || players.find((p) => p.game)?.game || "football";
+
+    /* ── FanDuel/DraftKings = salary based, Sorare = captain based ── */
+    const isSalaryGame  = ["fanduel", "draftkings"].includes(detectedGame);
+    const isCaptainGame = ["sorare", "football"].includes(detectedGame);
 
     /* ── Build teams map — dt_no=0 skip ── */
     const teamsMap = {};
@@ -983,7 +1190,6 @@ export const getMyTeams = async (req, res) => {
 
       if (!teamsMap[player.dt_no]) teamsMap[player.dt_no] = [];
 
-      /* ── team_side fix: name suffix బట్టి determine ── */
       const teamSide = player.team_side ||
         (player.name && player.name.endsWith("_A") ? "team_a" : "team_b");
 
@@ -999,9 +1205,12 @@ export const getMyTeams = async (req, res) => {
         selected:           Boolean(player.selected),
         mandate:            player.mandate ? String(player.mandate).trim().toLowerCase() : null,
         team_side:          teamSide,
+        team_name:          teamSide === "team_a" ? match.hometeamname : match.awayteamname,
         provider_player_id: player.provider_player_id || null,
         player_image:       player.player_image || null,
         status:             player.status,
+        game:               player.game   || null,
+        salary:             player.salary !== null ? Number(player.salary) : null,
       });
     }
 
@@ -1013,17 +1222,37 @@ export const getMyTeams = async (req, res) => {
         role:          p.role,
         player_image:  p.player_image || null,
         team_side:     p.team_side || (p.name?.endsWith("_A") ? "team_a" : "team_b"),
+        team_name:     (p.team_side || "") === "team_a" ? match.hometeamname : match.awayteamname,
+        salary:        p.salary !== null ? Number(p.salary) : null,
         mandate:       "no",
       }));
 
-    const teams = Object.entries(teamsMap).map(([dt_no, teamPlayers]) => ({
-      team_no:      Number(dt_no),
-      captain:      teamPlayers.find((p) => p.cap === "C")?.original_name  || null,
-      vice_captain: teamPlayers.find((p) => p.cap === "VC")?.original_name || null,
-      home_players: teamPlayers.filter((p) => p.team_side === "team_a").length,
-      away_players: teamPlayers.filter((p) => p.team_side === "team_b").length,
-      players:      teamPlayers,
-    }));
+    /* ── Build teams array ── */
+    const teams = Object.entries(teamsMap)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([dt_no, teamPlayers]) => {
+        const homeCount  = teamPlayers.filter((p) => p.team_side === "team_a").length;
+        const awayCount  = teamPlayers.filter((p) => p.team_side === "team_b").length;
+        const totalSalary = teamPlayers.reduce((sum, p) => sum + (p.salary || 0), 0);
+
+        /* captain/VC only for captain-based games */
+        const captain      = isCaptainGame
+          ? teamPlayers.find((p) => p.cap === "C")?.original_name  || null
+          : null;
+        const vice_captain = isCaptainGame
+          ? teamPlayers.find((p) => p.cap === "VC")?.original_name || null
+          : null;
+
+        return {
+          team_no:       Number(dt_no),
+          captain,
+          vice_captain,
+          home_players:  homeCount,
+          away_players:  awayCount,
+          total_salary:  isSalaryGame ? Number(totalSalary.toFixed(2)) : null,
+          players:       teamPlayers,
+        };
+      });
 
     /* ── Preview ── */
     const allPlayers = teams.flatMap((t) => t.players);
@@ -1034,34 +1263,35 @@ export const getMyTeams = async (req, res) => {
         return acc;
       }, {}));
 
-    const isCVCMode = allPlayers.some((p) => p.captain_mode === "CVC");
+    const substitutes = uniqueByName(allPlayers.filter((p) => p.selected === true));
+    const mandateYes  = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
+    const mandateNo   = uniqueByName(mandateNoPlayers);
 
-    const substitutes        = uniqueByName(allPlayers.filter((p) => p.selected === true));
-    const mandateYes         = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
-    const mandateNo          = uniqueByName(mandateNoPlayers);
-    const captainPlayers     = uniqueByName(allPlayers.filter((p) => p.captain_mode === "C"));
-    const viceCaptainPlayers = uniqueByName(allPlayers.filter((p) => p.captain_mode === "VC"));
-    const cvcPlayers         = uniqueByName(allPlayers.filter((p) => p.captain_mode === "CVC"));
+    /* ── Captaincy preview — only for captain-based games ── */
+    const isCVCMode          = isCaptainGame && allPlayers.some((p) => p.captain_mode === "CVC");
+    const captainPlayers     = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "C"))   : [];
+    const viceCaptainPlayers = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "VC"))  : [];
+    const cvcPlayers         = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "CVC")) : [];
 
-    const captaincyPool = uniqueByName(
-      allPlayers.filter((p) =>
-        p.captain_mode === "C" || p.captain_mode === "VC" || p.captain_mode === "CVC"
-      )
-    );
+    const captaincyPool = isCaptainGame
+      ? uniqueByName(allPlayers.filter((p) =>
+          p.captain_mode === "C" || p.captain_mode === "VC" || p.captain_mode === "CVC"
+        ))
+      : [];
 
     const preview = {
+      game:              detectedGame,
       substitutes_count: substitutes.length,
       mandate_yes_count: mandateYes.length,
       mandate_no_count:  mandateNo.length,
-      captaincy_count:   captaincyPool.length,
-      captaincy_mode:    isCVCMode ? "CVC" : "C & VC",
 
       substitutes: substitutes.map((p) => ({
         name:      p.original_name,
         role:      p.role,
         image:     p.player_image,
         side:      p.team_side,
-        team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+        team_name: p.team_name,
+        salary:    p.salary,
       })),
 
       mandate_yes: mandateYes.map((p) => ({
@@ -1069,7 +1299,8 @@ export const getMyTeams = async (req, res) => {
         role:      p.role,
         image:     p.player_image,
         side:      p.team_side,
-        team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+        team_name: p.team_name,
+        salary:    p.salary,
       })),
 
       mandate_no: mandateNo.map((p) => ({
@@ -1077,34 +1308,45 @@ export const getMyTeams = async (req, res) => {
         role:      p.role,
         image:     p.player_image,
         side:      p.team_side,
-        team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+        team_name: p.team_name,
+        salary:    p.salary,
       })),
 
-      captains: isCVCMode ? [] : captainPlayers.map((p) => ({
-        name:  p.original_name,
-        role:  p.role,
-        image: p.player_image,
-        side:  p.team_side,
-      })),
+      /* captain fields — only for sorare/football */
+      ...(isCaptainGame ? {
+        captaincy_count: captaincyPool.length,
+        captaincy_mode:  isCVCMode ? "CVC" : "C & VC",
 
-      vice_captains: isCVCMode ? [] : viceCaptainPlayers.map((p) => ({
-        name:  p.original_name,
-        role:  p.role,
-        image: p.player_image,
-        side:  p.team_side,
-      })),
+        captains: isCVCMode ? [] : captainPlayers.map((p) => ({
+          name: p.original_name, role: p.role, image: p.player_image,
+          side: p.team_side, team_name: p.team_name,
+        })),
 
-      cvc_players: isCVCMode ? cvcPlayers.map((p) => ({
-        name:  p.original_name,
-        role:  p.role,
-        image: p.player_image,
-        side:  p.team_side,
-      })) : [],
+        vice_captains: isCVCMode ? [] : viceCaptainPlayers.map((p) => ({
+          name: p.original_name, role: p.role, image: p.player_image,
+          side: p.team_side, team_name: p.team_name,
+        })),
+
+        cvc_players: isCVCMode ? cvcPlayers.map((p) => ({
+          name: p.original_name, role: p.role, image: p.player_image,
+          side: p.team_side, team_name: p.team_name,
+        })) : [],
+      } : {
+        /* salary-based games (fanduel/draftkings) */
+        captaincy_count: 0,
+        captaincy_mode:  "NONE",
+        captains:        [],
+        vice_captains:   [],
+        cvc_players:     [],
+      }),
     };
 
     return res.status(200).json({
       success:     true,
       match_id:    Number(matchId),
+      game:        detectedGame,
+      home_team:   match.hometeamname,
+      away_team:   match.awayteamname,
       total_teams: teams.length,
       preview,
       teams,
@@ -1115,6 +1357,7 @@ export const getMyTeams = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
 /* ================= GET MY GENERATED MATCHES ================= */
 export const getMyGeneratedMatches = async (req, res) => {
   try {
