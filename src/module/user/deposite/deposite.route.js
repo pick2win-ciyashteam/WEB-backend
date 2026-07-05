@@ -12,7 +12,7 @@ const router = Router();
 
 router.post("/buy-coins",      authenticate, createCoinsPayment);   // create order
 router.post("/verify-payment", authenticate, verifyCoinsPayment);   // verify & credit coins
-router.get ("/razorpay/config", authenticate, getRazorpayConfig);   // key_id for frontend
+router.get ("/razorpay/config", authenticate, getRazorpayConfig);   // key_id for frontend kjfnkdn
 
 router.get ("/my-coins",        authenticate, getMyCoins);
 router.get ("/my-transactions", authenticate, getMyTransactions);
