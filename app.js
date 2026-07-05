@@ -4,16 +4,12 @@ import cors         from "cors";
 import morgan       from "morgan";
 import helmet       from "helmet";
 import routes       from "./src/routes/index.js";
-import { stripeWebhook } from "./src/module/user/deposite/deposite.webhook.js";
+
+import { razorpayWebhook } from  "./src/module/user/deposite/deposite.webhook.js"
 
 const app = express();
 
- // ✅ MUST be FIRST — before any middleware
-app.post(
-  "/api/webhook/stripe",
-  express.raw({ type: "application/json" }),
-  stripeWebhook
-);
+app.post("/api/razorpay/webhook", express.json(), razorpayWebhook)
 
 // ✅ STEP 2 — then other middleware
 app.use(express.json());
