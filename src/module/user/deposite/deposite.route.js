@@ -5,7 +5,7 @@ import {
   verifyCoinsPayment,
   getRazorpayConfig,
   getMyCoins,
-  getMyTransactions,
+  getMyTransactions,  
 } from "./deposite.controller.js";
 
 const router = Router();
@@ -23,7 +23,7 @@ export default router;
 
 
 
-
+  
 
 
 

@@ -37,6 +37,9 @@ router.post("/verify-email-change",  authenticate, v.verifyChangeOtp,     c.veri
 //notifications
 
 router.post("/register-device", authenticate, c.registerDevice);
+router.get("/get-notification",                    authenticate, c.getMyNotifications);
+router.patch("/notification/read/:id",          authenticate, c.markAsRead);
+router.delete("/notification/:id",              authenticate, c.deleteNotification);
 
  
 export default router;  
