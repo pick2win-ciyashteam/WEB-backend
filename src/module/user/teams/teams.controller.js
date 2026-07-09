@@ -465,9 +465,12 @@ import { getUCTEndpoint ,UCT_ENDPOINTS } from "../../../utils/uctApi.js";
 // };
 
 export const generateTeams = async (req, res) => {
+
+   const generationStartTime = Date.now();  
+
   try {
     const userId = req.user.id;
-    const { match_id, team_a, team_b, game, cap, sport } = req.body;  // ✅ sport add
+    const { match_id, team_a, team_b, game, cap, sport } = req.body;  
 
     /* ── 1. Validate input ── */
     if (!match_id || !team_a || !team_b) {
@@ -646,7 +649,7 @@ export const generateTeams = async (req, res) => {
     const mandateNoPlayers = allMapped.filter((p) => p.mandate === "NO");
 
     /* ── 13. Call UCT API ── */
-    const startTime = Date.now();
+    // const startTime = Date.now();
     let uctTeams    = [];
 
     try {
@@ -679,7 +682,8 @@ export const generateTeams = async (req, res) => {
       return res.status(400).json({ success: false, message: userMessage });
     }
 
-    const generationTimeMs = Date.now() - startTime;
+    // const generationTimeMs = Date.now() - startTime;
+    const generationTimeMs = Date.now() - generationStartTime;
 
     if (!uctTeams.length) {
       return res.status(400).json({ success: false, message: "UCT API returned no teams" });
@@ -903,8 +907,9 @@ export const generateTeams = async (req, res) => {
         success:         true,
         message:         `${totalTeams} teams generated for ${sportName}/${gameName} successfully`,
         total_teams:     totalTeams,
+        generation_time_ms: generationTimeMs,
         game:            gameName,
-        sport:           sportName,  // ✅
+        sport:           sportName,  
         coins_used:      1,
         coins_remaining: Number(currentWallet.available_coins) - 1,
         free_trial_used: isFreeTrial,
@@ -1255,7 +1260,18 @@ if (gameName && !validGames.includes(gameName)) {
 
     /* ── Detect game from data ── */
     const detectedGame  = gameName  || players.find((p) => p.game)?.game  || "football";
-    const detectedSport = sportName || "football";  // ✅
+    const detectedSport = sportName || "football";  
+
+/* ── Get generation time ── */
+const [[generationLog]] = await db.execute(
+  `SELECT generation_time_ms
+   FROM match_generation_log
+   WHERE match_id = ?
+     AND user_id = ?
+     AND game = ?
+   LIMIT 1`,
+  [matchId, userId, detectedGame]
+);
 
     /* ── FanDuel/DraftKings = salary based, Sorare = captain based ── */
     const isSalaryGame  = ["fanduel", "draftkings"].includes(detectedGame);
@@ -1358,7 +1374,7 @@ if (gameName && !validGames.includes(gameName)) {
 
     const preview = {
       game:              detectedGame,
-      sport:             detectedSport,  // ✅
+      sport:             detectedSport,  
       substitutes_count: substitutes.length,
       mandate_yes_count: mandateYes.length,
       mandate_no_count:  mandateNo.length,
@@ -1421,10 +1437,15 @@ if (gameName && !validGames.includes(gameName)) {
       success:     true,
       match_id:    Number(matchId),
       game:        detectedGame,
-      sport:       detectedSport,  // ✅
+      sport:       detectedSport,  
       home_team:   match.hometeamname,
       away_team:   match.awayteamname,
       total_teams: teams.length,
+      generation_time_ms: generationLog?.generation_time_ms || 0,
+      generation_time_seconds: Number(
+     ((generationLog?.generation_time_ms || 0) / 1000).toFixed(2)
+      ),
+
       preview,
       teams,
     });

@@ -491,11 +491,11 @@ export const confirmDeleteAccount = async (req, res) => {
 
 export const registerDevice = async (req, res) => {
   try {
-    const { fcm_token, device_type } = req.body;
+    const { registeration_token, device_type } = req.body;
     const userId = req.user.id;
 
-    if (!fcm_token) {
-      return res.status(400).json({ success: false, message: "fcm_token required" });
+    if (!registration_token) {
+      return res.status(400).json({ success: false, message: "Registration token required" });
     }
 
     await db.execute(
@@ -505,7 +505,7 @@ export const registerDevice = async (req, res) => {
          user_id     = VALUES(user_id),
          device_type = VALUES(device_type),
          updated_at  = NOW()`,
-      [userId, fcm_token, device_type || null]
+      [userId, registration_token, device_type || null]
     );
 
     return res.status(200).json({ success: true, message: "Device registered successfully" });

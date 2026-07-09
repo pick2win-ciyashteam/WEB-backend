@@ -42,27 +42,6 @@ export const sendPushNotification = async ({ token, title, body, data = {} }) =>
   }
 };
 
-/* ── Multiple tokens కి ── */
-// export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => {
-//   if (!tokens.length) return { success: false, error: "No tokens" };
-
-//   try {
-//     const message = {
-//       notification: { title, body },
-//       data: Object.fromEntries(
-//         Object.entries(data).map(([k, v]) => [k, String(v)])
-//       ),
-//       tokens,
-//     };
-
-//     const response = await admin.messaging().sendEachForMulticast(message);
-//     console.log(`✅ Multicast: ${response.successCount} success, ${response.failureCount} failed`);
-//     return { success: true, response };
-//   } catch (err) {
-//     console.error(`❌ Multicast failed: ${err.message}`);
-//     return { success: false, error: err.message };
-//   }
-// };
 
 export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => {
   if (!tokens.length) return { success: false, error: "No tokens" };
@@ -123,33 +102,6 @@ export const sendPushToUser = async ({ userId, title, body, data = {} }) => {
   }
 };
 
-/* ── All users కి ── */
-// export const sendPushToAll = async ({ title, body, data = {} }) => {
-//   try {
-//     const [devices] = await db.execute(
-//       `SELECT DISTINCT fcm_token FROM user_devices WHERE fcm_token IS NOT NULL`
-//     );
-
-//     if (!devices.length) return { success: false, error: "No devices found" };
-
-//     const tokens     = devices.map((d) => d.fcm_token);
-//     const BATCH      = 500;
-//     let successCount = 0;
-//     let failureCount = 0;
-
-//     for (let i = 0; i < tokens.length; i += BATCH) {
-//       const batch   = tokens.slice(i, i + BATCH);
-//       const result  = await sendPushToMultiple({ tokens: batch, title, body, data });
-//       successCount += result.response?.successCount || 0;
-//       failureCount += result.response?.failureCount || 0;
-//     }
-
-//     console.log(`✅ Bulk push: ${successCount} success, ${failureCount} failed`);
-//     return { success: true, successCount, failureCount };
-//   } catch (err) {
-//     return { success: false, error: err.message };
-//   }
-// };
 
 
 /* ── All users కి — push + DB save ── */
