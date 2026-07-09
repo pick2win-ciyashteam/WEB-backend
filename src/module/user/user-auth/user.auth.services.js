@@ -781,7 +781,7 @@ export const resetPasswordService = async (email, otp, newPassword) => {
     [hashed, user.id]
   );
 
-  return { success: true, message: "Password reset successfully" };
+  return { success: true, message: "Password reset successfully", user_id: user.id };
 };
 
 /* ══════════════════════════════════════════

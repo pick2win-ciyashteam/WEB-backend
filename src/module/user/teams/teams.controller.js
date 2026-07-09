@@ -3,6 +3,7 @@ import db from "../../../config/db.js";
 import axios from "axios";
 import { sendNoreplyMail, uctTeamsGeneratedEmailHtml } from "../../../utils/mailer.js";
 import { getUCTEndpoint, UCT_ENDPOINTS } from "../../../utils/uctApi.js";
+import { logUserActivity } from "../../../utils/activity.logger.js";
 
 
 /* ================= GENERATE TEAMS ================= */
@@ -850,6 +851,24 @@ export const generateTeams = async (req, res) => {
       } catch (err) {
         emailError = err.message;
       }
+
+      await logUserActivity({
+        userId,
+        category: "teams",
+        action: "teams_generated",
+        details: `${totalTeams} teams generated for match ${match_id}`,
+        req,
+        metadata: {
+          match_id,
+          total_teams: totalTeams,
+          generation_time_ms: generationTimeMs,
+          game: gameName,
+          sport: sportName,
+          coins_used: 1,
+          free_trial_used: Boolean(isFreeTrial),
+        },
+      });
+
       return res.status(200).json({
         success: true,
         message: `${totalTeams} teams generated for ${sportName}/${gameName} successfully`,

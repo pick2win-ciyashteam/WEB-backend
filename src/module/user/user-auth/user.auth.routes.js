@@ -20,6 +20,7 @@ router.patch ("/update",  authenticate, v.updateProfile, c.updateProfile);
 
 router.post("/delete-account",         authenticate, c.deleteAccount);
 router.post("/confirm-delete-account", authenticate, c.confirmDeleteAccount);
+router.get("/activity-logs", authenticate, c.getMyActivityLogs);
 
 
 

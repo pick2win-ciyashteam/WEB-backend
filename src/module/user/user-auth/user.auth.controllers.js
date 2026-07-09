@@ -17,6 +17,18 @@ import {
 } from "./user.auth.services.js"
   
 import db from "../../../config/db.js";  
+import { logUserActivity } from "../../../utils/activity.logger.js";
+
+const parseMetadata = (metadata) => {
+  if (!metadata) return null;
+  if (typeof metadata !== "string") return metadata;
+
+  try {
+    return JSON.parse(metadata);
+  } catch {
+    return null;
+  }
+};
 
 /* ================= SIGNUP ================= */
 export const signup = async (req, res) => {
@@ -62,6 +74,13 @@ export const resendOtp = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const result = await loginService(req.body);
+    await logUserActivity({
+      userId: result.user?.id,
+      category: "auth",
+      action: "login",
+      details: "User logged in successfully",
+      req,
+    });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -72,6 +91,13 @@ export const login = async (req, res) => {
 export const logout = async (req, res) => {
   try {
     const result = await logoutService(req.user.id);
+    await logUserActivity({
+      userId: req.user.id,
+      category: "auth",
+      action: "logout",
+      details: "User logged out successfully",
+      req,
+    });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -232,6 +258,15 @@ export const updateProfile = async (req, res) => {
       [...setValues, req.user.id]
     );
 
+    await logUserActivity({
+      userId: req.user.id,
+      category: "profile",
+      action: "profile_updated",
+      details: `Updated fields: ${Object.keys(sanitized).join(", ")}`,
+      req,
+      metadata: { updated_fields: Object.keys(sanitized) },
+    });
+
     /* ── Return updated profile ── */
     const [[updated]] = await db.execute(
       `SELECT
@@ -269,6 +304,13 @@ export const requestMobileChange = async (req, res) => {
   try {
     // ✅ object గా pass చేయి
     const result = await requestMobileChangeService(req.user.id, { new_mobile: req.body.new_mobile });
+    await logUserActivity({
+      userId: req.user.id,
+      category: "profile",
+      action: "mobile_change_requested",
+      details: "User requested mobile number change",
+      req,
+    });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -280,6 +322,13 @@ export const verifyMobileChange = async (req, res) => {
   try {
     // ✅ object గా pass చేయి
     const result = await verifyMobileChangeService(req.user.id, { otp: req.body.otp });
+    await logUserActivity({
+      userId: req.user.id,
+      category: "profile",
+      action: "mobile_changed",
+      details: "User mobile number changed successfully",
+      req,
+    });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -290,6 +339,13 @@ export const verifyMobileChange = async (req, res) => {
 export const requestEmailChange = async (req, res) => {
   try {
     const result = await requestEmailChangeService(req.user.id, req.body.new_email);
+    await logUserActivity({
+      userId: req.user.id,
+      category: "profile",
+      action: "email_change_requested",
+      details: "User requested email change",
+      req,
+    });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -300,6 +356,13 @@ export const requestEmailChange = async (req, res) => {
 export const verifyEmailChange = async (req, res) => {
   try {
     const result = await verifyEmailChangeService(req.user.id, req.body.otp);
+    await logUserActivity({
+      userId: req.user.id,
+      category: "profile",
+      action: "email_changed",
+      details: "User email changed successfully",
+      req,
+    });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -324,6 +387,16 @@ export const resetPassword = async (req, res) => {
       req.body.otp,
       req.body.password
     );
+    if (result.user_id) {
+      await logUserActivity({
+        userId: result.user_id,
+        category: "security",
+        action: "password_reset",
+        details: "User password reset successfully",
+        req,
+      });
+      delete result.user_id;
+    }
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -335,6 +408,13 @@ export const resetPassword = async (req, res) => {
 export const deleteAccount = async (req, res) => {
   try {
     const result = await deleteAccountService(req.user.id);
+    await logUserActivity({
+      userId: req.user.id,
+      category: "security",
+      action: "account_delete_requested",
+      details: "User requested account deletion",
+      req,
+    });
     return res.status(200).json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -348,12 +428,72 @@ export const confirmDeleteAccount = async (req, res) => {
     if (!otp) {
       return res.status(400).json({ success: false, message: "OTP required" });
     }
+    await logUserActivity({
+      userId: req.user.id,
+      category: "security",
+      action: "account_delete_confirm_requested",
+      details: "User submitted account deletion confirmation",
+      req,
+    });
     const result = await confirmDeleteAccountService(req.user.id, otp);
     return res.status(200).json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };  
+
+export const getMyActivityLogs = async (req, res) => {
+  try {
+    let { page = 1, limit = 20, category } = req.query;
+
+    page = Math.max(1, parseInt(page, 10) || 1);
+    limit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offset = (page - 1) * limit;
+
+    const filters = ["user_id = ?"];
+    const values = [req.user.id];
+
+    if (category) {
+      filters.push("category = ?");
+      values.push(String(category).trim());
+    }
+
+    const whereClause = filters.join(" AND ");
+
+    const [logs] = await db.execute(
+      `SELECT
+         id, category, action, details, ip_address, user_agent, metadata, created_at
+       FROM user_activity_logs
+       WHERE ${whereClause}
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...values, limit, offset]
+    );
+
+    const [[{ total }]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM user_activity_logs
+       WHERE ${whereClause}`,
+      values
+    );
+
+    return res.status(200).json({
+      success: true,
+      pagination: {
+        total: Number(total),
+        page,
+        limit,
+        total_pages: Math.ceil(Number(total) / limit),
+      },
+      data: logs.map((log) => ({
+        ...log,
+        metadata: parseMetadata(log.metadata),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
 
 

@@ -45,3 +45,35 @@ export const logAdminActivity = async ({
     console.error("Failed to log admin activity:", err.message);
   }
 };
+
+const getClientIp = (req) => {
+  const forwardedFor = req?.headers?.["x-forwarded-for"];
+  if (forwardedFor) return String(forwardedFor).split(",")[0].trim();
+  return req?.ip || req?.socket?.remoteAddress || null;
+};
+
+export const logUserActivity = async ({
+  userId,
+  category,
+  action,
+  details = null,
+  req = null,
+  metadata = null,
+}) => {
+  try {
+    if (!userId || !category || !action) return;
+
+    const ipAddress = getClientIp(req);
+    const userAgent = req?.headers?.["user-agent"] || null;
+    const metadataValue = metadata ? JSON.stringify(metadata) : null;
+
+    await db.execute(
+      `INSERT INTO user_activity_logs
+        (user_id, category, action, details, ip_address, user_agent, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [userId, category, action, details, ipAddress, userAgent, metadataValue]
+    );
+  } catch (err) {
+    console.error("Failed to log user activity:", err.message);
+  }
+};
