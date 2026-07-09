@@ -278,15 +278,16 @@ export const signupService = async (data) => {
     html: otpEmailHtml(emailOtp, userFullName, 5, new Date()),
   });
 
-  /* ── SMS SKIPPED FOR TESTING ── */
-  console.log(
-    `⚠️ SMS skipped for testing. Mobile OTP: ${mobileOtp}`
+  /* ── Send SMS OTP ── */
+  await sendSms(
+    normalizedMobile,
+    `Your Pick2Win OTP is ${mobileOtp}. Valid for 5 minutes.`
   );
 
   return {
     success: true,
     message:
-      "Email OTP sent successfully. Mobile SMS skipped for testing.",
+      "OTP sent to your mobile and email. Please verify both.",
     ...(process.env.NODE_ENV !== "production" && {
       mobileOtp,
       emailOtp,
@@ -410,8 +411,9 @@ export const resendOtpService = async ({ mobile, email, type = "both" }) => {
       );
 
       /* ── 2. Send SMS ── */
-      console.log(
-        `⚠️ SMS skipped for testing. Mobile OTP: ${newMobileOtp}`
+      await sendSms(
+        session.mobile,
+        `Your Pick2Win OTP is ${newMobileOtp}. Valid for 5 minutes.`
       );
     }
   }
@@ -981,3 +983,4 @@ export const deleteAccountService = async (userId) => {
     conn.release();
   }
 };
+  
