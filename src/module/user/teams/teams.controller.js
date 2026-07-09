@@ -869,6 +869,9 @@ export const generateTeams = async (req, res) => {
         },
       });
 
+      /* ── Commit transaction ── */
+      await conn.commit();
+
       return res.status(200).json({
         success: true,
         message: `${totalTeams} teams generated for ${sportName}/${gameName} successfully`,
