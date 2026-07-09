@@ -23,6 +23,7 @@ import {
   getCoinPackPurchasesByCountry,
   updateUserAccountStatus,
   getActivityLog,
+  getUserActivityLogs,
   getRevenue,
   getExpensesByMonth,
   getExpensesFyReport,
@@ -117,6 +118,9 @@ router.delete("/leagues/:id", deleteLeague);
 
 router.get("/activity-log", getActivityLog);
 
+/* GET /admin/reports/user-activity-logs?date=YYYY-MM-DD&category=all|auth|profile|security|teams */
+router.get("/user-activity-logs", getUserActivityLogs);
+
 //REVENUE
 
 // revenue?tab=today" 
@@ -162,5 +166,6 @@ router.get("/payments/summary", getPaymentsSummary);
 router.get("/payments/transactions", getTransactionLog);
 
 export default router;
+ 
 
   

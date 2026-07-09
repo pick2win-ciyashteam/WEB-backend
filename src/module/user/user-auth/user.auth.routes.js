@@ -20,6 +20,11 @@ router.patch ("/update",  authenticate, v.updateProfile, c.updateProfile);
 
 router.post("/delete-account",         authenticate, c.deleteAccount);
 router.post("/confirm-delete-account", authenticate, c.confirmDeleteAccount);
+
+// GET http://localhost:3000/api/user/user-auth/activity-logs
+// GET http://localhost:3000/api/user/user-auth/activity-logs?from_date=2026-07-01&to_date=2026-07-09
+// GET http://localhost:3000/api/user/user-auth/activity-logs?category=auth&date=2026-07-09
+
 router.get("/activity-logs", authenticate, c.getMyActivityLogs);
 
 

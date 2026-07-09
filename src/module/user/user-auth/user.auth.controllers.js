@@ -30,6 +30,21 @@ const parseMetadata = (metadata) => {
   }
 };
 
+const addDaysToDateString = (dateString, days) => {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+};
+
+const todayDateString = () => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+};
+
 /* ================= SIGNUP ================= */
 export const signup = async (req, res) => {
   try {
@@ -444,11 +459,12 @@ export const confirmDeleteAccount = async (req, res) => {
 
 export const getMyActivityLogs = async (req, res) => {
   try {
-    let { page = 1, limit = 20, category } = req.query;
+    let { page = 1, limit = 20, category, date, from_date, to_date } = req.query;
 
     page = Math.max(1, parseInt(page, 10) || 1);
     limit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
     const offset = (page - 1) * limit;
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
     const filters = ["user_id = ?"];
     const values = [req.user.id];
@@ -456,6 +472,49 @@ export const getMyActivityLogs = async (req, res) => {
     if (category) {
       filters.push("category = ?");
       values.push(String(category).trim());
+    }
+
+    if (date && !datePattern.test(String(date))) {
+      return res.status(400).json({
+        success: false,
+        message: "date must be in YYYY-MM-DD format",
+      });
+    }
+
+    if (from_date && !datePattern.test(String(from_date))) {
+      return res.status(400).json({
+        success: false,
+        message: "from_date must be in YYYY-MM-DD format",
+      });
+    }
+
+    if (to_date && !datePattern.test(String(to_date))) {
+      return res.status(400).json({
+        success: false,
+        message: "to_date must be in YYYY-MM-DD format",
+      });
+    }
+
+    if (date) {
+      const startDate = String(date);
+      const endDate = addDaysToDateString(startDate, 1);
+      filters.push("created_at >= ? AND created_at < ?");
+      values.push(`${startDate} 00:00:00`, `${endDate} 00:00:00`);
+    } else if (from_date || to_date) {
+      if (from_date) {
+        filters.push("created_at >= ?");
+        values.push(`${String(from_date)} 00:00:00`);
+      }
+
+      if (to_date) {
+        filters.push("created_at < ?");
+        values.push(`${addDaysToDateString(String(to_date), 1)} 00:00:00`);
+      }
+    } else {
+      const today = todayDateString();
+      const tomorrow = addDaysToDateString(today, 1);
+      filters.push("created_at >= ? AND created_at < ?");
+      values.push(`${today} 00:00:00`, `${tomorrow} 00:00:00`);
     }
 
     const whereClause = filters.join(" AND ");
@@ -466,8 +525,8 @@ export const getMyActivityLogs = async (req, res) => {
        FROM user_activity_logs
        WHERE ${whereClause}
        ORDER BY created_at DESC
-       LIMIT ? OFFSET ?`,
-      [...values, limit, offset]
+       LIMIT ${limit} OFFSET ${offset}`,
+      values
     );
 
     const [[{ total }]] = await db.execute(
@@ -484,6 +543,13 @@ export const getMyActivityLogs = async (req, res) => {
         page,
         limit,
         total_pages: Math.ceil(Number(total) / limit),
+      },
+      filters: {
+        category: category || null,
+        date: date || null,
+        from_date: date ? null : from_date || null,
+        to_date: date ? null : to_date || null,
+        default_today: !date && !from_date && !to_date,
       },
       data: logs.map((log) => ({
         ...log,
@@ -631,11 +697,21 @@ export const getMyActivityLogs = async (req, res) => {
 
 export const registerDevice = async (req, res) => {
   try {
-    const { registeration_token, device_type } = req.body;
+    const {
+      registration_token,
+      registeration_token,
+      fcm_token,
+      token,
+      device_type,
+    } = req.body;
     const userId = req.user.id;
+    const deviceToken = registration_token || fcm_token || token || registeration_token;
 
-    if (!registration_token) {
-      return res.status(400).json({ success: false, message: "Registration token required" });
+    if (!deviceToken) {
+      return res.status(400).json({
+        success: false,
+        message: "registration_token is required",
+      });
     }
 
     await db.execute(
@@ -645,7 +721,7 @@ export const registerDevice = async (req, res) => {
          user_id     = VALUES(user_id),
          device_type = VALUES(device_type),
          updated_at  = NOW()`,
-      [userId, registration_token, device_type || null]
+      [userId, deviceToken, device_type || null]
     );
 
     return res.status(200).json({ success: true, message: "Device registered successfully" });

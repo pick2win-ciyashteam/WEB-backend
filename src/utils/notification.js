@@ -44,7 +44,8 @@ export const sendPushNotification = async ({ token, title, body, data = {} }) =>
 
 
 export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => {
-  if (!tokens.length) return { success: false, error: "No tokens" };
+  const validTokens = [...new Set((tokens || []).filter(Boolean))];
+  if (!validTokens.length) return { success: false, error: "No tokens" };
 
   try {
     const message = {
@@ -52,15 +53,15 @@ export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => 
       data: Object.fromEntries(
         Object.entries(data).map(([k, v]) => [k, String(v)])
       ),
-      tokens,
+      tokens: validTokens,
     };
 
     const response = await admin.messaging().sendEachForMulticast(message);
 
     /* ── Failed tokens clean up ── */
-    response.responses.forEach(async (resp, idx) => {
+    await Promise.all(response.responses.map(async (resp, idx) => {
       if (!resp.success) {
-        const failedToken = tokens[idx];
+        const failedToken = validTokens[idx];
         const errorCode   = resp.error?.code;
 
         // Invalid token అయితే DB నుండి delete చేయండి
@@ -75,7 +76,7 @@ export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => 
           console.warn(`🗑️ Removed invalid token: ${failedToken.slice(0, 20)}...`);
         }
       }
-    });
+    }));
 
     console.log(`✅ Multicast: ${response.successCount} success, ${response.failureCount} failed`);
     return { success: true, response };
@@ -88,12 +89,18 @@ export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => 
 /* ── User కి (all devices) ── */
 export const sendPushToUser = async ({ userId, title, body, data = {} }) => {
   try {
+    await db.execute(
+      `INSERT INTO user_notifications (user_id, title, body, data)
+       VALUES (?, ?, ?, ?)`,
+      [userId, title, body, JSON.stringify(data || {})]
+    );
+
     const [devices] = await db.execute(
       `SELECT fcm_token FROM user_devices WHERE user_id = ? AND fcm_token IS NOT NULL`,
       [userId]
     );
 
-    if (!devices.length) return { success: false, error: "No devices found" };
+    if (!devices.length) return { success: true, message: "Saved to DB, no devices found" };
 
     const tokens = devices.map((d) => d.fcm_token);
     return await sendPushToMultiple({ tokens, title, body, data });
@@ -109,14 +116,16 @@ export const sendPushToAll = async ({ title, body, data = {} }) => {
   try {
     /* ── DB లో అన్ని users కి save చేయండి ── */
     const [users] = await db.execute(
-      `SELECT DISTINCT user_id FROM user_devices WHERE fcm_token IS NOT NULL`
+      `SELECT id AS user_id
+       FROM users
+       WHERE account_status IS NULL OR CAST(account_status AS CHAR) != 'deleted'`
     );
 
     for (const u of users) {
       await db.execute(
         `INSERT INTO user_notifications (user_id, title, body, data)
          VALUES (?, ?, ?, ?)`,
-        [u.user_id, title, body, JSON.stringify(data)]
+        [u.user_id, title, body, JSON.stringify(data || {})]
       );
     }
 

@@ -1,6 +1,32 @@
 //  // reports.controller.js
 import db from "../../../config/db.js";
 
+const parseJsonValue = (value) => {
+  if (!value) return null;
+  if (typeof value !== "string") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const addDaysToDateString = (dateString, days) => {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+};
+
+const todayDateString = () => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+};
+
 /* ═══════════════════════════════════════════════════
    GET /admin/dashboard/report
    Sections: Users & Engine KPIs, Top Countries,
@@ -2340,6 +2366,215 @@ export const getActivityLog = async (req, res) => {
       })),
     });
 
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const getUserActivityLogs = async (req, res) => {
+  try {
+    let {
+      page = 1,
+      limit = 20,
+      category = "all",
+      action = "",
+      user_id,
+      search = "",
+      date,
+      from_date,
+      to_date,
+    } = req.query;
+
+    page = Math.max(1, parseInt(page, 10) || 1);
+    limit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offset = (page - 1) * limit;
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+
+    if (date && !datePattern.test(String(date))) {
+      return res.status(400).json({
+        success: false,
+        message: "date must be in YYYY-MM-DD format",
+      });
+    }
+
+    if (from_date && !datePattern.test(String(from_date))) {
+      return res.status(400).json({
+        success: false,
+        message: "from_date must be in YYYY-MM-DD format",
+      });
+    }
+
+    if (to_date && !datePattern.test(String(to_date))) {
+      return res.status(400).json({
+        success: false,
+        message: "to_date must be in YYYY-MM-DD format",
+      });
+    }
+
+    if (user_id && Number.isNaN(Number(user_id))) {
+      return res.status(400).json({
+        success: false,
+        message: "user_id must be a number",
+      });
+    }
+
+    const conditions = [];
+    const params = [];
+
+    if (category && category !== "all") {
+      conditions.push("ual.category = ?");
+      params.push(String(category).trim());
+    }
+
+    if (action) {
+      conditions.push("ual.action = ?");
+      params.push(String(action).trim());
+    }
+
+    if (user_id) {
+      conditions.push("ual.user_id = ?");
+      params.push(Number(user_id));
+    }
+
+    if (search) {
+      conditions.push(
+        `(u.fullname LIKE ? OR u.email LIKE ? OR u.mobile LIKE ? OR CAST(ual.user_id AS CHAR) LIKE ? OR ual.action LIKE ? OR ual.details LIKE ?)`
+      );
+      const searchValue = `%${String(search).trim()}%`;
+      params.push(searchValue, searchValue, searchValue, searchValue, searchValue, searchValue);
+    }
+
+    let periodStart;
+    let periodEnd;
+
+    if (date) {
+      periodStart = String(date);
+      periodEnd = addDaysToDateString(periodStart, 1);
+    } else if (from_date || to_date) {
+      periodStart = from_date ? String(from_date) : null;
+      periodEnd = to_date ? addDaysToDateString(String(to_date), 1) : null;
+    } else {
+      periodStart = todayDateString();
+      periodEnd = addDaysToDateString(periodStart, 1);
+    }
+
+    if (periodStart) {
+      conditions.push("ual.created_at >= ?");
+      params.push(`${periodStart} 00:00:00`);
+    }
+
+    if (periodEnd) {
+      conditions.push("ual.created_at < ?");
+      params.push(`${periodEnd} 00:00:00`);
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const [[kpis]] = await db.execute(
+      `SELECT
+         COUNT(*) AS total_actions,
+         COUNT(DISTINCT ual.user_id) AS unique_users,
+         SUM(CASE WHEN ual.category = 'auth' THEN 1 ELSE 0 END) AS auth_actions,
+         SUM(CASE WHEN ual.category = 'profile' THEN 1 ELSE 0 END) AS profile_actions,
+         SUM(CASE WHEN ual.category = 'security' THEN 1 ELSE 0 END) AS security_actions,
+         SUM(CASE WHEN ual.category = 'teams' THEN 1 ELSE 0 END) AS team_actions
+       FROM user_activity_logs ual
+       LEFT JOIN users u ON u.id = ual.user_id
+       ${whereClause}`,
+      params
+    );
+
+    const [categoryRows] = await db.execute(
+      `SELECT ual.category, COUNT(*) AS cnt
+       FROM user_activity_logs ual
+       LEFT JOIN users u ON u.id = ual.user_id
+       ${whereClause}
+       GROUP BY ual.category`,
+      params
+    );
+
+    const categoryCounts = { all: Number(kpis.total_actions || 0) };
+    for (const row of categoryRows) {
+      categoryCounts[row.category] = Number(row.cnt);
+    }
+
+    const [rows] = await db.execute(
+      `SELECT
+         ual.id,
+         ual.user_id,
+         u.fullname,
+         u.email,
+         u.mobile,
+         u.country,
+         u.account_status,
+         ual.category,
+         ual.action,
+         ual.details,
+         ual.ip_address,
+         ual.user_agent,
+         ual.metadata,
+         ual.created_at
+       FROM user_activity_logs ual
+       LEFT JOIN users u ON u.id = ual.user_id
+       ${whereClause}
+       ORDER BY ual.created_at DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+      params
+    );
+
+    const [[{ total }]] = await db.execute(
+      `SELECT COUNT(*) AS total
+       FROM user_activity_logs ual
+       LEFT JOIN users u ON u.id = ual.user_id
+       ${whereClause}`,
+      params
+    );
+
+    return res.status(200).json({
+      success: true,
+      kpis: {
+        total_actions: Number(kpis.total_actions || 0),
+        unique_users: Number(kpis.unique_users || 0),
+        auth_actions: Number(kpis.auth_actions || 0),
+        profile_actions: Number(kpis.profile_actions || 0),
+        security_actions: Number(kpis.security_actions || 0),
+        team_actions: Number(kpis.team_actions || 0),
+      },
+      category_counts: categoryCounts,
+      pagination: {
+        total: Number(total),
+        page,
+        limit,
+        total_pages: Math.ceil(Number(total) / limit),
+      },
+      filters: {
+        category,
+        action: action || null,
+        user_id: user_id ? Number(user_id) : null,
+        search: search || null,
+        date: date || null,
+        from_date: date ? null : from_date || null,
+        to_date: date ? null : to_date || null,
+        default_today: !date && !from_date && !to_date,
+      },
+      activities: rows.map((row) => ({
+        id: row.id,
+        user_id: row.user_id,
+        user_code: row.user_id ? `U-${row.user_id}` : null,
+        fullname: row.fullname || "Deleted user",
+        email: row.email || null,
+        mobile: row.mobile || null,
+        country: row.country || null,
+        account_status: row.account_status || null,
+        category: row.category,
+        action: row.action,
+        details: row.details,
+        ip_address: row.ip_address,
+        user_agent: row.user_agent,
+        metadata: parseJsonValue(row.metadata),
+        created_at: row.created_at,
+      })),
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
