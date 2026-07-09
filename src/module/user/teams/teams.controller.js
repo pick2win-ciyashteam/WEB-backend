@@ -2,7 +2,7 @@
 import db from "../../../config/db.js";
 import axios from "axios";
 import { sendNoreplyMail, uctTeamsGeneratedEmailHtml } from "../../../utils/mailer.js";
-import { getUCTEndpoint } from "../../../utils/uctApi.js";
+import { getUCTEndpoint ,UCT_ENDPOINTS } from "../../../utils/uctApi.js";
 
 
 /* ================= GENERATE TEAMS ================= */
@@ -1173,6 +1173,34 @@ export const getMyTeams = async (req, res) => {
     const userId   = req.user.id;
     const gameName = game  ? String(game).toLowerCase().trim()  : null;
     const sportName = sport ? String(sport).toLowerCase().trim() : null;  // ✅
+
+    /* ───────── VALIDATE SPORT & GAME ───────── */
+
+const endpointKeys = Object.keys(UCT_ENDPOINTS).filter(key =>
+  key.includes("-")
+);
+
+const validSports = [
+  ...new Set(endpointKeys.map(key => key.split("-")[0]))
+];
+
+const validGames = [
+  ...new Set(endpointKeys.map(key => key.split("-")[1]))
+];
+
+if (sportName && !validSports.includes(sportName)) {
+  return res.status(400).json({
+    success: false,
+    message: `Invalid sport '${sportName}'. Supported sports: ${validSports.join(", ")}`
+  });
+}
+
+if (gameName && !validGames.includes(gameName)) {
+  return res.status(400).json({
+    success: false,
+    message: `Invalid game '${gameName}'. Supported games: ${validGames.join(", ")}`
+  });
+}
 
     if (!matchId) {
       return res.status(400).json({ success: false, message: "matchId is required" });
