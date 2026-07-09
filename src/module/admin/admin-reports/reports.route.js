@@ -38,6 +38,11 @@ import {
   getTransactionLog
 } from "../admin-reports/reports.controller.js";
 
+import {
+  getTeamsGenerationReport,
+  getMatchTeamsReport
+} from "../admin-reports/teams-report.controller.js";
+
 const router = express.Router();
 
 
@@ -164,6 +169,14 @@ router.get("/payments/summary", getPaymentsSummary);
 
 /* Transaction log: ?tab=all|today|by_month|fy_report&month=7&year=2026&status=all|failed_charged|refunded|pending&page=1&limit=20 */
 router.get("/payments/transactions", getTransactionLog);
+
+// TEAMS GENERATION REPORTS
+
+/* Comprehensive teams generation analytics - ?period=7|30|90 (days) */
+router.get("/teams-analytics", getTeamsGenerationReport);
+
+/* Match-specific teams report - /teams/match/:matchId */
+router.get("/match/:matchId/teams", getMatchTeamsReport);
 
 export default router;
  

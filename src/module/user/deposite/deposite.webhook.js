@@ -145,7 +145,7 @@ export const razorpayWebhook = async (req, res) => {
     );
 
     await conn.commit();
-
+   
     /* ── Email ── */
     try {
       await sendBillingMail({
@@ -156,7 +156,7 @@ export const razorpayWebhook = async (req, res) => {
           planName:       plan.name,
           coins:          parsedCoins,
           currentBalance: closingCoins,
-          currency:       "₹",
+          currency:       "$",
           amount,
           transactionId:  paymentId,
           purchaseDate:   new Date().toLocaleDateString("en-IN", {

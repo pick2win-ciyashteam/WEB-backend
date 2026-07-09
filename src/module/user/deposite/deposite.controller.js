@@ -1,6 +1,11 @@
 import db       from "../../../config/db.js";
 import Razorpay from "razorpay";
 import crypto   from "crypto";
+import {
+  spendCoinsService,
+  getUserTransactionsService,
+  getWalletStatsService,
+} from "./transaction.service.js";
 
 const razorpay = new Razorpay({
   key_id:     process.env.RAZORPAY_KEY_ID,
@@ -25,7 +30,7 @@ export const createCoinsPayment = async (req, res) => {
 
     const amountPaise = Math.round(Number(amount) * 100); // INR paise
     if (amountPaise < 100)
-      return res.status(400).json({ success: false, message: "Minimum amount is ₹1" });
+      return res.status(400).json({ success: false, message: "Minimum amount is $1" });
 
     const order = await razorpay.orders.create({
       amount,
@@ -272,6 +277,67 @@ export const getMyTransactions = async (req, res) => {
     });
 
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= SPEND COINS (Match Entry) ================= */
+export const spendCoins = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { coins, match_id, description } = req.body;
+
+    if (!coins || coins <= 0)
+      return res.status(400).json({ success: false, message: "Invalid coins amount" });
+
+    const result = await spendCoinsService(
+      userId,
+      coins,
+      match_id || null,
+      description || "Match generated"
+    );
+
+    res.status(200).json(result);
+
+  } catch (err) {
+    console.error("❌ spendCoins:", err.message);
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= GET WALLET STATS ================= */
+export const getWalletStats = async (req, res) => {
+  try {
+    const result = await getWalletStatsService(req.user.id);
+    res.status(200).json(result);
+
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= GET FILTERED TRANSACTIONS ================= */
+export const getFilteredTransactions = async (req, res) => {
+  try {
+    const { type, status } = req.query;
+    let limit = parseInt(req.query.limit) || 50;
+    let offset = parseInt(req.query.offset) || 0;
+
+    // Validation
+    limit = Math.min(Math.max(limit, 1), 100);  // Between 1-100
+    offset = Math.max(offset, 0);               // Not negative
+
+    const result = await getUserTransactionsService(req.user.id, {
+      type: type || null,
+      status: status || null,
+      limit,
+      offset,
+    });
+
+    res.status(200).json(result);
+
+  } catch (err) {
+    console.error("❌ getFilteredTransactions:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 };

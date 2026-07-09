@@ -3,23 +3,43 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import admin from "firebase-admin";
 import db from "../config/db.js"; 
+import serviceAccount from "../module/admin/notification/firebase-service-account.js"
 
+  
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/* ── Firebase initialize ── */
 if (!admin.apps.length) {
-  const serviceAccount = JSON.parse(
-    readFileSync(
-      join(__dirname, "../module/admin/notification/firebase-service-account.json"),
-      "utf8"
-    )
-  );
+  try {
+    console.log("🔧 Initializing Firebase with credentials...");
+    console.log("   Project:", serviceAccount.project_id);
+    console.log("   Email:", serviceAccount.client_email);
+    console.log("   Key ID:", serviceAccount.private_key_id);
+    
+    // Debug: Log key format
+    if (serviceAccount.private_key) {
+      const keyStart = serviceAccount.private_key.substring(0, 50);
+      const keyEnd = serviceAccount.private_key.substring(serviceAccount.private_key.length - 50);
+      console.log("   Key starts with:", keyStart);
+      console.log("   Key ends with:", keyEnd);
+      console.log("   Key has newlines:", serviceAccount.private_key.includes("\n"));
+    }
+    
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
 
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-
-  console.log("✅ Firebase Admin initialized");
+    console.log("✅ Firebase Admin initialized successfully");
+  } catch (err) {
+    console.error("❌ Firebase initialization failed:");
+    console.error("   Error:", err.message);
+    console.error("   Details:", err.errorInfo || err);
+    
+    // Debug private key
+    if (serviceAccount.private_key) {
+      console.error("   Private key (first 100 chars):", serviceAccount.private_key.substring(0, 100));
+    }
+    throw err;
+  }
 }
 
 /* ── Single token కి ── */
@@ -40,7 +60,7 @@ export const sendPushNotification = async ({ token, title, body, data = {} }) =>
     console.error(`❌ Push failed: ${err.message}`);
     return { success: false, error: err.message };
   }
-};
+};  
 
 
 export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => {
