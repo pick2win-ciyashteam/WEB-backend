@@ -43,6 +43,27 @@ export const sendPushNotification = async ({ token, title, body, data = {} }) =>
 };
 
 /* ── Multiple tokens కి ── */
+// export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => {
+//   if (!tokens.length) return { success: false, error: "No tokens" };
+
+//   try {
+//     const message = {
+//       notification: { title, body },
+//       data: Object.fromEntries(
+//         Object.entries(data).map(([k, v]) => [k, String(v)])
+//       ),
+//       tokens,
+//     };
+
+//     const response = await admin.messaging().sendEachForMulticast(message);
+//     console.log(`✅ Multicast: ${response.successCount} success, ${response.failureCount} failed`);
+//     return { success: true, response };
+//   } catch (err) {
+//     console.error(`❌ Multicast failed: ${err.message}`);
+//     return { success: false, error: err.message };
+//   }
+// };
+
 export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => {
   if (!tokens.length) return { success: false, error: "No tokens" };
 
@@ -56,6 +77,27 @@ export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => 
     };
 
     const response = await admin.messaging().sendEachForMulticast(message);
+
+    /* ── Failed tokens clean up ── */
+    response.responses.forEach(async (resp, idx) => {
+      if (!resp.success) {
+        const failedToken = tokens[idx];
+        const errorCode   = resp.error?.code;
+
+        // Invalid token అయితే DB నుండి delete చేయండి
+        if (
+          errorCode === "messaging/invalid-registration-token" ||
+          errorCode === "messaging/registration-token-not-registered"
+        ) {
+          await db.execute(
+            `DELETE FROM user_devices WHERE fcm_token = ?`,
+            [failedToken]
+          );
+          console.warn(`🗑️ Removed invalid token: ${failedToken.slice(0, 20)}...`);
+        }
+      }
+    });
+
     console.log(`✅ Multicast: ${response.successCount} success, ${response.failureCount} failed`);
     return { success: true, response };
   } catch (err) {

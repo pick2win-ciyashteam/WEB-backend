@@ -17,18 +17,20 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //     if (!match_id || !team_a || !team_b) {
 //       return res.status(400).json({ success: false, message: "match_id, team_a, team_b required" });
 //     }
-
 //     if (!Array.isArray(team_a) || !Array.isArray(team_b)) {
 //       return res.status(400).json({ success: false, message: "team_a and team_b must be arrays" });
 //     }
-
 //     if (team_a.length < 1 || team_b.length < 1) {
 //       return res.status(400).json({ success: false, message: "team_a and team_b must have at least 1 player each" });
 //     }
 
-//     const gameName   = game ? String(game).toLowerCase().trim() : "football";
-//     const capValue   = cap !== undefined && cap !== null ? Number(cap) : null;
-//     const uctUrl     = getUCTEndpoint(gameName);
+//     const gameName = game ? String(game).toLowerCase().trim() : "football";
+//     const capValue = cap !== undefined && cap !== null ? Number(cap) : null;
+//     const uctUrl   = getUCTEndpoint(gameName);
+
+//     if (!uctUrl) {
+//       return res.status(400).json({ success: false, message: `UCT endpoint not configured for game: ${gameName}` });
+//     }
 
 //     /* ── 2. Remove duplicates ── */
 //     const uniqueTeamA = team_a.filter((p, idx, arr) => arr.findIndex((x) => x.name === p.name) === idx);
@@ -40,7 +42,6 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //       `SELECT id, status, lineupavailable, lineup_status, start_time FROM matches WHERE id = ?`,
 //       [match_id]
 //     );
-
 //     if (!match) return res.status(404).json({ success: false, message: "Match not found" });
 
 //     if (match.status !== "UPCOMING") {
@@ -52,14 +53,14 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //                                       "Teams can only be generated for upcoming matches.",
 //       });
 //     }
-
 //     if (Number(match.lineupavailable) !== 1) {
 //       return res.status(400).json({ success: false, message: "Playing XI not announced yet." });
 //     }
 
-//     /* ── 4. Already generated — same match + same game ── */
+//     /* ── 4. Already generated — match_id + user_id + game తో check ── */
 //     const [[existing]] = await db.execute(
-//       `SELECT id FROM match_generation_log WHERE match_id = ? AND user_id = ? AND game = ?`,
+//       `SELECT id FROM match_generation_log
+//        WHERE match_id = ? AND user_id = ? AND game = ?`,
 //       [match_id, userId, gameName]
 //     );
 //     if (existing) {
@@ -142,13 +143,11 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //     /* ── 10. Build UCT payload ── */
 //     const buildUCTPlayer = (p) => {
 //       const obj = { name: p.name, role: p.role };
-//       if (p.captain) {
-//         if (p.captain === "C")   obj.captain = "C";
-//         if (p.captain === "VC")  obj.captain = "VC";
-//         if (p.captain === "CVC") obj.captain = "CVC";
-//       }
+//       if (p.captain === "C")   obj.captain = "C";
+//       if (p.captain === "VC")  obj.captain = "VC";
+//       if (p.captain === "CVC") obj.captain = "CVC";
 //       if (p.mandate && p.role !== "GK") obj.mandate = p.mandate;
-//       if (p.salary  !== null && p.salary !== undefined) obj.salary = p.salary;
+//       if (p.salary !== null && p.salary !== undefined) obj.salary = p.salary;
 //       return obj;
 //     };
 
@@ -158,7 +157,8 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //       ...(capValue !== null && { cap: capValue }),
 //     };
 
-//     console.log(`🚀 UCT URL: ${uctUrl}`);
+//     console.log(`🚀 UCT URL   : ${uctUrl}`);
+//     console.log(`🚀 UCT Game  : ${gameName}`);
 //     console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
 
 //     /* ── 11. Fetch substitutes ── */
@@ -192,14 +192,10 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //     let uctTeams    = [];
 
 //     try {
-//       const response = await axios.post(
-//         uctUrl,
-//         uctPayload,
-//         {
-//           headers: { "Content-Type": "application/json", "x-api-key": process.env.UCT_API_KEY },
-//           timeout: 60000,
-//         }
-//       );
+//       const response = await axios.post(uctUrl, uctPayload, {
+//         headers: { "Content-Type": "application/json", "x-api-key": process.env.UCT_API_KEY },
+//         timeout: 60000,
+//       });
 
 //       const raw = response.data;
 //       if (Array.isArray(raw?.teams))  uctTeams = raw.teams;
@@ -209,11 +205,20 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //       console.log(`✅ UCT parsed: ${uctTeams.length} records`);
 //     } catch (apiError) {
 //       console.error("❌ UCT API FAILED:", apiError.message, apiError.response?.data);
-//       return res.status(500).json({
-//         success: false, message: "UCT API failed",
-//         error: apiError.message, status: apiError.response?.status || null,
-//         details: apiError.response?.data || null,
-//       });
+//       const uctDetail = apiError.response?.data?.detail || "";
+//       let userMessage = "Team generation failed. Please check your squad and try again.";
+//       if (uctDetail.toLowerCase().includes("team generation failed")) {
+//         userMessage = "Invalid squad configuration. Please ensure: each team has exactly 1 GK, max 4 DEF, max 4 MID, max 4 FWD, captain pool has 2–6 players, and squad total is between 10–22 players.";
+//       } else if (uctDetail.toLowerCase().includes("captain")) {
+//         userMessage = "Captain pool is invalid. Please select valid captain candidates and try again.";
+//       } else if (uctDetail.toLowerCase().includes("mandate")) {
+//         userMessage = "Mandatory player (M-YES) selection is invalid. Maximum 2 allowed (max 1 GK).";
+//       } else if (uctDetail.toLowerCase().includes("salary") || uctDetail.toLowerCase().includes("cap")) {
+//         userMessage = "Salary cap configuration is invalid. Please check player salaries and cap value.";
+//       } else if (uctDetail) {
+//         userMessage = `Team generation failed: ${uctDetail}`;
+//       }
+//       return res.status(400).json({ success: false, message: userMessage });
 //     }
 
 //     const generationTimeMs = Date.now() - startTime;
@@ -249,23 +254,17 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //         if (captaincyMode === "CVC") {
 //           const cvcPool = allMapped.filter((p) => p.captain === "CVC");
 //           lines.push("CVC POOL PLAYERS");
-//           cvcPool.forEach((p, i) => {
-//             lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`);
-//           });
+//           cvcPool.forEach((p, i) => lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`));
 //         } else {
 //           const captains     = allMapped.filter((p) => p.captain === "C");
 //           const viceCaptains = allMapped.filter((p) => p.captain === "VC");
 //           if (captains.length) {
 //             lines.push("CAPTAINS");
-//             captains.forEach((p, i) => {
-//               lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`);
-//             });
+//             captains.forEach((p, i) => lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`));
 //           }
 //           if (viceCaptains.length) {
 //             lines.push("VICE CAPTAINS");
-//             viceCaptains.forEach((p, i) => {
-//               lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`);
-//             });
+//             viceCaptains.forEach((p, i) => lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`));
 //           }
 //         }
 //         lines.push("********************");
@@ -275,18 +274,14 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //       const mYes = allMapped.filter((p) => p.mandate === "YES");
 //       if (mYes.length) {
 //         lines.push("MANDATORY PLAYERS (M-YES)");
-//         mYes.forEach((p, i) => {
-//           lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`);
-//         });
+//         mYes.forEach((p, i) => lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`));
 //         lines.push("");
 //       }
 
 //       const subPlayers = allMapped.filter((p) => substituteNames.has(p._original));
 //       if (subPlayers.length) {
 //         lines.push("SUBSTITUTE PLAYERS");
-//         subPlayers.forEach((p, i) => {
-//           lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`);
-//         });
+//         subPlayers.forEach((p, i) => lines.push(`${i + 1}. ${nameMap[p.name] || p.name} (${sideMap[p.name] === "team_a" ? "HOME" : "AWAY"} - ${p.role})`));
 //         lines.push("");
 //       }
 
@@ -310,12 +305,7 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //             const salary      = salaryMap[player.name]   || player.salary || "-";
 //             const selectedVal = selectedMap[player.name] ? "1" : "0";
 //             const sideVal     = sideMap[player.name]     || (player.name.endsWith("_A") ? "team_a" : "team_b");
-
-//             lines.push([
-//               `Team ${dtNo}`, dtNo,
-//               player.name, realName, player.role || "-",
-//               capInTxt, salary, selectedVal, sideVal,
-//             ].join("\t"));
+//             lines.push([`Team ${dtNo}`, dtNo, player.name, realName, player.role || "-", capInTxt, salary, selectedVal, sideVal].join("\t"));
 //           });
 //         });
 
@@ -331,7 +321,6 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //         `SELECT available_coins, used_coins, total_coins FROM user_coins WHERE user_id = ? FOR UPDATE`,
 //         [userId]
 //       );
-
 //       if (!currentWallet || Number(currentWallet.available_coins) < 1) {
 //         await conn.rollback();
 //         conn.release();
@@ -351,12 +340,7 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //         `INSERT INTO coins_transactions
 //            (user_id, coins, amount, transaction_type, opening_points, closing_points, description, status)
 //          VALUES (?, -1, 0, 'spent', ?, ?, ?, 'success')`,
-//         [
-//           userId,
-//           Number(currentWallet.available_coins),
-//           Number(currentWallet.available_coins) - 1,
-//           `Team generation — match ${match_id} — ${gameName}`,
-//         ]
+//         [userId, Number(currentWallet.available_coins), Number(currentWallet.available_coins) - 1, `Team generation — match ${match_id} — ${gameName}`]
 //       );
 
 //       await conn.query(
@@ -370,7 +354,10 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //         const playerCap   = player.cap && player.cap !== "" ? player.cap : null;
 //         const selected    = selectedMap[player.name] || 0;
 //         const mandate     = mandateMap[player.name]  || null;
-//         const teamSide    = sideMap[player.name]     || (player.name.endsWith("_A") ? "team_a" : "team_b");
+//         const teamSide    = sideMap[player.name]
+//                             || (player.team_side === "A" ? "team_a"
+//                               : player.team_side === "B" ? "team_b"
+//                               : player.name?.endsWith("_A") ? "team_a" : "team_b");
 //         const captainMode = capMap[player.name]      || null;
 //         const salary      = salaryMap[player.name]   || player.salary || null;
 
@@ -379,13 +366,7 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //              (match_id, user_id, dt_no, name, role, cap, original_name,
 //               selected, mandate, team_side, captain_mode, game, salary)
 //            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-//           [
-//             match_id, userId, player.dt_no,
-//             player.name, player.role,
-//             playerCap, realName,
-//             selected, mandate, teamSide, captainMode,
-//             gameName, salary,
-//           ]
+//           [match_id, userId, player.dt_no, player.name, player.role, playerCap, realName, selected, mandate, teamSide, captainMode, gameName, salary]
 //         );
 //       }
 
@@ -403,10 +384,16 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 
 //       const totalTeams = [...new Set(uctTeams.map((p) => p.dt_no))].length;
 
+//       /* ── match_generation_log — (match_id, user_id, game) unique ── */
 //       await conn.query(
 //         `INSERT INTO match_generation_log
 //            (match_id, user_id, total_teams, generation_time_ms, status, game)
-//          VALUES (?, ?, ?, ?, 'success', ?)`,
+//          VALUES (?, ?, ?, ?, 'success', ?)
+//          ON DUPLICATE KEY UPDATE
+//            total_teams        = VALUES(total_teams),
+//            generation_time_ms = VALUES(generation_time_ms),
+//            status             = 'success',
+//            created_at         = NOW()`,
 //         [match_id, userId, totalTeams, generationTimeMs, gameName]
 //       );
 
@@ -477,11 +464,10 @@ import { getUCTEndpoint } from "../../../utils/uctApi.js";
 //   }
 // };
 
-
 export const generateTeams = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { match_id, team_a, team_b, game, cap } = req.body;
+    const { match_id, team_a, team_b, game, cap, sport } = req.body;  // ✅ sport add
 
     /* ── 1. Validate input ── */
     if (!match_id || !team_a || !team_b) {
@@ -494,9 +480,10 @@ export const generateTeams = async (req, res) => {
       return res.status(400).json({ success: false, message: "team_a and team_b must have at least 1 player each" });
     }
 
-    const gameName = game ? String(game).toLowerCase().trim() : "football";
-    const capValue = cap !== undefined && cap !== null ? Number(cap) : null;
-    const uctUrl   = getUCTEndpoint(gameName);
+    const gameName  = game  ? String(game).toLowerCase().trim()  : "football";
+    const sportName = sport ? String(sport).toLowerCase().trim() : "football";  // ✅
+    const capValue  = cap !== undefined && cap !== null ? Number(cap) : null;
+    const uctUrl    = getUCTEndpoint(gameName, sportName);  // ✅ sportName pass
 
     if (!uctUrl) {
       return res.status(400).json({ success: false, message: `UCT endpoint not configured for game: ${gameName}` });
@@ -527,7 +514,7 @@ export const generateTeams = async (req, res) => {
       return res.status(400).json({ success: false, message: "Playing XI not announced yet." });
     }
 
-    /* ── 4. Already generated — match_id + user_id + game తో check ── */
+    /* ── 4. Already generated ── */
     const [[existing]] = await db.execute(
       `SELECT id FROM match_generation_log
        WHERE match_id = ? AND user_id = ? AND game = ?`,
@@ -627,8 +614,9 @@ export const generateTeams = async (req, res) => {
       ...(capValue !== null && { cap: capValue }),
     };
 
-    console.log(`🚀 UCT URL   : ${uctUrl}`);
-    console.log(`🚀 UCT Game  : ${gameName}`);
+    console.log(`🚀 UCT URL    : ${uctUrl}`);
+    console.log(`🚀 UCT Game   : ${gameName}`);
+    console.log(`🚀 UCT Sport  : ${sportName}`);  // ✅
     console.log("🚀 UCT Payload:", JSON.stringify(uctPayload, null, 2));
 
     /* ── 11. Fetch substitutes ── */
@@ -712,6 +700,7 @@ export const generateTeams = async (req, res) => {
       lines.push("PICK2WIN UCT EXPORT");
       lines.push(`Match ID      : ${match_id}`);
       lines.push(`Platform      : ${gameName.toUpperCase()}`);
+      lines.push(`Sport         : ${sportName.toUpperCase()}`);  // ✅
       lines.push(`Generated on  : ${formatDateINDIA(new Date())}`);
       lines.push(`Total teams   : ${totalTeamsCount}`);
       lines.push(`Squad size    : ${totalSquad} players`);
@@ -810,7 +799,8 @@ export const generateTeams = async (req, res) => {
         `INSERT INTO coins_transactions
            (user_id, coins, amount, transaction_type, opening_points, closing_points, description, status)
          VALUES (?, -1, 0, 'spent', ?, ?, ?, 'success')`,
-        [userId, Number(currentWallet.available_coins), Number(currentWallet.available_coins) - 1, `Team generation — match ${match_id} — ${gameName}`]
+        [userId, Number(currentWallet.available_coins), Number(currentWallet.available_coins) - 1,
+         `Team generation — match ${match_id} — ${sportName}/${gameName}`]  // ✅
       );
 
       await conn.query(
@@ -836,11 +826,12 @@ export const generateTeams = async (req, res) => {
              (match_id, user_id, dt_no, name, role, cap, original_name,
               selected, mandate, team_side, captain_mode, game, salary)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [match_id, userId, player.dt_no, player.name, player.role, playerCap, realName, selected, mandate, teamSide, captainMode, gameName, salary]
+          [match_id, userId, player.dt_no, player.name, player.role, playerCap, realName,
+           selected, mandate, teamSide, captainMode, gameName, salary]
         );
       }
 
-      /* ── Store mandate="NO" players (dt_no=0) ── */
+      /* ── Store mandate="NO" players ── */
       for (const p of mandateNoPlayers) {
         const realName = nameMap[p.name] || p.name;
         await conn.query(
@@ -854,7 +845,6 @@ export const generateTeams = async (req, res) => {
 
       const totalTeams = [...new Set(uctTeams.map((p) => p.dt_no))].length;
 
-      /* ── match_generation_log — (match_id, user_id, game) unique ── */
       await conn.query(
         `INSERT INTO match_generation_log
            (match_id, user_id, total_teams, generation_time_ms, status, game)
@@ -881,7 +871,7 @@ export const generateTeams = async (req, res) => {
           const uctTxtContent = buildUctTxtContent();
           await sendNoreplyMail({
             to:      user.email,
-            subject: `UCT Teams Generated — ${gameName.toUpperCase()}`,
+            subject: `UCT Teams Generated — ${sportName.toUpperCase()}/${gameName.toUpperCase()}`,  // ✅
             html:    uctTeamsGeneratedEmailHtml({
               fullname:           user.fullname || "User",
               leagueName:         matchInfo.seriesname   || "-",
@@ -892,11 +882,11 @@ export const generateTeams = async (req, res) => {
               teamsGenerated:     totalTeams,
               coinsConsumed:      1,
               generatedOn:        new Date().toLocaleString("en-IN"),
-              attachmentFileName: `PICK2WIN_UCT_${gameName}_${match_id}.txt`,
+              attachmentFileName: `PICK2WIN_UCT_${sportName}_${gameName}_${match_id}.txt`,  // ✅
             }),
-            text: `Your UCT export for match ${match_id} (${gameName}) is attached.`,
+            text: `Your UCT export for match ${match_id} (${sportName}/${gameName}) is attached.`,
             attachments: [{
-              filename:    `PICK2WIN_UCT_${gameName}_${match_id}.txt`,
+              filename:    `PICK2WIN_UCT_${sportName}_${gameName}_${match_id}.txt`,  // ✅
               content:     uctTxtContent,
               contentType: "text/plain; charset=utf-8",
             }],
@@ -911,9 +901,10 @@ export const generateTeams = async (req, res) => {
 
       return res.status(200).json({
         success:         true,
-        message:         `${totalTeams} teams generated for ${gameName} successfully`,
+        message:         `${totalTeams} teams generated for ${sportName}/${gameName} successfully`,
         total_teams:     totalTeams,
         game:            gameName,
+        sport:           sportName,  // ✅
         coins_used:      1,
         coins_remaining: Number(currentWallet.available_coins) - 1,
         free_trial_used: isFreeTrial,
@@ -936,26 +927,42 @@ export const generateTeams = async (req, res) => {
 
 
 /* ================= GET MY TEAMS ================= */
-
 // export const getMyTeams = async (req, res) => {
 //   try {
-//     const { matchId } = req.params;
-//     const userId      = req.user.id;
+//     const { matchId, game } = req.params;
+//     const userId            = req.user.id;
+//     const gameName          = game ? String(game).toLowerCase().trim() : null;
 
 //     if (!matchId) {
 //       return res.status(400).json({ success: false, message: "matchId is required" });
 //     }
 
 //     const [[match]] = await db.execute(
-//       `SELECT hometeamname, awayteamname FROM matches WHERE id = ? LIMIT 1`,
+//       `SELECT id, hometeamname, awayteamname FROM matches WHERE id = ? LIMIT 1`,
 //       [matchId]
 //     );
 
+//     if (!match) {
+//       return res.status(404).json({ success: false, message: "Match not found" });
+//     }
+
+//     /* ── Fetch players ── */
 //     const [players] = await db.execute(
 //       `SELECT
-//          ut.id, ut.match_id, ut.dt_no, ut.name, ut.original_name,
-//          ut.role, ut.cap, ut.selected, ut.mandate, ut.team_side,
-//          ut.provider_player_id, ut.captain_mode,
+//          ut.id,
+//          ut.match_id,
+//          ut.dt_no,
+//          ut.name,
+//          ut.original_name,
+//          ut.role,
+//          ut.cap,
+//          ut.selected,
+//          ut.mandate,
+//          ut.team_side,
+//          ut.provider_player_id,
+//          ut.captain_mode,
+//          ut.game,
+//          ut.salary,
 //          mp.logo AS player_image,
 //          CASE
 //            WHEN mp.is_playing    = 1 THEN 'playing_xi'
@@ -966,14 +973,23 @@ export const generateTeams = async (req, res) => {
 //        LEFT JOIN match_players mp
 //               ON mp.match_id    = ut.match_id
 //              AND mp.player_name = ut.original_name
-//        WHERE ut.match_id = ? AND ut.user_id = ?
-//        ORDER BY ut.dt_no, ut.role`,
-//       [matchId, userId]
+//        WHERE ut.match_id = ?
+//          AND ut.user_id  = ?
+//          ${gameName ? "AND ut.game = ?" : ""}
+//        ORDER BY ut.dt_no ASC, ut.role ASC`,
+//       gameName ? [matchId, userId, gameName] : [matchId, userId]
 //     );
 
 //     if (!players.length) {
 //       return res.status(404).json({ success: false, message: "No teams found for this match" });
 //     }
+
+//     /* ── Detect game from data ── */
+//     const detectedGame = gameName || players.find((p) => p.game)?.game || "football";
+
+//     /* ── FanDuel/DraftKings = salary based, Sorare = captain based ── */
+//     const isSalaryGame  = ["fanduel", "draftkings"].includes(detectedGame);
+//     const isCaptainGame = ["sorare", "football"].includes(detectedGame);
 
 //     /* ── Build teams map — dt_no=0 skip ── */
 //     const teamsMap = {};
@@ -983,7 +999,6 @@ export const generateTeams = async (req, res) => {
 
 //       if (!teamsMap[player.dt_no]) teamsMap[player.dt_no] = [];
 
-//       /* ── team_side fix: name suffix బట్టి determine ── */
 //       const teamSide = player.team_side ||
 //         (player.name && player.name.endsWith("_A") ? "team_a" : "team_b");
 
@@ -999,9 +1014,12 @@ export const generateTeams = async (req, res) => {
 //         selected:           Boolean(player.selected),
 //         mandate:            player.mandate ? String(player.mandate).trim().toLowerCase() : null,
 //         team_side:          teamSide,
+//         team_name:          teamSide === "team_a" ? match.hometeamname : match.awayteamname,
 //         provider_player_id: player.provider_player_id || null,
 //         player_image:       player.player_image || null,
 //         status:             player.status,
+//         game:               player.game   || null,
+//         salary:             player.salary !== null ? Number(player.salary) : null,
 //       });
 //     }
 
@@ -1013,17 +1031,37 @@ export const generateTeams = async (req, res) => {
 //         role:          p.role,
 //         player_image:  p.player_image || null,
 //         team_side:     p.team_side || (p.name?.endsWith("_A") ? "team_a" : "team_b"),
+//         team_name:     (p.team_side || "") === "team_a" ? match.hometeamname : match.awayteamname,
+//         salary:        p.salary !== null ? Number(p.salary) : null,
 //         mandate:       "no",
 //       }));
 
-//     const teams = Object.entries(teamsMap).map(([dt_no, teamPlayers]) => ({
-//       team_no:      Number(dt_no),
-//       captain:      teamPlayers.find((p) => p.cap === "C")?.original_name  || null,
-//       vice_captain: teamPlayers.find((p) => p.cap === "VC")?.original_name || null,
-//       home_players: teamPlayers.filter((p) => p.team_side === "team_a").length,
-//       away_players: teamPlayers.filter((p) => p.team_side === "team_b").length,
-//       players:      teamPlayers,
-//     }));
+//     /* ── Build teams array ── */
+//     const teams = Object.entries(teamsMap)
+//       .sort(([a], [b]) => Number(a) - Number(b))
+//       .map(([dt_no, teamPlayers]) => {
+//         const homeCount  = teamPlayers.filter((p) => p.team_side === "team_a").length;
+//         const awayCount  = teamPlayers.filter((p) => p.team_side === "team_b").length;
+//         const totalSalary = teamPlayers.reduce((sum, p) => sum + (p.salary || 0), 0);
+
+//         /* captain/VC only for captain-based games */
+//         const captain      = isCaptainGame
+//           ? teamPlayers.find((p) => p.cap === "C")?.original_name  || null
+//           : null;
+//         const vice_captain = isCaptainGame
+//           ? teamPlayers.find((p) => p.cap === "VC")?.original_name || null
+//           : null;
+
+//         return {
+//           team_no:       Number(dt_no),
+//           captain,
+//           vice_captain,
+//           home_players:  homeCount,
+//           away_players:  awayCount,
+//           total_salary:  isSalaryGame ? Number(totalSalary.toFixed(2)) : null,
+//           players:       teamPlayers,
+//         };
+//       });
 
 //     /* ── Preview ── */
 //     const allPlayers = teams.flatMap((t) => t.players);
@@ -1034,34 +1072,35 @@ export const generateTeams = async (req, res) => {
 //         return acc;
 //       }, {}));
 
-//     const isCVCMode = allPlayers.some((p) => p.captain_mode === "CVC");
+//     const substitutes = uniqueByName(allPlayers.filter((p) => p.selected === true));
+//     const mandateYes  = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
+//     const mandateNo   = uniqueByName(mandateNoPlayers);
 
-//     const substitutes        = uniqueByName(allPlayers.filter((p) => p.selected === true));
-//     const mandateYes         = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
-//     const mandateNo          = uniqueByName(mandateNoPlayers);
-//     const captainPlayers     = uniqueByName(allPlayers.filter((p) => p.captain_mode === "C"));
-//     const viceCaptainPlayers = uniqueByName(allPlayers.filter((p) => p.captain_mode === "VC"));
-//     const cvcPlayers         = uniqueByName(allPlayers.filter((p) => p.captain_mode === "CVC"));
+//     /* ── Captaincy preview — only for captain-based games ── */
+//     const isCVCMode          = isCaptainGame && allPlayers.some((p) => p.captain_mode === "CVC");
+//     const captainPlayers     = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "C"))   : [];
+//     const viceCaptainPlayers = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "VC"))  : [];
+//     const cvcPlayers         = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "CVC")) : [];
 
-//     const captaincyPool = uniqueByName(
-//       allPlayers.filter((p) =>
-//         p.captain_mode === "C" || p.captain_mode === "VC" || p.captain_mode === "CVC"
-//       )
-//     );
+//     const captaincyPool = isCaptainGame
+//       ? uniqueByName(allPlayers.filter((p) =>
+//           p.captain_mode === "C" || p.captain_mode === "VC" || p.captain_mode === "CVC"
+//         ))
+//       : [];
 
 //     const preview = {
+//       game:              detectedGame,
 //       substitutes_count: substitutes.length,
 //       mandate_yes_count: mandateYes.length,
 //       mandate_no_count:  mandateNo.length,
-//       captaincy_count:   captaincyPool.length,
-//       captaincy_mode:    isCVCMode ? "CVC" : "C & VC",
 
 //       substitutes: substitutes.map((p) => ({
 //         name:      p.original_name,
 //         role:      p.role,
 //         image:     p.player_image,
 //         side:      p.team_side,
-//         team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+//         team_name: p.team_name,
+//         salary:    p.salary,
 //       })),
 
 //       mandate_yes: mandateYes.map((p) => ({
@@ -1069,7 +1108,8 @@ export const generateTeams = async (req, res) => {
 //         role:      p.role,
 //         image:     p.player_image,
 //         side:      p.team_side,
-//         team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+//         team_name: p.team_name,
+//         salary:    p.salary,
 //       })),
 
 //       mandate_no: mandateNo.map((p) => ({
@@ -1077,34 +1117,45 @@ export const generateTeams = async (req, res) => {
 //         role:      p.role,
 //         image:     p.player_image,
 //         side:      p.team_side,
-//         team_name: p.team_side === "team_a" ? match?.hometeamname : match?.awayteamname,
+//         team_name: p.team_name,
+//         salary:    p.salary,
 //       })),
 
-//       captains: isCVCMode ? [] : captainPlayers.map((p) => ({
-//         name:  p.original_name,
-//         role:  p.role,
-//         image: p.player_image,
-//         side:  p.team_side,
-//       })),
+//       /* captain fields — only for sorare/football */
+//       ...(isCaptainGame ? {
+//         captaincy_count: captaincyPool.length,
+//         captaincy_mode:  isCVCMode ? "CVC" : "C & VC",
 
-//       vice_captains: isCVCMode ? [] : viceCaptainPlayers.map((p) => ({
-//         name:  p.original_name,
-//         role:  p.role,
-//         image: p.player_image,
-//         side:  p.team_side,
-//       })),
+//         captains: isCVCMode ? [] : captainPlayers.map((p) => ({
+//           name: p.original_name, role: p.role, image: p.player_image,
+//           side: p.team_side, team_name: p.team_name,
+//         })),
 
-//       cvc_players: isCVCMode ? cvcPlayers.map((p) => ({
-//         name:  p.original_name,
-//         role:  p.role,
-//         image: p.player_image,
-//         side:  p.team_side,
-//       })) : [],
+//         vice_captains: isCVCMode ? [] : viceCaptainPlayers.map((p) => ({
+//           name: p.original_name, role: p.role, image: p.player_image,
+//           side: p.team_side, team_name: p.team_name,
+//         })),
+
+//         cvc_players: isCVCMode ? cvcPlayers.map((p) => ({
+//           name: p.original_name, role: p.role, image: p.player_image,
+//           side: p.team_side, team_name: p.team_name,
+//         })) : [],
+//       } : {
+//         /* salary-based games (fanduel/draftkings) */
+//         captaincy_count: 0,
+//         captaincy_mode:  "NONE",
+//         captains:        [],
+//         vice_captains:   [],
+//         cvc_players:     [],
+//       }),
 //     };
 
 //     return res.status(200).json({
 //       success:     true,
 //       match_id:    Number(matchId),
+//       game:        detectedGame,
+//       home_team:   match.hometeamname,
+//       away_team:   match.awayteamname,
 //       total_teams: teams.length,
 //       preview,
 //       teams,
@@ -1116,13 +1167,12 @@ export const generateTeams = async (req, res) => {
 //   }
 // };
 
-
-/* ================= GET MY TEAMS ================= */
 export const getMyTeams = async (req, res) => {
   try {
-    const { matchId, game } = req.params;
-    const userId            = req.user.id;
-    const gameName          = game ? String(game).toLowerCase().trim() : null;
+    const { matchId, game, sport } = req.params;  // ✅ sport add
+    const userId   = req.user.id;
+    const gameName = game  ? String(game).toLowerCase().trim()  : null;
+    const sportName = sport ? String(sport).toLowerCase().trim() : null;  // ✅
 
     if (!matchId) {
       return res.status(400).json({ success: false, message: "matchId is required" });
@@ -1176,7 +1226,8 @@ export const getMyTeams = async (req, res) => {
     }
 
     /* ── Detect game from data ── */
-    const detectedGame = gameName || players.find((p) => p.game)?.game || "football";
+    const detectedGame  = gameName  || players.find((p) => p.game)?.game  || "football";
+    const detectedSport = sportName || "football";  // ✅
 
     /* ── FanDuel/DraftKings = salary based, Sorare = captain based ── */
     const isSalaryGame  = ["fanduel", "draftkings"].includes(detectedGame);
@@ -1214,7 +1265,7 @@ export const getMyTeams = async (req, res) => {
       });
     }
 
-    /* ── mandate_no — dt_no=0 players ── */
+    /* ── mandate_no ── */
     const mandateNoPlayers = players
       .filter((p) => p.dt_no === 0)
       .map((p) => ({
@@ -1231,11 +1282,10 @@ export const getMyTeams = async (req, res) => {
     const teams = Object.entries(teamsMap)
       .sort(([a], [b]) => Number(a) - Number(b))
       .map(([dt_no, teamPlayers]) => {
-        const homeCount  = teamPlayers.filter((p) => p.team_side === "team_a").length;
-        const awayCount  = teamPlayers.filter((p) => p.team_side === "team_b").length;
+        const homeCount   = teamPlayers.filter((p) => p.team_side === "team_a").length;
+        const awayCount   = teamPlayers.filter((p) => p.team_side === "team_b").length;
         const totalSalary = teamPlayers.reduce((sum, p) => sum + (p.salary || 0), 0);
 
-        /* captain/VC only for captain-based games */
         const captain      = isCaptainGame
           ? teamPlayers.find((p) => p.cap === "C")?.original_name  || null
           : null;
@@ -1244,13 +1294,13 @@ export const getMyTeams = async (req, res) => {
           : null;
 
         return {
-          team_no:       Number(dt_no),
+          team_no:      Number(dt_no),
           captain,
           vice_captain,
-          home_players:  homeCount,
-          away_players:  awayCount,
-          total_salary:  isSalaryGame ? Number(totalSalary.toFixed(2)) : null,
-          players:       teamPlayers,
+          home_players: homeCount,
+          away_players: awayCount,
+          total_salary: isSalaryGame ? Number(totalSalary.toFixed(2)) : null,
+          players:      teamPlayers,
         };
       });
 
@@ -1267,7 +1317,6 @@ export const getMyTeams = async (req, res) => {
     const mandateYes  = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
     const mandateNo   = uniqueByName(mandateNoPlayers);
 
-    /* ── Captaincy preview — only for captain-based games ── */
     const isCVCMode          = isCaptainGame && allPlayers.some((p) => p.captain_mode === "CVC");
     const captainPlayers     = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "C"))   : [];
     const viceCaptainPlayers = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "VC"))  : [];
@@ -1281,6 +1330,7 @@ export const getMyTeams = async (req, res) => {
 
     const preview = {
       game:              detectedGame,
+      sport:             detectedSport,  // ✅
       substitutes_count: substitutes.length,
       mandate_yes_count: mandateYes.length,
       mandate_no_count:  mandateNo.length,
@@ -1312,7 +1362,6 @@ export const getMyTeams = async (req, res) => {
         salary:    p.salary,
       })),
 
-      /* captain fields — only for sorare/football */
       ...(isCaptainGame ? {
         captaincy_count: captaincyPool.length,
         captaincy_mode:  isCVCMode ? "CVC" : "C & VC",
@@ -1332,7 +1381,6 @@ export const getMyTeams = async (req, res) => {
           side: p.team_side, team_name: p.team_name,
         })) : [],
       } : {
-        /* salary-based games (fanduel/draftkings) */
         captaincy_count: 0,
         captaincy_mode:  "NONE",
         captains:        [],
@@ -1345,6 +1393,7 @@ export const getMyTeams = async (req, res) => {
       success:     true,
       match_id:    Number(matchId),
       game:        detectedGame,
+      sport:       detectedSport,  // ✅
       home_team:   match.hometeamname,
       away_team:   match.awayteamname,
       total_teams: teams.length,
