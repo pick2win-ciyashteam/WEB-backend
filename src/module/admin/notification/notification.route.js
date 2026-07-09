@@ -14,4 +14,4 @@ router.post("/send-to-all",   adminAuth(["super_admin"]), sendToAll);
 router.post("/send-to-token", adminAuth(["super_admin"]), sendToToken);
 
 
-export default router;  
+export default router;    

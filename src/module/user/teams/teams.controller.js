@@ -4,7 +4,7 @@ import axios from "axios";
 import { sendNoreplyMail, uctTeamsGeneratedEmailHtml } from "../../../utils/mailer.js";
 import { getUCTEndpoint, UCT_ENDPOINTS } from "../../../utils/uctApi.js";
 import { logUserActivity } from "../../../utils/activity.logger.js";
-
+   
 
 /* ================= GENERATE TEAMS ================= */
 

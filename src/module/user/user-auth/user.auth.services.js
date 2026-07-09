@@ -373,7 +373,7 @@ export const verifyEmailOtpService = async ({ email, otp }) => {
    RESEND OTP
 ══════════════════════════════════════════ */
 
-export const resendOtpService = async ({ mobile, email, type }) => {
+export const resendOtpService = async ({ mobile, email, type = "both" }) => {
   let session = null;
 
   if (mobile) {
@@ -396,50 +396,61 @@ export const resendOtpService = async ({ mobile, email, type }) => {
   if (!session)                                  throw new Error("Session not found. Please signup again.");
   if (new Date(session.expires_at) < new Date()) throw new Error("Session expired. Please signup again.");
 
-  const newOtp    = crypto.randomInt(100000, 999999).toString();
-  const newExpiry = new Date(Date.now() + 5 * 60 * 1000);
+  const newMobileOtp = crypto.randomInt(100000, 999999).toString();
+  const newEmailOtp  = crypto.randomInt(100000, 999999).toString();
+  const newExpiry    = new Date(Date.now() + 5 * 60 * 1000);
 
-  if (type === "mobile") {
-    if (session.mobile_verified === 1)
-      throw new Error("Mobile already verified. No need to resend.");
+  // Send to mobile
+  if (type === "mobile" || type === "both") {
+    if (session.mobile_verified !== 1) {
+      /* ── 1. DB update ── */
+      await db.execute(
+        `UPDATE signup_sessions SET mobile_otp = ?, mobile_otp_expiry = ? WHERE id = ?`,
+        [newMobileOtp, newExpiry, session.id]
+      );
 
-    /* ── 1. DB update ── */
-    await db.execute(
-      `UPDATE signup_sessions SET mobile_otp = ?, mobile_otp_expiry = ? WHERE id = ?`,
-      [newOtp, newExpiry, session.id]
-    );
+      /* ── 2. Send SMS ── */
+      console.log(
+        `⚠️ SMS skipped for testing. Mobile OTP: ${newMobileOtp}`
+      );
+    }
+  }
 
-    /* ── 2. Send SMS ── */
-    await sendSms(
-      session.mobile,
-      `Your Pick2Win OTP is ${newOtp}. Valid for 5 minutes.`
-    );
+  // Send to email
+  if (type === "email" || type === "both") {
+    if (session.email_verified !== 1) {
+      /* ── 1. DB update ── */
+      await db.execute(
+        `UPDATE signup_sessions SET email_otp = ?, email_otp_expiry = ? WHERE id = ?`,
+        [newEmailOtp, newExpiry, session.id]
+      );
 
-  } else if (type === "email") {
-    if (session.email_verified === 1)
-      throw new Error("Email already verified. No need to resend.");
+      /* ── 2. Send Email ── */
+      await sendNoreplyMail({
+        to:      session.email,
+        subject: "Verify Your Email Address · PICK2WIN OTP",
+        html:    otpEmailHtml(newEmailOtp, session.fullname, 5, new Date()),
+      });
+    }
+  }
 
-    /* ── 1. DB update ── */
-    await db.execute(
-      `UPDATE signup_sessions SET email_otp = ?, email_otp_expiry = ? WHERE id = ?`,
-      [newOtp, newExpiry, session.id]
-    );
-
-    /* ── 2. Send Email ── */
-    await sendNoreplyMail({
-      to:      session.email,
-      subject: "Verify Your Email Address · PICK2WIN OTP",
-      html:    otpEmailHtml(newOtp, session.fullname, 5, new Date()),
-    });
-
-  } else {
-    throw new Error("type must be 'mobile' or 'email'");
+  if (type === "both") {
+    return {
+      success: true,
+      message: "OTP resent to both mobile and email",
+      ...(process.env.NODE_ENV !== "production" && { 
+        mobileOtp: newMobileOtp,
+        emailOtp: newEmailOtp 
+      }),
+    };
   }
 
   return {
     success: true,
     message: `OTP resent to your ${type}`,
-    ...(process.env.NODE_ENV !== "production" && { otp: newOtp }),
+    ...(process.env.NODE_ENV !== "production" && { 
+      otp: type === "mobile" ? newMobileOtp : newEmailOtp 
+    }),
   };
 };
 
@@ -494,7 +505,7 @@ export const loginService = async ({ email, password }) => {
     [email.trim().toLowerCase()]
   );
 
-  if (!user) throw new Error("Invalid email or password");
+  if (!user) throw new Error("User not found. Please signup");
 
   if (user.account_status === "deleted")
     throw new Error("This account has been deleted. Contact support.");
@@ -505,7 +516,7 @@ export const loginService = async ({ email, password }) => {
   if (user.email_verify  !== 1) throw new Error("Please verify your email first.");
 
   const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) throw new Error("Invalid email or password");
+  if (!isMatch) throw new Error("Invalid password or wrong password. Please try again.");
 
   await db.execute(`UPDATE users SET updated_at = NOW() WHERE id = ?`, [user.id]);
 
