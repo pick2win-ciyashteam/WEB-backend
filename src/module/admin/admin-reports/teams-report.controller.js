@@ -29,7 +29,8 @@ export const getTeamsGenerationReport = async (req, res) => {
     );
 
     /* ════════════════════════════════
-       2. TEAMS BY GAME TYPE (zero-filled — always list all 4 game types)
+       2. TEAMS BY GAME TYPE (zero-filled — always list sorare/draftkings/fanduel;
+          'football' is the default/legacy label, not a real selectable game)
     ════════════════════════════════ */
     const [gameStatsRows] = await db.execute(
       `SELECT
@@ -43,11 +44,12 @@ export const getTeamsGenerationReport = async (req, res) => {
       [days]
     );
 
-    const ALL_GAME_TYPES = ["football", "fanduel", "draftkings", "sorare"];
+    const ALL_GAME_TYPES = ["fanduel", "draftkings", "sorare"];
     const gameStatsMap = new Map(
       ALL_GAME_TYPES.map((g) => [g, { game: g, generations: 0, users: 0, matches: 0 }])
     );
     for (const g of gameStatsRows) {
+      if (g.game === "football") continue;
       gameStatsMap.set(g.game, {
         game:        g.game,
         generations: Number(g.generations),

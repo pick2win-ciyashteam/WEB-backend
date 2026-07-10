@@ -771,11 +771,13 @@ export const getUctOverview = async (req, res) => {
        GROUP BY COALESCE(game, 'football')`
     );
 
-    const ALL_GAME_TYPES = ["football", "fanduel", "draftkings", "sorare"];
+    /* football = default/legacy label, not a real selectable game — exclude from this breakdown */
+    const ALL_GAME_TYPES = ["fanduel", "draftkings", "sorare"];
     const gameBreakdownMap = new Map(
       ALL_GAME_TYPES.map((g) => [g, { game: g, total_ucts: 0, unique_users: 0, teams_generated: 0 }])
     );
     for (const g of gameBreakdownRows) {
+      if (g.game === "football") continue;
       gameBreakdownMap.set(g.game, {
         game:            g.game,
         total_ucts:      Number(g.total_ucts),
@@ -1101,11 +1103,38 @@ export const getUctActivityList = async (req, res) => {
       `SELECT COUNT(*) AS total FROM match_generation_log`
     );
 
+    /* ── By-game breakdown for the selected period, zero-filled —
+       'football' is the default/legacy label, not a real selectable game ── */
+    const [byGameRows] = await db.execute(
+      `SELECT
+         COALESCE(game, 'football')    AS game,
+         COUNT(*)                      AS ucts,
+         COALESCE(SUM(total_teams), 0) AS teams_generated
+       FROM match_generation_log
+       WHERE DATE(created_at) BETWEEN ? AND ?
+       GROUP BY COALESCE(game, 'football')`,
+      [rangeStart, rangeEnd]
+    );
+    const byGameMap = new Map(
+      ["sorare", "draftkings", "fanduel"].map((g) => [g, { game: g, ucts: 0, teams_generated: 0 }])
+    );
+    for (const g of byGameRows) {
+      if (g.game === "football") continue;
+      byGameMap.set(g.game, {
+        game:            g.game,
+        ucts:            Number(g.ucts),
+        teams_generated: Number(g.teams_generated),
+      });
+    }
+    const byGame = [...byGameMap.values()].sort((a, b) => b.ucts - a.ucts);
+
     return res.status(200).json({
       success: true,
 
       period,
       range: { start_date: rangeStart, end_date: rangeEnd },
+
+      by_game: byGame,
 
       summary: {
         total_ucts:        totalUcts,

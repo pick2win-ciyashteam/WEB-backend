@@ -588,46 +588,9 @@ export const getMyActivityLogs = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+  
 
-
-
-// src/module/user/notification/notification.controller.js
-
-// export const registerDevice = async (req, res) => {
-//   try {
-//     const {
-//       registration_token,
-//       registeration_token,
-//       fcm_token,
-//       token,
-//       device_type,
-//     } = req.body;
-//     const userId = req.user.id;
-//     const deviceToken = registration_token || fcm_token || token || registeration_token;
-
-//     if (!deviceToken) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "registration_token is required",
-//       });
-//     }
-
-//     await db.execute(
-//       `INSERT INTO user_devices (user_id, fcm_token, device_type)
-//        VALUES (?, ?, ?)
-//        ON DUPLICATE KEY UPDATE
-//          user_id     = VALUES(user_id),
-//          device_type = VALUES(device_type),
-//          updated_at  = NOW()`,
-//       [userId, deviceToken, device_type || null]
-//     );
-
-//     return res.status(200).json({ success: true, message: "Device registered successfully" });
-//   } catch (err) {
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// };
-
+ 
 export const registerDevice = async (req, res) => {
   try {
     const { registration_token, device_type } = req.body;
