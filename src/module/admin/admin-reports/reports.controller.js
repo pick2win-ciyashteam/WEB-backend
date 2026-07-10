@@ -138,7 +138,8 @@ export const getDashboardReport = async (req, res) => {
     const totalCountryUsers = byCountry.reduce((s, r) => s + Number(r.users), 0);
 
     /* ════════════════════════════════
-       RECENT ACTIVITY (live event stream)
+       RECENT ACTIVITY (latest events overall — not restricted to the
+       last 24h, so the feed isn't empty during quiet periods)
     ════════════════════════════════ */
     const [purchases] = await db.execute(
       `SELECT
@@ -148,11 +149,10 @@ export const getDashboardReport = async (req, res) => {
          u.country,
          us.plan_name,
          us.coins
-        
+
        FROM user_subscriptions us
        JOIN users u ON u.id = us.user_id
        WHERE us.amount > 0
-         AND us.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
        ORDER BY us.created_at DESC
        LIMIT 10`
     );
@@ -169,7 +169,6 @@ export const getDashboardReport = async (req, res) => {
        FROM match_generation_log mgl
        JOIN users   u ON u.id = mgl.user_id
        JOIN matches m ON m.id = mgl.match_id
-       WHERE mgl.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
        ORDER BY mgl.created_at DESC
        LIMIT 10`
     );
@@ -184,7 +183,6 @@ export const getDashboardReport = async (req, res) => {
          NULL AS coins,
          NULL AS match_label
        FROM users
-       WHERE created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
        ORDER BY created_at DESC
        LIMIT 10`
     );
@@ -200,7 +198,6 @@ export const getDashboardReport = async (req, res) => {
          NULL AS match_label
        FROM users
        WHERE CAST(account_status AS CHAR) = 'deleted'
-         AND updated_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
        ORDER BY updated_at DESC
        LIMIT 5`
     );
@@ -217,7 +214,6 @@ export const getDashboardReport = async (req, res) => {
        FROM match_generation_log mgl
        JOIN users u ON u.id = mgl.user_id
        WHERE mgl.status     = 'cancelled'
-         AND mgl.created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
        ORDER BY mgl.created_at DESC
        LIMIT 5`
     );
@@ -233,7 +229,6 @@ export const getDashboardReport = async (req, res) => {
          NULL AS match_label
        FROM users
        WHERE CAST(account_status AS CHAR) = 'banned'
-         AND updated_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
        ORDER BY updated_at DESC
        LIMIT 5`
     );
@@ -727,7 +722,7 @@ export const getUctOverview = async (req, res) => {
     const [[kpi]] = await db.execute(
       `SELECT
          COUNT(DISTINCT mgl.id)                                                  AS ucts_today,
-         COUNT(DISTINCT mgl.id) * 20                                             AS teams_generated,
+         COALESCE(SUM(mgl.total_teams), 0)                                       AS teams_generated,
          SUM(CASE WHEN mgl.status = 'failed' THEN 1 ELSE 0 END)                 AS failed_refunded
        FROM match_generation_log mgl
        WHERE DATE(mgl.created_at) = CURDATE()`
@@ -749,7 +744,8 @@ export const getUctOverview = async (req, res) => {
          m.awayteamname,
          m.status,
          s.name                    AS series_name,
-         COUNT(DISTINCT mgl.id)    AS ucts_used
+         COUNT(DISTINCT mgl.id)    AS ucts_used,
+         COALESCE(SUM(mgl.total_teams), 0) AS teams_generated
        FROM matches m
        LEFT JOIN series s                ON s.seriesid    = m.series_id
        LEFT JOIN match_generation_log mgl ON mgl.match_id  = m.id
@@ -762,18 +758,32 @@ export const getUctOverview = async (req, res) => {
 
     const totalUctsToday = todayMatches.reduce((s, m) => s + Number(m.ucts_used), 0);
 
-    /* ── Game-wise breakdown (football / fanduel / draftkings / sorare) ── */
-    const [gameBreakdown] = await db.execute(
+    /* ── Game-wise breakdown (football / fanduel / draftkings / sorare) ──
+       Always list all 4 game types, zero-filled, even with no activity today ── */
+    const [gameBreakdownRows] = await db.execute(
       `SELECT
          COALESCE(game, 'football')    AS game,
          COUNT(DISTINCT id)            AS total_ucts,
          COUNT(DISTINCT user_id)       AS unique_users,
-         COUNT(DISTINCT id) * 20       AS teams_generated
+         COALESCE(SUM(total_teams), 0) AS teams_generated
        FROM match_generation_log
        WHERE DATE(created_at) = CURDATE()
-       GROUP BY game
-       ORDER BY total_ucts DESC`
+       GROUP BY COALESCE(game, 'football')`
     );
+
+    const ALL_GAME_TYPES = ["football", "fanduel", "draftkings", "sorare"];
+    const gameBreakdownMap = new Map(
+      ALL_GAME_TYPES.map((g) => [g, { game: g, total_ucts: 0, unique_users: 0, teams_generated: 0 }])
+    );
+    for (const g of gameBreakdownRows) {
+      gameBreakdownMap.set(g.game, {
+        game:            g.game,
+        total_ucts:      Number(g.total_ucts),
+        unique_users:    Number(g.unique_users),
+        teams_generated: Number(g.teams_generated),
+      });
+    }
+    const gameBreakdown = [...gameBreakdownMap.values()].sort((a, b) => b.total_ucts - a.total_ucts);
 
     /* ── Coins reconciliation ── */
     const [[purchased]] = await db.execute(
@@ -827,7 +837,7 @@ export const getUctOverview = async (req, res) => {
           series:          m.series_name,
           status:          m.status,
           ucts_used:       Number(m.ucts_used),
-          teams_generated: Number(m.ucts_used) * 20,
+          teams_generated: Number(m.teams_generated),
           share_pct:       totalUctsToday > 0
             ? Number(((Number(m.ucts_used) / totalUctsToday) * 100).toFixed(1))
             : 0,
@@ -879,7 +889,8 @@ export const getMatchDrilldown = async (req, res) => {
       `SELECT
          m.id, m.hometeamname, m.awayteamname, m.start_time, m.status,
          s.name AS series_name,
-         COUNT(DISTINCT mgl.id) AS ucts_used
+         COUNT(DISTINCT mgl.id) AS ucts_used,
+         COALESCE(SUM(mgl.total_teams), 0) AS teams_generated
        FROM matches m
        LEFT JOIN series s                ON s.seriesid   = m.series_id
        LEFT JOIN match_generation_log mgl ON mgl.match_id = m.id
@@ -962,7 +973,7 @@ export const getMatchDrilldown = async (req, res) => {
         start_time:  match.start_time,
         status:      match.status,
         ucts_used:   Number(match.ucts_used),
-        teams_generated: Number(match.ucts_used) * 20,
+        teams_generated: Number(match.teams_generated),
       },
 
       users_region_wise: byRegion.map((r) => ({
@@ -1027,20 +1038,39 @@ export const getUctActivityList = async (req, res) => {
     }
 
     /* ── Per-day breakdown table ── */
-    const [dailyStats] = await db.execute(
+    const [dailyStatsRows] = await db.execute(
       `SELECT
-         DATE(created_at)                                              AS day,
+         DATE_FORMAT(created_at, '%Y-%m-%d')                           AS day,
          COUNT(*)                                                      AS ucts,
-         COUNT(*) * 20                                                 AS teams_generated,
+         COALESCE(SUM(total_teams), 0)                                 AS teams_generated,
          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)           AS failed_refunded,
          SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END)          AS success_count,
          COUNT(*)                                                      AS total_count
        FROM match_generation_log
        WHERE DATE(created_at) BETWEEN ? AND ?
-       GROUP BY DATE(created_at)
+       GROUP BY day
        ORDER BY day ASC`,
       [rangeStart, rangeEnd]
     );
+
+    /* ── Zero-fill every date in the range, not just dates with activity ── */
+    const buildDateList = (startStr, endStr, maxDays = 400) => {
+      const dates = [];
+      const cursor  = new Date(`${startStr}T00:00:00Z`);
+      const endDate = new Date(`${endStr}T00:00:00Z`);
+      while (cursor <= endDate && dates.length <= maxDays) {
+        dates.push(cursor.toISOString().slice(0, 10));
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+      return dates;
+    };
+
+    const dailyStatsMap = new Map(dailyStatsRows.map((d) => [d.day, d]));
+    const dailyStats = buildDateList(rangeStart, rangeEnd).map((day) => (
+      dailyStatsMap.get(day) || {
+        day, ucts: 0, teams_generated: 0, failed_refunded: 0, success_count: 0, total_count: 0,
+      }
+    ));
 
     const totalUcts        = dailyStats.reduce((s, d) => s + Number(d.ucts), 0);
     const totalTeams       = dailyStats.reduce((s, d) => s + Number(d.teams_generated), 0);
@@ -1048,7 +1078,9 @@ export const getUctActivityList = async (req, res) => {
     const totalSuccess     = dailyStats.reduce((s, d) => s + Number(d.success_count), 0);
     const daysCount        = dailyStats.length || 1;
 
-    /* ── Recent generations feed (paginated) ── */
+    /* ── Recent generations feed (paginated) ──
+       Always the latest activity overall — NOT scoped to the selected
+       period, so the feed isn't empty just because "today" has no activity yet ── */
     const [generations] = await db.execute(
       `SELECT
          mgl.id,
@@ -1061,17 +1093,12 @@ export const getUctActivityList = async (req, res) => {
        FROM match_generation_log mgl
        JOIN users   u ON u.id = mgl.user_id
        JOIN matches m ON m.id = mgl.match_id
-       WHERE DATE(mgl.created_at) BETWEEN ? AND ?
        ORDER BY mgl.created_at DESC
-       LIMIT ${limitNum} OFFSET ${offsetNum}`,
-      [rangeStart, rangeEnd]
+       LIMIT ${limitNum} OFFSET ${offsetNum}`
     );
 
     const [[{ total: genTotal }]] = await db.execute(
-      `SELECT COUNT(*) AS total
-       FROM match_generation_log
-       WHERE DATE(created_at) BETWEEN ? AND ?`,
-      [rangeStart, rangeEnd]
+      `SELECT COUNT(*) AS total FROM match_generation_log`
     );
 
     return res.status(200).json({
@@ -1207,6 +1234,15 @@ export const getVotesSurveySummary = async (req, res) => {
       ],
     };
 
+    /* ── Helper — zero-fill single/multi-select option counts against a known label map ── */
+    const zeroFillOptions = (rows, labelMap) => {
+      const map = new Map(Object.keys(labelMap).map((k) => [k, 0]));
+      for (const r of rows) map.set(r.val, (map.get(r.val) || 0) + Number(r.cnt));
+      return [...map.entries()]
+        .map(([key, count]) => ({ key, label: labelMap[key] || key, count, pct: pct(count) }))
+        .sort((a, b) => b.count - a.count);
+    };
+
     /* ── Q2 — most-requested improvements (multi-select) ── */
     const q2ChangeLabels = {
       more_leagues:      "More leagues / series",
@@ -1219,30 +1255,21 @@ export const getVotesSurveySummary = async (req, res) => {
     const q2Rows = await countMultiSelect("q2");
     const q2 = {
       label: "Most-requested improvements",
-      options: q2Rows.map((r) => ({
-        key:   r.val,
-        label: q2ChangeLabels[r.val] || r.val,
-        count: Number(r.cnt),
-        pct:   pct(Number(r.cnt)),
-      })),
+      options: zeroFillOptions(q2Rows, q2ChangeLabels),
     };
 
     /* ── Q3 — how often they use PICK2WIN ── */
     const q3Labels = {
       every_matchday: "Every matchday",
       few_times_week: "A few times a week",
+      weekly:         "Weekly",
       very_rare:      "Very rare",
       only_fifa_wc:   "Only FIFA WC",
     };
     const q3Rows = await countSingleSelect("q3");
     const q3 = {
       label: "How often they use PICK2WIN",
-      options: q3Rows.map((r) => ({
-        key:   r.val,
-        label: q3Labels[r.val] || r.val,
-        count: Number(r.cnt),
-        pct:   pct(Number(r.cnt)),
-      })),
+      options: zeroFillOptions(q3Rows, q3Labels),
     };
 
     /* ── Q4 — likely to recommend ── */
@@ -1250,12 +1277,7 @@ export const getVotesSurveySummary = async (req, res) => {
     const q4Rows = await countSingleSelect("q4");
     const q4 = {
       label: "Likely to recommend",
-      options: q4Rows.map((r) => ({
-        key:   r.val,
-        label: q4Labels[r.val] || r.val,
-        count: Number(r.cnt),
-        pct:   pct(Number(r.cnt)),
-      })),
+      options: zeroFillOptions(q4Rows, q4Labels),
     };
 
     /* ── Q5 — teams needed per match ── */
@@ -1298,12 +1320,7 @@ export const getVotesSurveySummary = async (req, res) => {
     const q7Rows = await countSingleSelect("q7");
     const q7 = {
       label: "Which new sport first",
-      options: q7Rows.map((r) => ({
-        key:   r.val,
-        label: q7Labels[r.val] || r.val,
-        count: Number(r.cnt),
-        pct:   pct(Number(r.cnt)),
-      })),
+      options: zeroFillOptions(q7Rows, q7Labels),
     };
 
     /* ── Q8 — preferred pricing ── */
@@ -1316,12 +1333,7 @@ export const getVotesSurveySummary = async (req, res) => {
     const q8Rows = await countSingleSelect("q8");
     const q8 = {
       label: "Preferred pricing",
-      options: q8Rows.map((r) => ({
-        key:   r.val,
-        label: q8Labels[r.val] || r.val,
-        count: Number(r.cnt),
-        pct:   pct(Number(r.cnt)),
-      })),
+      options: zeroFillOptions(q8Rows, q8Labels),
     };
 
     /* ── Q9 — where they mostly play (device) ── */
@@ -1329,12 +1341,7 @@ export const getVotesSurveySummary = async (req, res) => {
     const q9Rows = await countSingleSelect("q9");
     const q9 = {
       label: "Where they mostly play",
-      options: q9Rows.map((r) => ({
-        key:   r.val,
-        label: q9Labels[r.val] || r.val,
-        count: Number(r.cnt),
-        pct:   pct(Number(r.cnt)),
-      })),
+      options: zeroFillOptions(q9Rows, q9Labels),
     };
 
     /* ── Q11 — UCT rating distribution (1-5 stars) ── */
@@ -1347,14 +1354,14 @@ export const getVotesSurveySummary = async (req, res) => {
        GROUP BY stars
        ORDER BY stars DESC`
     );
+    const q11StarsMap = new Map([1, 2, 3, 4, 5].map((s) => [s, 0]));
+    for (const r of q11Rows) q11StarsMap.set(Number(r.stars), Number(r.cnt));
     const q11 = {
       label: "UCT rating (1=poor, 5=excellent)",
       avg_rating: avgRating,
-      distribution: q11Rows.map((r) => ({
-        stars: Number(r.stars),
-        count: Number(r.cnt),
-        pct:   pct(Number(r.cnt)),
-      })),
+      distribution: [...q11StarsMap.entries()]
+        .map(([stars, count]) => ({ stars, count, pct: pct(count) }))
+        .sort((a, b) => b.stars - a.stars),
     };
 
     return res.status(200).json({
@@ -1489,8 +1496,8 @@ export const getDetailedFeedbackSummary = async (req, res) => {
     const [[kpi]] = await db.execute(
       `SELECT
          COUNT(*)                                                        AS total_submissions,
-         SUM(CASE WHEN status = 'New'        THEN 1 ELSE 0 END)         AS new_unreviewed,
-         SUM(CASE WHEN importance = 'Stopping me using it' THEN 1 ELSE 0 END) AS blockers,
+         SUM(CASE WHEN status = 'New' OR status = '' OR status IS NULL THEN 1 ELSE 0 END) AS new_unreviewed,
+         SUM(CASE WHEN importance = 'stopping_me_from_using_pick2win' THEN 1 ELSE 0 END) AS blockers,
          SUM(CASE WHEN status = 'Resolved'   THEN 1 ELSE 0 END)         AS resolved
        FROM feedbacks
        WHERE user_id IS NOT NULL`
@@ -1499,53 +1506,56 @@ export const getDetailedFeedbackSummary = async (req, res) => {
     const totalSubmissions = Number(kpi.total_submissions);
     const pct = (count) => totalSubmissions > 0 ? Number(((count / totalSubmissions) * 100).toFixed(1)) : 0;
 
-    /* ── By category ── */
+    /* ── By category (zero-filled — always list all known categories) ── */
     const [categoryRows] = await db.execute(
       `SELECT type AS category, COUNT(*) AS cnt
        FROM feedbacks
        WHERE user_id IS NOT NULL
-       GROUP BY type
-       ORDER BY cnt DESC`
+       GROUP BY type`
     );
-    const byCategory = categoryRows.map((r) => ({
-      category: r.category,
-      count:    Number(r.cnt),
-      pct:      pct(Number(r.cnt)),
-    }));
+    const ALL_FEEDBACK_CATEGORIES = [
+      "bug_report", "uct_tuning_request", "feature_suggestion",
+      "league_coverage_request", "other_general",
+    ];
+    const categoryMap = new Map(ALL_FEEDBACK_CATEGORIES.map((c) => [c, 0]));
+    for (const r of categoryRows) categoryMap.set(r.category, Number(r.cnt));
+    const byCategory = [...categoryMap.entries()]
+      .map(([category, count]) => ({ category, count, pct: pct(count) }))
+      .sort((a, b) => b.count - a.count);
 
-    /* ── By importance ── */
+    /* ── By importance (zero-filled) ── */
     const [importanceRows] = await db.execute(
       `SELECT importance, COUNT(*) AS cnt
        FROM feedbacks
        WHERE user_id IS NOT NULL
-       GROUP BY importance
-       ORDER BY
-         CASE importance
-           WHEN 'Stopping me using it' THEN 1
-           WHEN 'Would really help'    THEN 2
-           WHEN 'Nice to have'         THEN 3
-           ELSE 4
-         END`
+       GROUP BY importance`
     );
-    const byImportance = importanceRows.map((r) => ({
-      importance: r.importance,
-      count:      Number(r.cnt),
-      pct:        pct(Number(r.cnt)),
-    }));
+    const ALL_FEEDBACK_IMPORTANCE = [
+      "stopping_me_from_using_pick2win", "would_really_help_my_workflow", "nice_to_have",
+    ];
+    const importanceMap = new Map(ALL_FEEDBACK_IMPORTANCE.map((i) => [i, 0]));
+    for (const r of importanceRows) {
+      if (r.importance) importanceMap.set(r.importance, Number(r.cnt));
+    }
+    const byImportance = [...importanceMap.entries()]
+      .map(([importance, count]) => ({ importance, count, pct: pct(count) }))
+      .sort((a, b) => b.count - a.count);
 
-    /* ── Where in PICK2WIN (location) ── */
+    /* ── Where in PICK2WIN (location) — zero-filled ── */
     const [locationRows] = await db.execute(
       `SELECT location, COUNT(*) AS cnt
        FROM feedbacks
        WHERE user_id IS NOT NULL
-       GROUP BY location
-       ORDER BY cnt DESC`
+       GROUP BY location`
     );
-    const byLocation = locationRows.map((r) => ({
-      location: r.location,
-      count:    Number(r.cnt),
-      pct:      pct(Number(r.cnt)),
-    }));
+    const ALL_FEEDBACK_LOCATIONS = ["anywhere_general", "uct_configuration_step", "run_uct"];
+    const locationMap = new Map(ALL_FEEDBACK_LOCATIONS.map((l) => [l, 0]));
+    for (const r of locationRows) {
+      if (r.location) locationMap.set(r.location, Number(r.cnt));
+    }
+    const byLocation = [...locationMap.entries()]
+      .map(([location, count]) => ({ location, count, pct: pct(count) }))
+      .sort((a, b) => b.count - a.count);
 
     return res.status(200).json({
       success: true,
@@ -1751,19 +1761,20 @@ export const getCoinPackPurchases = async (req, res) => {
       periodLabel = `FY ${targetYear}-${String(targetYear + 1).slice(2)}`;
     }
  
-    /* ── Per-pack purchase counts for selected period ── */
+    /* ── Per-pack purchase counts for selected period ──
+       Always list every active pack, zero-filled, even with no purchases in period ── */
     const [packs] = await db.execute(
       `SELECT
-         us.plan_id,
-         us.plan_name,
-         MAX(sp.coins) AS coins,
-         COUNT(*) AS users_purchased
-       FROM user_subscriptions us
-       LEFT JOIN subscription_plans sp ON sp.id = us.plan_id
-       WHERE us.amount > 0
-         AND ${dateCondition}
-       GROUP BY us.plan_id, us.plan_name
-       ORDER BY MAX(sp.coins) ASC`,
+         sp.id            AS plan_id,
+         sp.name          AS plan_name,
+         sp.coins         AS coins,
+         COUNT(us.id)     AS users_purchased
+       FROM subscription_plans sp
+       LEFT JOIN user_subscriptions us
+         ON us.plan_id = sp.id AND us.amount > 0 AND ${dateCondition}
+       WHERE sp.is_active = 1
+       GROUP BY sp.id, sp.name, sp.coins
+       ORDER BY sp.coins ASC`,
       params
     );
  
@@ -2806,6 +2817,7 @@ const getFyRange = (year) => ({
   start: `${year}-04-01`,
   end:   `${year + 1}-04-01`,
   fyStartYear: year,
+  fyLabel: `FY ${year}-${String(year + 1).slice(2)}`,
 });
 
 const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -3437,16 +3449,22 @@ export const getPaymentsSummary = async (req, res) => {
       periodLabel = fyLabel;
     }
 
-    /* ── By-status breakdown ── */
+    /* ── By-status breakdown (failed split into declined vs charged) ── */
     const [statusRows] = await db.execute(
       `SELECT
-         us.status,
+         CASE
+           WHEN us.status = 'failed' AND us.payment_reference IS NOT NULL AND us.payment_reference != ''
+             THEN 'failed_charged'
+           WHEN us.status = 'failed'
+             THEN 'failed_declined'
+           ELSE us.status
+         END                                                                     AS mapped_status,
          COUNT(*)                                                                 AS count,
          COALESCE(SUM(CASE WHEN us.status = 'active'   THEN us.amount ELSE 0 END), 0) AS success_usd,
          COALESCE(SUM(CASE WHEN us.status = 'expired'  THEN us.amount ELSE 0 END), 0) AS refunded_usd
        FROM user_subscriptions us
        WHERE ${dateCondition}
-       GROUP BY us.status`,
+       GROUP BY mapped_status`,
       dateParams
     );
 
@@ -3459,14 +3477,16 @@ export const getPaymentsSummary = async (req, res) => {
     let pendingCount    = 0;
 
     for (const r of statusRows) {
-      if (r.status === "active") {
+      if (r.mapped_status === "active") {
         successCount = Number(r.count);
         successUsd   = Number(r.success_usd);
-      } else if (r.status === "failed") {
+      } else if (r.mapped_status === "failed_declined") {
         failedDeclined = Number(r.count);
-      } else if (r.status === "expired") {
+      } else if (r.mapped_status === "failed_charged") {
+        failedCharged = Number(r.count);
+      } else if (r.mapped_status === "expired") {
         refundedCount = Number(r.count);
-      } else if (r.status === "pending") {
+      } else if (r.mapped_status === "pending") {
         pendingCount = Number(r.count);
       }
     }
@@ -3653,14 +3673,14 @@ export const getTransactionLog = async (req, res) => {
       params
     );
 
-    const txStatusLabel = (us) => {
-      if (us.status === "active")  return "Success";
-      if (us.status === "expired") return "Refunded";
-      if (us.status === "pending") return "Pending";
-      if (us.status === "failed") {
-        return us.payment_reference ? "Failed · charged" : "Failed · declined";
+    const txStatusLabel = (row) => {
+      if (row.status === "success")  return "Success";
+      if (row.status === "refunded") return "Refunded";
+      if (row.status === "pending")  return "Pending";
+      if (row.status === "failed") {
+        return row.reference_id ? "Failed · charged" : "Failed · declined";
       }
-      return us.status;
+      return row.status;
     };
 
     return res.status(200).json({
@@ -3693,9 +3713,9 @@ export const getTransactionLog = async (req, res) => {
         amount_usd:         Number(r.amount).toFixed(2),
         amount_inr:         (Number(r.amount) * usdToInr).toFixed(2),
         status:             txStatusLabel(r),
-        payment_reference:  r.payment_reference,
+        payment_reference:  r.reference_id,
         date:               r.created_at,
-        can_refund:         r.status === "failed" && r.payment_reference,
+        can_refund:         r.status === "failed" && Boolean(r.reference_id),
       })),
     });
 

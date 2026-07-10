@@ -212,6 +212,12 @@ export const signupService = async (data) => {
     );
   }
 
+  /* ── Password Strength Check ── */
+  const passwordCheck = validatePasswordStrength(password);
+  if (!passwordCheck.valid) {
+    throw new Error(passwordCheck.message);
+  }
+
   /* ── Hash Password ── */
   const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -787,6 +793,11 @@ export const resetPasswordService = async (email, otp, newPassword) => {
   if (!user.loginotp)                                    throw new Error("OTP expired. Request again.");
   if (String(user.loginotp) !== String(otp))             throw new Error("Invalid OTP");
   if (new Date(user.loginotpexpires) < new Date())       throw new Error("OTP expired. Request again.");
+
+  const passwordCheck = validatePasswordStrength(newPassword);
+  if (!passwordCheck.valid) {
+    throw new Error(passwordCheck.message);
+  }
 
   const hashed = await bcrypt.hash(newPassword, 10);
 

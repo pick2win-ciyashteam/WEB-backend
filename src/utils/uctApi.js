@@ -44,3 +44,10 @@ export const getUCTEndpoint = (game, sport = "football") => {
   // fallback to game only
   return UCT_ENDPOINTS[g] || UCT_ENDPOINTS["football"];
 };
+
+export const getValidSportsAndGames = () => {
+  const endpointKeys = Object.keys(UCT_ENDPOINTS).filter((key) => key.includes("-"));
+  const sports = [...new Set(endpointKeys.map((key) => key.split("-")[0]))];
+  const games  = [...new Set(endpointKeys.map((key) => key.split("-")[1]))];
+  return { sports, games };
+};

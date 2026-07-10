@@ -3,6 +3,11 @@ import db from "../../../config/db.js";
 /* ═══════════════════════════════════════════════════
    TEAMS GENERATION REPORT - Comprehensive Analytics
    GET /admin/reports/teams-analytics
+
+   NOTE: match_generation_log has no coins_spent column —
+   every successful generation always costs exactly 1 coin
+   (see teams.controller.js generateTeams: coins_used: 1),
+   so "coins spent" for a set of rows is simply COUNT(*).
 ═══════════════════════════════════════════════════ */
 export const getTeamsGenerationReport = async (req, res) => {
   try {
@@ -17,29 +22,40 @@ export const getTeamsGenerationReport = async (req, res) => {
          COUNT(DISTINCT id)      AS total_generations,
          COUNT(DISTINCT user_id) AS unique_users,
          COUNT(DISTINCT match_id) AS matches_used,
-         COUNT(DISTINCT game)    AS game_types,
-         AVG(coins_spent)        AS avg_coins_per_generation
+         COUNT(DISTINCT COALESCE(game, 'football')) AS game_types
        FROM match_generation_log
        WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
       [days]
     );
 
     /* ════════════════════════════════
-       2. TEAMS BY GAME TYPE
+       2. TEAMS BY GAME TYPE (zero-filled — always list all 4 game types)
     ════════════════════════════════ */
-    const [gameStats] = await db.execute(
+    const [gameStatsRows] = await db.execute(
       `SELECT
-         game,
+         COALESCE(game, 'football') AS game,
          COUNT(*)                AS generations,
          COUNT(DISTINCT user_id) AS users,
-         COUNT(DISTINCT match_id) AS matches,
-         AVG(coins_spent)        AS avg_coins
+         COUNT(DISTINCT match_id) AS matches
        FROM match_generation_log
        WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-       GROUP BY game
-       ORDER BY generations DESC`,
+       GROUP BY COALESCE(game, 'football')`,
       [days]
     );
+
+    const ALL_GAME_TYPES = ["football", "fanduel", "draftkings", "sorare"];
+    const gameStatsMap = new Map(
+      ALL_GAME_TYPES.map((g) => [g, { game: g, generations: 0, users: 0, matches: 0 }])
+    );
+    for (const g of gameStatsRows) {
+      gameStatsMap.set(g.game, {
+        game:        g.game,
+        generations: Number(g.generations),
+        users:       Number(g.users),
+        matches:     Number(g.matches),
+      });
+    }
+    const gameStats = [...gameStatsMap.values()].sort((a, b) => b.generations - a.generations);
 
     /* ════════════════════════════════
        3. TOP MATCHES BY TEAMS USAGE
@@ -52,9 +68,8 @@ export const getTeamsGenerationReport = async (req, res) => {
          m.start_time,
          COUNT(mgl.id)           AS total_teams_generated,
          COUNT(DISTINCT mgl.user_id) AS unique_users,
-         COUNT(DISTINCT mgl.game) AS game_types,
-         SUM(mgl.coins_spent)    AS total_coins_spent,
-         AVG(mgl.coins_spent)    AS avg_coins_per_team
+         COUNT(DISTINCT COALESCE(mgl.game, 'football')) AS game_types,
+         COUNT(mgl.id)            AS total_coins_spent
        FROM match_generation_log mgl
        JOIN matches m ON m.id = mgl.match_id
        WHERE mgl.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
@@ -74,9 +89,8 @@ export const getTeamsGenerationReport = async (req, res) => {
          u.country,
          COUNT(mgl.id)        AS teams_generated,
          COUNT(DISTINCT mgl.match_id) AS matches_played,
-         COUNT(DISTINCT mgl.game) AS games_used,
-         SUM(mgl.coins_spent) AS total_coins_spent,
-         AVG(mgl.coins_spent) AS avg_coins_per_team,
+         COUNT(DISTINCT COALESCE(mgl.game, 'football')) AS games_used,
+         COUNT(mgl.id)         AS total_coins_spent,
          MAX(mgl.created_at)  AS last_generation
        FROM match_generation_log mgl
        JOIN users u ON u.id = mgl.user_id
@@ -108,8 +122,7 @@ export const getTeamsGenerationReport = async (req, res) => {
       `SELECT
          DATE(created_at) AS date,
          COUNT(*)         AS generations,
-         COUNT(DISTINCT user_id) AS users,
-         SUM(coins_spent) AS coins_spent
+         COUNT(DISTINCT user_id) AS users
        FROM match_generation_log
        WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
        GROUP BY DATE(created_at)
@@ -119,17 +132,15 @@ export const getTeamsGenerationReport = async (req, res) => {
 
     /* ════════════════════════════════
        7. COINS DISTRIBUTION
+       (always exactly 1 coin per successful generation)
     ════════════════════════════════ */
-    const [[coinsStats]] = await db.execute(
-      `SELECT
-         MIN(coins_spent) AS min_coins,
-         MAX(coins_spent) AS max_coins,
-         AVG(coins_spent) AS avg_coins,
-         STDDEV_POP(coins_spent) AS std_dev_coins
-       FROM match_generation_log
-       WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
-      [days]
-    );
+    const totalGenerations = Number(overallStats.total_generations) || 0;
+    const coinsStats = {
+      min_coins: totalGenerations > 0 ? 1 : 0,
+      max_coins: totalGenerations > 0 ? 1 : 0,
+      avg_coins: totalGenerations > 0 ? 1 : 0,
+      std_dev_coins: 0,
+    };
 
     /* ════════════════════════════════
        8. COUNTRY DISTRIBUTION
@@ -139,7 +150,7 @@ export const getTeamsGenerationReport = async (req, res) => {
          u.country,
          COUNT(DISTINCT mgl.user_id) AS users,
          COUNT(mgl.id)               AS teams_generated,
-         SUM(mgl.coins_spent)        AS total_coins
+         COUNT(mgl.id)                AS total_coins
        FROM match_generation_log mgl
        JOIN users u ON u.id = mgl.user_id
        WHERE mgl.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
@@ -162,7 +173,7 @@ export const getTeamsGenerationReport = async (req, res) => {
         unique_users: Number(overallStats.unique_users) || 0,
         matches_used: Number(overallStats.matches_used) || 0,
         game_types: Number(overallStats.game_types) || 0,
-        avg_coins_per_gen: Number(overallStats.avg_coins_per_generation) || 0,
+        avg_coins_per_gen: totalGenerations > 0 ? 1 : 0,
       },
 
       status_summary: {
@@ -170,7 +181,7 @@ export const getTeamsGenerationReport = async (req, res) => {
         failed: Number(statusSummary.failed) || 0,
         cancelled: Number(statusSummary.cancelled) || 0,
         pending: Number(statusSummary.pending) || 0,
-        success_rate: statusSummary.successful > 0 
+        success_rate: statusSummary.successful > 0
           ? Number(((statusSummary.successful / (statusSummary.successful + statusSummary.failed)) * 100).toFixed(1))
           : 0,
       },
@@ -180,7 +191,7 @@ export const getTeamsGenerationReport = async (req, res) => {
         generations: Number(g.generations),
         users: Number(g.users),
         matches: Number(g.matches),
-        avg_coins: Number(g.avg_coins) || 0,
+        avg_coins: Number(g.generations) > 0 ? 1 : 0,
       })),
 
       top_matches: topMatches.map(m => ({
@@ -192,7 +203,7 @@ export const getTeamsGenerationReport = async (req, res) => {
         unique_users: Number(m.unique_users),
         game_types: Number(m.game_types),
         total_coins_spent: Number(m.total_coins_spent),
-        avg_coins_per_team: Number(m.avg_coins_per_team) || 0,
+        avg_coins_per_team: 1,
       })),
 
       top_users: topUsers.map(u => ({
@@ -203,15 +214,15 @@ export const getTeamsGenerationReport = async (req, res) => {
         matches_played: Number(u.matches_played),
         games_used: Number(u.games_used),
         total_coins_spent: Number(u.total_coins_spent),
-        avg_coins_per_team: Number(u.avg_coins_per_team) || 0,
+        avg_coins_per_team: 1,
         last_generation: u.last_generation,
       })),
 
       coins_distribution: {
-        min: Number(coinsStats.min_coins) || 0,
-        max: Number(coinsStats.max_coins) || 0,
-        avg: Number(coinsStats.avg_coins) || 0,
-        std_dev: Number(coinsStats.std_dev_coins) || 0,
+        min: coinsStats.min_coins,
+        max: coinsStats.max_coins,
+        avg: coinsStats.avg_coins,
+        std_dev: coinsStats.std_dev_coins,
       },
 
       country_distribution: countryDistribution.map(c => ({
@@ -225,7 +236,7 @@ export const getTeamsGenerationReport = async (req, res) => {
         date: d.date,
         generations: Number(d.generations),
         users: Number(d.users),
-        coins_spent: Number(d.coins_spent) || 0,
+        coins_spent: Number(d.generations) || 0,
       })),
     });
 
@@ -259,8 +270,7 @@ export const getMatchTeamsReport = async (req, res) => {
          mgl.user_id,
          u.fullname,
          u.country,
-         mgl.game,
-         mgl.coins_spent,
+         COALESCE(mgl.game, 'football') AS game,
          mgl.status,
          mgl.created_at
        FROM match_generation_log mgl
@@ -276,8 +286,8 @@ export const getMatchTeamsReport = async (req, res) => {
       `SELECT
          COUNT(*) AS total_teams,
          COUNT(DISTINCT user_id) AS unique_users,
-         COUNT(DISTINCT game) AS game_types,
-         SUM(coins_spent) AS total_coins_spent
+         COUNT(DISTINCT COALESCE(game, 'football')) AS game_types,
+         COUNT(*) AS total_coins_spent
        FROM match_generation_log
        WHERE match_id = ?`,
       [matchId]
@@ -304,7 +314,7 @@ export const getMatchTeamsReport = async (req, res) => {
         fullname: t.fullname,
         country: t.country,
         game: t.game,
-        coins_spent: Number(t.coins_spent),
+        coins_spent: 1,
         status: t.status,
         created_at: t.created_at,
       })),

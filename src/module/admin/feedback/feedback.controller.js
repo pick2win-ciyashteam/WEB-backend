@@ -9,9 +9,9 @@ import { logAdminActivity } from "../../../utils/activity.logger.js";
     const { category, importance, subject, description, email, location, email_followup } = req.body;
 
     await db.execute(
-      `INSERT INTO feedbacks 
-        (user_id, type, subject, importance, message, email, location, email_followup) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO feedbacks
+        (user_id, type, subject, importance, message, email, location, email_followup, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'New')`,
       [
         userId,
         category,

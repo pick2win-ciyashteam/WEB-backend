@@ -1,6 +1,7 @@
 import axios from "axios";
 import db from  "../../../config/db.js";
- 
+import { sendPushToAll } from "../../../utils/notification.js";
+
 const TOKEN = process.env.SPORTMONKS_TOKEN;
 const BASE_URL = "https://api.sportmonks.com/v3/football";
 
@@ -65,146 +66,6 @@ const positionIdMap = {
 /* ══════════════════════════════════════════
    PLAYING XI (match_players table only)
 ══════════════════════════════════════════ */
-
-   
-// export const syncPlayingXIService = async (providerMatchId) => {
-
-//   const [[matchRow]] = await db.query(
-//     `SELECT id, provider_match_id, home_team_id, away_team_id
-//      FROM matches WHERE provider_match_id = ? LIMIT 1`,
-//     [String(providerMatchId)]
-//   );
-
-//   if (!matchRow)
-//     return { count: 0, reason: `Match not found in DB: ${providerMatchId}` };
-
-//   const data       = await apiGet(`/fixtures/${providerMatchId}`, {
-//     include: "lineups.player",
-//   });
-//   const fixture    = data?.data;
-//   const allLineups = fixture?.lineups || [];
-
-//   if (!allLineups.length) {
-//     await db.query(
-//       `UPDATE matches SET lineupavailable = 0, lineup_status = 'not_available' WHERE id = ?`,
-//       [matchRow.id]
-//     );
-//     return { count: 0, reason: "Lineup not published yet on Sportmonks" };
-//   }
-
-//   const startingXI = allLineups.filter(p => p.type_id === 11);
-//   const bench      = allLineups.filter(p => p.type_id === 12);
-
-//   console.log(`📋 Match ${providerMatchId} — Starting XI: ${startingXI.length} | Bench: ${bench.length}`);
-
-//   const [teamRows] = await db.query(
-//     `SELECT id, provider_team_id FROM teams WHERE id IN (?, ?)`,
-//     [matchRow.home_team_id, matchRow.away_team_id]
-//   );
-//   const teamMap = new Map(teamRows.map(t => [String(t.provider_team_id), t.id]));
-
-//   /* ── position map ── */
-//   const positionIdMap = { 24: "GK", 25: "DEF", 26: "MID", 27: "FWD" };
-
-//   /* ── duplicate prevention ── */
-//   const seen = new Set();
-
-//   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
-
-//   const insertPlayer = async (entry, isPlaying, isSubstitute) => {
-//     const pid      = String(entry.player_id);
-//     const dbTeamId = teamMap.get(String(entry.team_id));
-
-//     if (!dbTeamId) {
-//       console.warn(`⚠️ Team not in DB: provider_team_id=${entry.team_id}`);
-//       return 0;
-//     }
-
-//     if (seen.has(pid)) {
-//       console.warn(`⚠️ Duplicate skipped: player_id=${pid}`);
-//       return 0;
-//     }
-//     seen.add(pid);
-
-//     const position = positionIdMap[entry.position_id] || "MID";
-//     const logo     = entry.player?.image_path || null;
-
-//     await db.query(
-//       `INSERT INTO match_players
-//          (match_id, team_id, player_name, position,
-//           is_playing, is_substitute,
-//           provider_player_id, jersey_number, logo)
-//        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-//        ON DUPLICATE KEY UPDATE
-//          is_playing    = VALUES(is_playing),
-//          is_substitute = VALUES(is_substitute),
-//          player_name   = VALUES(player_name),
-//          position      = VALUES(position),
-//          jersey_number = VALUES(jersey_number),
-//          logo          = VALUES(logo)`,
-//       [
-//         matchRow.id,
-//         dbTeamId,
-//         entry.player_name || entry.player?.display_name || `Player ${pid}`,
-//         position,
-//         isPlaying,
-//         isSubstitute,
-//         pid,
-//         entry.jersey_number || null,
-//         logo,
-//       ]
-//     );
-//     return 1;
-//   };
-
-//   let count = 0;
-//   for (const p of startingXI) count += await insertPlayer(p, 1, 0);
-//   for (const p of bench)      count += await insertPlayer(p, 0, 1);
-
-//   await db.query(
-//     `UPDATE matches SET lineupavailable = 1, lineup_status = 'confirmed' WHERE id = ?`,
-//     [matchRow.id]
-//   );
-
-//   console.log(`✅ Playing XI synced: ${count} players for match ${providerMatchId}`);
-//   return { count, reason: null, type: "lineup" };
-// };
-
-
-// const mapStatus = (stateId) => {
-//   if (stateId === 5)  return "RESULT";   // FT - Full Time
-//   if (stateId === 1)  return "UPCOMING"; // NS - Not Started
-//   if (stateId === 17) return "UPCOMING"; // Postponed
-//   if (stateId === 18) return "UPCOMING"; // Cancelled
-//   if (stateId === 19) return "UPCOMING"; // Abandoned
-//   return "LIVE"; // All other states = LIVE (2,3,4,6-16,22,etc.)
-// };
-
-// const mapPosition = (pos) => {
-//   if (!pos) return "MID";
-//   const p = pos.toUpperCase();
-//   if (p.includes("GOAL") || p === "G" || p === "GK") return "GK";
-//   if (p.includes("DEF") || p === "D")                return "DEF";
-//   if (p.includes("MID") || p === "M")                return "MID";
-//   if (p.includes("FOR") || p === "F" || p === "ATT" || p.includes("ATT")) return "FWD";
-//   return "MID";
-// };
-
-// const getDateRange = (days = 60) => {
-//   const today  = new Date().toISOString().split("T")[0];
-//   const future = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
-//     .toISOString().split("T")[0];
-//   return { today, future };
-// };
-
-// const positionIdMap = {
-//   24: "GK",
-//   25: "DEF",
-//   26: "MID",
-//   27: "FWD",
-// };
-
-
 export const syncPlayingXIService = async (providerMatchId) => {
 
   const [[matchRow]] = await db.query(
@@ -377,299 +238,7 @@ export const syncPlayingXIService = async (providerMatchId) => {
   };
 };
 
-
 /* ══════════════════════════════════════════
-   PLAYING XI (match_players table only)
-══════════════════════════════════════════ */
-
-   
-// export const syncPlayingXIService = async (providerMatchId) => {
-
-//   const [[matchRow]] = await db.query(
-//     `SELECT id, provider_match_id, home_team_id, away_team_id
-//      FROM matches WHERE provider_match_id = ? LIMIT 1`,
-//     [String(providerMatchId)]
-//   );
-
-//   if (!matchRow)
-//     return { count: 0, reason: `Match not found in DB: ${providerMatchId}` };
-
-//   const data       = await apiGet(`/fixtures/${providerMatchId}`, {
-//     include: "lineups.player",
-//   });
-//   const fixture    = data?.data;
-//   const allLineups = fixture?.lineups || [];
-
-//   if (!allLineups.length) {
-//     await db.query(
-//       `UPDATE matches SET lineupavailable = 0, lineup_status = 'not_available' WHERE id = ?`,
-//       [matchRow.id]
-//     );
-//     return { count: 0, reason: "Lineup not published yet on Sportmonks" };
-//   }
-
-//   const startingXI = allLineups.filter(p => p.type_id === 11);
-//   const bench      = allLineups.filter(p => p.type_id === 12);
-
-//   console.log(`📋 Match ${providerMatchId} — Starting XI: ${startingXI.length} | Bench: ${bench.length}`);
-
-//   const [teamRows] = await db.query(
-//     `SELECT id, provider_team_id FROM teams WHERE id IN (?, ?)`,
-//     [matchRow.home_team_id, matchRow.away_team_id]
-//   );
-//   const teamMap = new Map(teamRows.map(t => [String(t.provider_team_id), t.id]));
-
-//   /* ── position map ── */
-//   const positionIdMap = { 24: "GK", 25: "DEF", 26: "MID", 27: "FWD" };
-
-//   /* ── duplicate prevention ── */
-//   const seen = new Set();
-
-//   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
-
-//   const insertPlayer = async (entry, isPlaying, isSubstitute) => {
-//     const pid      = String(entry.player_id);
-//     const dbTeamId = teamMap.get(String(entry.team_id));
-
-//     if (!dbTeamId) {
-//       console.warn(`⚠️ Team not in DB: provider_team_id=${entry.team_id}`);
-//       return 0;
-//     }
-
-//     if (seen.has(pid)) {
-//       console.warn(`⚠️ Duplicate skipped: player_id=${pid}`);
-//       return 0;
-//     }
-//     seen.add(pid);
-
-//     const position = positionIdMap[entry.position_id] || "MID";
-//     const logo     = entry.player?.image_path || null;
-
-//     await db.query(
-//       `INSERT INTO match_players
-//          (match_id, team_id, player_name, position,
-//           is_playing, is_substitute,
-//           provider_player_id, jersey_number, logo)
-//        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-//        ON DUPLICATE KEY UPDATE
-//          is_playing    = VALUES(is_playing),
-//          is_substitute = VALUES(is_substitute),
-//          player_name   = VALUES(player_name),
-//          position      = VALUES(position),
-//          jersey_number = VALUES(jersey_number),
-//          logo          = VALUES(logo)`,
-//       [
-//         matchRow.id,
-//         dbTeamId,
-//         entry.player_name || entry.player?.display_name || `Player ${pid}`,
-//         position,
-//         isPlaying,
-//         isSubstitute,
-//         pid,
-//         entry.jersey_number || null,
-//         logo,
-//       ]
-//     );
-//     return 1;
-//   };
-
-//   let count = 0;
-//   for (const p of startingXI) count += await insertPlayer(p, 1, 0);
-//   for (const p of bench)      count += await insertPlayer(p, 0, 1);
-
-//   await db.query(
-//     `UPDATE matches SET lineupavailable = 1, lineup_status = 'confirmed' WHERE id = ?`,
-//     [matchRow.id]
-//   );
-
-//   console.log(`✅ Playing XI synced: ${count} players for match ${providerMatchId}`);
-//   return { count, reason: null, type: "lineup" };
-// };
-
-//  export const syncPlayingXIService = async (matchId) => {
-
-//   const [[matchRow]] = await db.query(
-//     `SELECT id, provider_match_id, home_team_id, away_team_id
-//      FROM matches WHERE provider_match_id = ? LIMIT 1`,
-//     [matchId]
-//   );
-//   if (!matchRow) throw new Error("Match not found: " + matchId);
-
-//   /* ── API call — NO include needed, lineups come by default ── */
-//   const data    = await apiGet(`/fixtures/${matchId}`);
-//   const fixture = data?.data;
-//   const allLineups = fixture?.lineups || [];
-
-//   if (!allLineups.length) {
-//     await db.query(
-//       `UPDATE matches SET lineupavailable = 0, lineup_status = 'not_available' WHERE id = ?`,
-//       [matchRow.id]
-//     );
-//     return { count: 0, reason: "Lineup not published yet" };
-//   }
-
-//   /* ── Split by type_id ── */
-//   const lineups = allLineups.filter(p => p.type_id === 11); // Starting XI
-//   const bench   = allLineups.filter(p => p.type_id === 12); // Substitutes
-
-//   console.log(`📋 Starting XI: ${lineups.length} | Bench: ${bench.length}`);
-
-//   /* ── Teams map ── */
-//   const [teamRows] = await db.query(
-//     `SELECT id, provider_team_id FROM teams WHERE id IN (?, ?)`,
-//     [matchRow.home_team_id, matchRow.away_team_id]
-//   );
-//   const teamMap = new Map(teamRows.map((t) => [String(t.provider_team_id), t.id]));
-
-//   /* ── position_id map (SportMonks standard) ── */
-//   const positionIdMap = {
-//     24: "GK",
-//     25: "DEF",
-//     26: "MID",
-//     27: "FWD",
-//   };
-
-//   /* ── Clean slate ── */
-//   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
-
-//   /* ── Helper ── */
-//   const insertPlayer = async (entry, isPlaying, isSubstitute) => {
-//     const providerTeamId = String(entry.team_id);
-//     const dbTeamId       = teamMap.get(providerTeamId);
-
-//     if (!dbTeamId) {
-//       console.warn(`⚠️  Team not found: provider_team_id=${providerTeamId}`);
-//       return;
-//     }
-
-//     const position = positionIdMap[entry.position_id] || "MID";
-
-//     await db.query(
-//       `INSERT INTO match_players
-//           (match_id, team_id, player_name, position,
-//    is_playing, is_substitute,
-//    provider_player_id, jersey_number, logo)
-// VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
-//        ON DUPLICATE KEY UPDATE
-//          is_playing     = VALUES(is_playing),
-//          is_substitute  = VALUES(is_substitute),
-//          player_name    = VALUES(player_name),
-//          position       = VALUES(position),
-//          jersey_number  = VALUES(jersey_number)`,
-//       [
-//         matchRow.id,
-//         dbTeamId,
-//         entry.player_name || `Player ${entry.player_id}`,
-//         position,
-//         isPlaying,
-//         isSubstitute,
-//         String(entry.player_id),
-//         entry.jersey_number || null,
-//       ]
-//     );
-//   };
-
-//   /* ── Insert ── */
-//   for (const p of lineups) await insertPlayer(p, 1, 0);
-//   for (const p of bench)   await insertPlayer(p, 0, 1);
-
-//   /* ── Update match ── */
-//   await db.query(
-//     `UPDATE matches SET lineupavailable = 1, lineup_status = 'confirmed' WHERE id = ?`,
-//     [matchRow.id]
-//   );
-
-//   console.log(`✅ Synced — Starting XI: ${lineups.length} | Bench: ${bench.length}`);
-//   return { count: allLineups.length, reason: null, type: "lineup" };
-// };
-
-
-// export const syncPlayingXIService = async (matchId) => {
- 
-//   // 1. Get match from DB (by provider_match_id)
-//   const [[matchRow]] = await db.query(
-//     `SELECT id, provider_match_id, status FROM matches
-//      WHERE provider_match_id = ? LIMIT 1`,
-//     [matchId]
-//   );
- 
-//   if (!matchRow) throw new Error("Match not found: " + matchId);
- 
-//   console.log(` Syncing lineup for match ${matchId} (status: ${matchRow.status})`);
- 
-//   // 2. Fetch lineups from Sportmonks — no status restriction
-//   const data    = await apiGet(`/fixtures/${matchId}`, { include: "lineups.player" });
-//   const fixture = data?.data;
-//   const lineups = fixture?.lineups || [];
- 
-//   if (!lineups.length) {
-//     await db.query(
-//       `UPDATE matches SET lineupavailable = 0, lineup_status = 'not_available' WHERE id = ?`,
-//       [matchRow.id]
-//     );
-//     return { count: 0, reason: "Lineup not published yet", type: "lineup" };
-//   }
- 
-//   // 3. Map lineup players
-//   const allLineupPlayers = lineups.map((l) => ({
-//     pid:             String(l.player_id),
-//     is_substitute:   l.type_id === 12 ? 1 : 0,
-//     provider_team_id: String(l.team_id),
-//   }));
- 
-//   const pids = [...new Set(allLineupPlayers.map((l) => l.pid))];
- 
-//   // 4. Resolve internal player IDs
-//   const [playerRows] = await db.query(
-//     `SELECT id, provider_player_id, team_id FROM players
-//      WHERE provider_player_id IN (?)`,
-//     [pids]
-//   );
-//   const playerMap = new Map(playerRows.map((r) => [String(r.provider_player_id), r]));
- 
-//   // 5. Clean slate — fresh insert
-//   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
- 
-//   let count = 0;
-//   for (const l of allLineupPlayers) {
-//     const player = playerMap.get(l.pid);
-//     if (!player) {
-//       console.warn(`  Player not in DB: pid=${l.pid}`);
-//       continue;
-//     }
- 
-//     await db.query(
-//       `INSERT INTO match_players
-//          (match_id, player_id, team_id, is_playing, is_substitute, is_pre_squad)
-//        VALUES (?, ?, ?, ?, ?, 0)
-//        ON DUPLICATE KEY UPDATE
-//          is_playing    = VALUES(is_playing),
-//          is_substitute = VALUES(is_substitute),
-//          is_pre_squad  = 0`,
-//       [
-//         matchRow.id,
-//         player.id,
-//         player.team_id,
-//         l.is_substitute === 0 ? 1 : 0,
-//         l.is_substitute,
-//       ]
-//     );
-//     count++;
-//   }
- 
-//   // 6. Update match lineup status
-//   await db.query(
-//     `UPDATE matches SET lineupavailable = 1, lineup_status = 'confirmed' WHERE id = ?`,
-//     [matchRow.id]
-//   );
- 
-//   console.log(` Playing XI synced: ${count} players for match ${matchId} (status: ${matchRow.status})`);
-//   return { count, reason: null, type: "lineup" };
-// };
-
- 
-
-/* ══════════════════════════════════════════  
    SERIES
 ══════════════════════════════════════════ */
 
@@ -799,7 +368,7 @@ export const toggleSeriesService = async (seriesIds, isActive) => {
          name        = VALUES(name),
          status      = 'active',
          is_selected = 1`,
-      [seriesid, league.name, null, null, null]
+      [seriesid, league.name, null, null]
     );
 
     results.push({ seriesid, name: league.name, is_active: true });
@@ -808,9 +377,6 @@ export const toggleSeriesService = async (seriesIds, isActive) => {
   return results;
 };
 
-    
-
-
 export const getActiveSeriesService = async () => {
   const [series] = await db.query(`
     SELECT
@@ -818,9 +384,9 @@ export const getActiveSeriesService = async () => {
       seriesid,
       name,
       country_name ,
-      
+
       logo         ,
-       
+
       start_date,
       end_date,
       status,
@@ -952,7 +518,7 @@ export const getAvailableMatchesService = async (seriesid) => {
       is_active:  activeSet.has(String(f.id)),
     };
   });
-};   
+};
 
 export const getMatchesService = async (seriesid) => {
   const [matches] = await db.query(
@@ -978,8 +544,6 @@ const toUTCDateTime = (timestamp, fallback) => {
   }
   return fallback || null;
 };
-
- 
 
 export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
   const results   = [];
@@ -1189,11 +753,8 @@ export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
   return results;
 };
 
-
-
-
 /* ══════════════════════════════════════════
-   PLAYER POINTS
+   FIXTURES BY DATE RANGE
 ══════════════════════════════════════════ */
 
 /* ─── Fetch Fixtures Between Two Dates ─── */
@@ -1234,7 +795,7 @@ export const getAllFixturesBetween = async (fromDate, toDate) => {
 
   return allFixtures;
 };
-  
+
 
 export const getMatchesByDateRangeService = async (fromDate, toDate) => {
   // ── All pages fetch ──
@@ -1348,180 +909,8 @@ export const getMatchesByDateRangeService = async (fromDate, toDate) => {
 };
 
 /* ══════════════════════════════════════════
-   SPORTMONKS — fetch fixture lineups + stats
+   MANUAL PLAYING XI SYNC (admin-triggered, includes venue)
 ══════════════════════════════════════════ */
-const fetchFixtureWithStats = async (providerFixtureId) => {
-  const url =
-    `${BASE_URL}/fixtures/${providerFixtureId}` +
-    `?api_token=${TOKEN}` +
-    `&include=lineups.statistics;statistics`;
-
-  const response = await fetch(url);
-  const data     = await response.json();
-
-  if (!response.ok || data.errors || !data.data) {
-    throw new Error(data.message || "SportMonks API error");
-  }
-
-  return data.data;
-};
-
-/* ══════════════════════════════════════════
-   DB — get match row by internal match id
-══════════════════════════════════════════ */
-const getMatchRow = async (matchId) => {
-  const [rows] = await db.query(
-    `SELECT id, provider_match_id FROM matches WHERE id = ? LIMIT 1`,
-    [matchId]
-  );
-  return rows[0] || null;
-};
-
-/* ══════════════════════════════════════════
-   DB — resolve sportmonks player_id → internal player id
-   Tries provider_player_id first, then sportmonks_id
-══════════════════════════════════════════ */
-const resolveInternalPlayerId = async (sportmonksPlayerId) => {
-  try {
-    const [rows] = await db.query(
-      `SELECT id FROM players WHERE provider_player_id = ? LIMIT 1`,
-      [sportmonksPlayerId]
-    );
-    if (rows[0]) return rows[0].id;
-  } catch (_) {}
-
-  try {
-    const [rows] = await db.query(
-      `SELECT id FROM players WHERE sportmonks_id = ? LIMIT 1`,
-      [sportmonksPlayerId]
-    );
-    if (rows[0]) return rows[0].id;
-  } catch (_) {}
-
-  return null;
-};
-
-/* ══════════════════════════════════════════
-   DB — resolve sportmonks team_id → internal team id
-══════════════════════════════════════════ */
-const resolveInternalTeamId = async (sportmonksTeamId) => {
-  try {
-    const [rows] = await db.query(
-      `SELECT id FROM teams WHERE provider_team_id = ? LIMIT 1`,
-      [sportmonksTeamId]
-    );
-    if (rows[0]) return rows[0].id;
-  } catch (_) {}
-
-  try {
-    const [rows] = await db.query(
-      `SELECT id FROM teams WHERE sportmonks_id = ? LIMIT 1`,
-      [sportmonksTeamId]
-    );
-    if (rows[0]) return rows[0].id;
-  } catch (_) {}
-
-  return null;
-};
-
-/* ══════════════════════════════════════════
-   MAP raw Sportmonks stats array → flat object
-══════════════════════════════════════════ */
-const mapStats = (statisticsArray = []) => {
-  const out = {};
-  for (const s of statisticsArray) {
-    const col = STAT_TYPE_MAP[s.type_id];
-    if (col !== undefined) {
-      out[col] = s.data?.value ?? s.value ?? null;
-    }
-  }
-  return out;
-};
-
-/* ══════════════════════════════════════════
-   DB — upsert into sportmonks_player_stats
-══════════════════════════════════════════ */
-const upsertPlayerStats = async (matchId, playerId, teamId, jerseyNumber, position, statsObj) => {
-  const allStatCols = Object.values(STAT_TYPE_MAP);
-  const presentCols = allStatCols.filter(col => statsObj[col] !== undefined);
-  const extraCols   = [];
-  const extraVals   = [];
-
-  if (jerseyNumber != null) { extraCols.push("jersey_number"); extraVals.push(jerseyNumber); }
-  if (position     != null) { extraCols.push("position");      extraVals.push(position);     }
-
-  const insertCols  = [...presentCols, ...extraCols];
-  const insertVals  = [...presentCols.map(c => statsObj[c]), ...extraVals];
-
-  if (!insertCols.length) return 0;
-
-  const colList      = insertCols.join(", ");
-  const placeholders = insertCols.map(() => "?").join(", ");
-  const onDup        = insertCols.map(c => `${c} = VALUES(${c})`).join(", ");
-
-  await db.query(
-    `INSERT INTO sportmonks_player_stats
-       (match_id, player_id, team_id, ${colList}, updated_at)
-     VALUES (?, ?, ?, ${placeholders}, NOW())
-     ON DUPLICATE KEY UPDATE
-       ${onDup},
-       updated_at = NOW()`,
-    [matchId, playerId, teamId, ...insertVals]
-  );
-
-  return 1;
-};
-
-/* ══════════════════════════════════════════
-  
-══════════════════════════════════════════ */
-const processLineups = async (matchRow, lineups) => {
-  let savedCount = 0;
-  const results  = [];
-  const skipped  = [];
-
-  for (const l of lineups) {
-    const smPlayerId = l.player_id;
-    const smTeamId   = l.team_id;
-
-    const internalPlayerId = await resolveInternalPlayerId(smPlayerId);
-    if (!internalPlayerId) {
-      skipped.push({ sportmonks_player_id: smPlayerId, name: l.player_name, reason: "player not in DB" });
-      continue;
-    }
-
-    const internalTeamId = await resolveInternalTeamId(smTeamId);
-    if (!internalTeamId) {
-      skipped.push({ sportmonks_player_id: smPlayerId, name: l.player_name, reason: "team not in DB" });
-      continue;
-    }
-
-    const statsObj = mapStats(l.statistics || []);
-
-    await upsertPlayerStats(
-      matchRow.id,
-      internalPlayerId,
-      internalTeamId,
-      l.jersey_number ?? null,
-      l.position_id   ?? null,
-      statsObj
-    );
-
-    savedCount++;
-
-    results.push({
-      sportmonks_player_id: smPlayerId,
-      internal_player_id:   internalPlayerId,
-      player_name:          l.player_name,
-      stats:                statsObj,
-    });
-  }
-
-  console.log(` sportmonks_player_stats: ${savedCount} saved, ${skipped.length} skipped for match ${matchRow.id}`);
-  return { count: savedCount, data: results, skipped, reason: null };
-};
-
-
 export const manualSyncPlayingXIService = async (providerMatchId) => {
 
   const [[matchRow]] = await db.query(
@@ -1563,7 +952,7 @@ export const manualSyncPlayingXIService = async (providerMatchId) => {
   );
   const teamMap = new Map(teamRows.map(t => [String(t.provider_team_id), t.id]));
 
-  const positionIdMap = { 24: "GK", 25: "DEF", 26: "MID", 27: "FWD" };
+  const positionIdMapManual = { 24: "GK", 25: "DEF", 26: "MID", 27: "FWD" };
 
   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
 
@@ -1575,7 +964,7 @@ export const manualSyncPlayingXIService = async (providerMatchId) => {
       return 0;
     }
 
-    const position = positionIdMap[entry.position_id] || "MID";
+    const position = positionIdMapManual[entry.position_id] || "MID";
 
     /* ── ✅ logo — entry.player.image_path ── */
     const logo = entry.player?.image_path || null;
@@ -1630,97 +1019,3 @@ export const manualSyncPlayingXIService = async (providerMatchId) => {
     venue_city: venueCity,
   };
 };
-
-
-//   const [[matchRow]] = await db.query(
-//     `SELECT id, provider_match_id, home_team_id, away_team_id
-//      FROM matches WHERE provider_match_id = ? LIMIT 1`,
-//     [String(providerMatchId)]
-//   );
-
-//   if (!matchRow)
-//     return { count: 0, reason: `Match not found in DB: ${providerMatchId}` };
-
-//   /* ── ✅ include lineups.player — logo  ── */
-//   const data       = await apiGet(`/fixtures/${providerMatchId}`, {
-//     include: "lineups.player"   
-//   });
-//   const fixture    = data?.data;
-//   const allLineups = fixture?.lineups || [];
-
-//   if (!allLineups.length) {
-//     await db.query(
-//       `UPDATE matches SET lineupavailable = 0, lineup_status = 'not_available' WHERE id = ?`,
-//       [matchRow.id]
-//     );
-//     return { count: 0, reason: "Lineup not published yet on Sportmonks" };
-//   }
-
-//   const startingXI = allLineups.filter(p => p.type_id === 11);
-//   const bench      = allLineups.filter(p => p.type_id === 12);
-
-//   console.log(`📋 Match ${providerMatchId} — Starting XI: ${startingXI.length} | Bench: ${bench.length}`);
-
-//   const [teamRows] = await db.query(
-//     `SELECT id, provider_team_id FROM teams WHERE id IN (?, ?)`,
-//     [matchRow.home_team_id, matchRow.away_team_id]
-//   );
-//   const teamMap = new Map(teamRows.map(t => [String(t.provider_team_id), t.id]));
-
-//   const positionIdMap = { 24: "GK", 25: "DEF", 26: "MID", 27: "FWD" };
-
-//   await db.query(`DELETE FROM match_players WHERE match_id = ?`, [matchRow.id]);
-
-//   const insertPlayer = async (entry, isPlaying, isSubstitute) => {
-//     const dbTeamId = teamMap.get(String(entry.team_id));
-
-//     if (!dbTeamId) {
-//       console.warn(`⚠️ Team not in DB: provider_team_id=${entry.team_id}`);
-//       return 0;
-//     }
-
-//     const position = positionIdMap[entry.position_id] || "MID";
-
-//     /* ── ✅ logo — entry.player.image_path ── */
-//     const logo = entry.player?.image_path || null;
-
-//     await db.query(
-//       `INSERT INTO match_players
-//          (match_id, team_id, player_name, position,
-//           is_playing, is_substitute,
-//           provider_player_id, jersey_number, logo)
-//        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-//        ON DUPLICATE KEY UPDATE
-//          is_playing    = VALUES(is_playing),
-//          is_substitute = VALUES(is_substitute),
-//          player_name   = VALUES(player_name),
-//          position      = VALUES(position),
-//          jersey_number = VALUES(jersey_number),
-//          logo          = VALUES(logo)`,    
-//       [
-//         matchRow.id,
-//         dbTeamId,
-//         entry.player_name || entry.player?.display_name || `Player ${entry.player_id}`,
-//         position,
-//         isPlaying,
-//         isSubstitute,
-//         String(entry.player_id),
-//         entry.jersey_number || null,
-//         logo,                              
-//       ]
-//     );
-//     return 1;
-//   };
-
-//   let count = 0;
-//   for (const p of startingXI) count += await insertPlayer(p, 1, 0);
-//   for (const p of bench)      count += await insertPlayer(p, 0, 1);
-
-//   await db.query(
-//     `UPDATE matches SET lineupavailable = 1, lineup_status = 'confirmed' WHERE id = ?`,
-//     [matchRow.id]
-//   );
-
-//   console.log(`✅ Playing XI synced: ${count} players for match ${providerMatchId}`);
-//   return { count, reason: null, type: "lineup" };
-// };
