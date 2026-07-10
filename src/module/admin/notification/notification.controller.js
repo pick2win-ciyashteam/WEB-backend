@@ -15,7 +15,21 @@ export const sendToUser = async (req, res) => {
     }
 
     const result = await sendPushToUser({ userId: user_id, title, body, data: data || {} });
-    return res.status(200).json({ success: true, result });
+
+    if (!result.success) {
+      return res.status(500).json({ success: false, message: result.error });
+    }
+
+    if (result.message) {
+      return res.status(200).json({ success: true, message: result.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Notification sent successfully",
+      success_count: result.response.successCount,
+      failure_count: result.response.failureCount,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -31,24 +45,38 @@ export const sendToAll = async (req, res) => {
     }
 
     const result = await sendPushToAll({ title, body, data: data || {} });
-    return res.status(200).json({ success: true, result });
+
+    if (!result.success) {
+      return res.status(500).json({ success: false, message: result.error });
+    }
+
+    if (result.message) {
+      return res.status(200).json({ success: true, message: result.message });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Notification sent to all users",
+      success_count: result.successCount,
+      failure_count: result.failureCount,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
 
 /* ── Send to single token ── */
-export const sendToToken = async (req, res) => {
-  try {
-    const { token, title, body, data } = req.body;
+// export const sendToToken = async (req, res) => {
+//   try {
+//     const { token, title, body, data } = req.body;
 
-    if (!token || !title || !body) {
-      return res.status(400).json({ success: false, message: "token, title, body required" });
-    }
+//     if (!token || !title || !body) {
+//       return res.status(400).json({ success: false, message: "token, title, body required" });
+//     }
 
-    const result = await sendPushNotification({ token, title, body, data: data || {} });
-    return res.status(200).json({ success: true, result });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
+//     const result = await sendPushNotification({ token, title, body, data: data || {} });
+//     return res.status(200).json({ success: true, result });
+//   } catch (err) {
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };

@@ -718,6 +718,8 @@ export const getCountriesReport = async (req, res) => {
    Sections: KPI cards, Today's matches table,
              Coins reconciliation
    ═══════════════════════════════════════════════════ */
+ 
+
 export const getUctOverview = async (req, res) => {
   try {
 
@@ -759,6 +761,19 @@ export const getUctOverview = async (req, res) => {
     );
 
     const totalUctsToday = todayMatches.reduce((s, m) => s + Number(m.ucts_used), 0);
+
+    /* ── Game-wise breakdown (football / fanduel / draftkings / sorare) ── */
+    const [gameBreakdown] = await db.execute(
+      `SELECT
+         COALESCE(game, 'football')    AS game,
+         COUNT(DISTINCT id)            AS total_ucts,
+         COUNT(DISTINCT user_id)       AS unique_users,
+         COUNT(DISTINCT id) * 20       AS teams_generated
+       FROM match_generation_log
+       WHERE DATE(created_at) = CURDATE()
+       GROUP BY game
+       ORDER BY total_ucts DESC`
+    );
 
     /* ── Coins reconciliation ── */
     const [[purchased]] = await db.execute(
@@ -819,12 +834,22 @@ export const getUctOverview = async (req, res) => {
         })),
       },
 
+      game_breakdown: gameBreakdown.map((g) => ({
+        game:            g.game,
+        total_ucts:      Number(g.total_ucts),
+        unique_users:    Number(g.unique_users),
+        teams_generated: Number(g.teams_generated),
+        share_pct:       Number(kpi.ucts_today) > 0
+          ? Number(((Number(g.total_ucts) / Number(kpi.ucts_today)) * 100).toFixed(1))
+          : 0,
+      })),
+
       coins_reconciliation: {
-        coins_purchased: purchasedTotal,
-        coins_consumed:  consumedTotal,
-        coins_expired:   expiredTotal,
+        coins_purchased:  purchasedTotal,
+        coins_consumed:   consumedTotal,
+        coins_expired:    expiredTotal,
         coins_in_wallets: walletsTotal,
-        is_balanced:     purchasedTotal === reconciledSum,
+        is_balanced:      purchasedTotal === reconciledSum,
         breakdown_pct: {
           consumed_pct: purchasedTotal > 0 ? Number(((consumedTotal / purchasedTotal) * 100).toFixed(1)) : 0,
           expired_pct:  purchasedTotal > 0 ? Number(((expiredTotal  / purchasedTotal) * 100).toFixed(1)) : 0,
@@ -1541,7 +1566,7 @@ export const getDetailedFeedbackSummary = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
+  
 /* ═══════════════════════════════════════════════════
    2. DETAILED FEEDBACK — SUBMISSIONS LIST
    GET /admin/feedback/detailed/list?status=New|Reviewing|Planned|Resolved|Declined

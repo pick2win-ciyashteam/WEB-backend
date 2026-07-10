@@ -48,5 +48,5 @@ router.patch("/notification/read/:id",          authenticate, c.markAsRead);
 router.delete("/notification/:id",              authenticate, c.deleteNotification);
   
  
-export default router;  
+export default router;    
      

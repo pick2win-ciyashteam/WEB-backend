@@ -637,7 +637,7 @@ export const registerDevice = async (req, res) => {
     });
   }
 };
-/* ── Get My Notifications ── */
+/* ── Get My Notifications ── */  
 export const getMyNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -647,7 +647,7 @@ export const getMyNotifications = async (req, res) => {
     limit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
     const offset = (page - 1) * limit;
 
-    const [notifications] = await db.execute(
+    const [notifications] = await db.query(
       `SELECT id, title, body, data, is_read, created_at
        FROM user_notifications
        WHERE user_id = ?

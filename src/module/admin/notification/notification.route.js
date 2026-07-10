@@ -4,14 +4,14 @@ import { adminAuth } from "../../../middlewares/adminAuth.middleware.js";
 import {
   sendToUser,
   sendToAll,
-  sendToToken,
+  // sendToToken,
 } from "./notification.controller.js";
 
 const router = Router();
 
 router.post("/send-to-user",  adminAuth(["super_admin"]), sendToUser);
 router.post("/send-to-all",   adminAuth(["super_admin"]), sendToAll);
-router.post("/send-to-token", adminAuth(["super_admin"]), sendToToken);
+// router.post("/send-to-token", adminAuth(["super_admin"]), sendToToken);
 
 
 export default router;    
