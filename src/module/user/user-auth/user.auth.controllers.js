@@ -565,14 +565,23 @@ export const getMyActivityLogs = async (req, res) => {
 
 // src/module/user/notification/notification.controller.js
 
-
 // export const registerDevice = async (req, res) => {
 //   try {
-//     const { fcm_token, device_type } = req.body;
+//     const {
+//       registration_token,
+//       registeration_token,
+//       fcm_token,
+//       token,
+//       device_type,
+//     } = req.body;
 //     const userId = req.user.id;
+//     const deviceToken = registration_token || fcm_token || token || registeration_token;
 
-//     if (!fcm_token) {
-//       return res.status(400).json({ success: false, message: "fcm_token required" });
+//     if (!deviceToken) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "registration_token is required",
+//       });
 //     }
 
 //     await db.execute(
@@ -582,7 +591,7 @@ export const getMyActivityLogs = async (req, res) => {
 //          user_id     = VALUES(user_id),
 //          device_type = VALUES(device_type),
 //          updated_at  = NOW()`,
-//       [userId, fcm_token, device_type || null]
+//       [userId, deviceToken, device_type || null]
 //     );
 
 //     return res.status(200).json({ success: true, message: "Device registered successfully" });
@@ -591,123 +600,12 @@ export const getMyActivityLogs = async (req, res) => {
 //   }
 // };
 
-
-// /* ── Get My Notifications ── */
-// export const getMyNotifications = async (req, res) => {
-//   try {
-//     const userId              = req.user.id;
-//     const { page = 1, limit = 20 } = req.query;
-//     const limitNum  = Number(limit);
-//     const offsetNum = (Number(page) - 1) * limitNum;
-
-//     const [notifications] = await db.execute(
-//       `SELECT
-//          id,
-//          title,
-//          body,
-//          data,
-//          is_read,
-//          created_at
-//        FROM user_notifications
-//        WHERE user_id = ?
-//        ORDER BY created_at DESC
-//        LIMIT ${limitNum} OFFSET ${offsetNum}`,
-//       [userId]
-//     );
-
-//     const [[{ total }]] = await db.execute(
-//       `SELECT COUNT(*) AS total FROM user_notifications WHERE user_id = ?`,
-//       [userId]
-//     );
-
-//     const [[{ unread }]] = await db.execute(
-//       `SELECT COUNT(*) AS unread FROM user_notifications WHERE user_id = ? AND is_read = 0`,
-//       [userId]
-//     );
-
-//     return res.status(200).json({
-//       success: true,
-//       unread_count: Number(unread),
-//       pagination: {
-//         total:       Number(total),
-//         page:        Number(page),
-//         limit:       limitNum,
-//         total_pages: Math.ceil(Number(total) / limitNum),
-//       },
-//       data: notifications.map((n) => ({
-//         id:         n.id,
-//         title:      n.title,
-//         body:       n.body,
-//         data:       n.data ? JSON.parse(n.data) : null,
-//         is_read:    Boolean(n.is_read),
-//         created_at: n.created_at,
-//       })),
-//     });
-
-//   } catch (err) {
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// };
-
-// /* ── Mark as Read ── */
-// export const markAsRead = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const { id } = req.params;
-
-//     if (id === "all") {
-//       await db.execute(
-//         `UPDATE user_notifications SET is_read = 1 WHERE user_id = ?`,
-//         [userId]
-//       );
-//       return res.status(200).json({ success: true, message: "All notifications marked as read" });
-//     }
-
-//     await db.execute(
-//       `UPDATE user_notifications SET is_read = 1 WHERE id = ? AND user_id = ?`,
-//       [id, userId]
-//     );
-
-//     return res.status(200).json({ success: true, message: "Notification marked as read" });
-//   } catch (err) {
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// };
-
-// /* ── Delete Notification ── */
-// export const deleteNotification = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     const { id } = req.params;
-
-//     await db.execute(
-//       `DELETE FROM user_notifications WHERE id = ? AND user_id = ?`,
-//       [id, userId]
-//     );
-
-//     return res.status(200).json({ success: true, message: "Notification deleted" });
-//   } catch (err) {
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// };
-
-
-
- 
-
 export const registerDevice = async (req, res) => {
   try {
-    const {
-      registration_token,
-      registeration_token,
-      fcm_token,
-      token,
-      device_type,
-    } = req.body;
+    const { registration_token, device_type } = req.body;
     const userId = req.user.id;
-    const deviceToken = registration_token || fcm_token || token || registeration_token;
 
-    if (!deviceToken) {
+    if (!registration_token) {
       return res.status(400).json({
         success: false,
         message: "registration_token is required",
@@ -718,18 +616,27 @@ export const registerDevice = async (req, res) => {
       `INSERT INTO user_devices (user_id, fcm_token, device_type)
        VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE
-         user_id     = VALUES(user_id),
+         fcm_token   = VALUES(fcm_token),
          device_type = VALUES(device_type),
          updated_at  = NOW()`,
-      [userId, deviceToken, device_type || null]
+      [
+        userId,
+        registration_token,
+        device_type || "web",
+      ]
     );
 
-    return res.status(200).json({ success: true, message: "Device registered successfully" });
+    return res.status(200).json({
+      success: true,
+      message: "Device registered successfully",
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    return res.status(500).json({
+      success: false,
+      message: err.message,
+    });
   }
 };
-
 /* ── Get My Notifications ── */
 export const getMyNotifications = async (req, res) => {
   try {

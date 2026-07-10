@@ -736,10 +736,10 @@ export const generateTeams = async (req, res) => {
 
       await conn.query(
         `INSERT INTO coins_transactions
-           (user_id, coins, amount, transaction_type, opening_points, closing_points, description, status)
-         VALUES (?, -1, 0, 'spent', ?, ?, ?, 'success')`,
+           (user_id, coins, amount, transaction_type, opening_points, closing_points, description, status, match_id)
+         VALUES (?, -1, 0, 'spent', ?, ?, ?, 'success', ?)`,
         [userId, Number(currentWallet.available_coins), Number(currentWallet.available_coins) - 1,
-          `Team generation — match ${match_id} — ${sportName}/${gameName}`]  // ✅
+          `Team generation — match ${match_id} — ${sportName}/${gameName}`, match_id]  // ✅
       );
 
       await conn.query(
@@ -1238,7 +1238,7 @@ export const getMyGeneratedMatches = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
+  
 /* ================= GET MY GENERATED TEAMS ================= */
 export const getMyGeneratedTeams = async (req, res) => {
   try {

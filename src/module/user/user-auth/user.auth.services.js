@@ -8,6 +8,7 @@ import jwt       from "jsonwebtoken";
 import db        from "../../../config/db.js";
  
 import { sendSms } from "../../../utils/sms.js";
+import { validatePasswordStrength } from "../../../utils/passwordValidator.js";
 
 import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, } from "../../../utils/mailer.js";
 
@@ -924,7 +925,7 @@ export const deleteAccountService = async (userId) => {
 
     await conn.query(
       `DELETE FROM signup_sessions
-       WHERE email = ?`,
+       WHERE email = ?`,  
       [email]
     );
 
@@ -983,4 +984,4 @@ export const deleteAccountService = async (userId) => {
     conn.release();
   }
 };
-  
+    

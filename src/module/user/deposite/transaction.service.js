@@ -219,10 +219,6 @@ export const getUserTransactionsService = async (userId, filters = {}) => {
       `SELECT
          id,
          coins,
-         amount,
-         opening_points AS opening_coins,
-         closing_points AS closing_coins,
-         reference_id,
          status,
          transaction_type,
          description,

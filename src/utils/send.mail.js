@@ -28,13 +28,13 @@ export const sendMail = async (options) => {
       html: options.html,
       text: options.text,           
       attachments: options.attachments  
-    });
+    });  
 
     console.log("✅ Email sent:", info.messageId, "→", options.to);
     return info;
 
   } catch (err) {
     console.error("❌ sendMail failed:", err.message);
-    throw err;  // caller కి error propagate 
+    throw err;  
   }
 }; 
