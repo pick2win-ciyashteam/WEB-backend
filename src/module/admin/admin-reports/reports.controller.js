@@ -1128,12 +1128,57 @@ export const getUctActivityList = async (req, res) => {
     }
     const byGame = [...byGameMap.values()].sort((a, b) => b.ucts - a.ucts);
 
+    /* ── Today's fixtures — UCT usage per match, split by game
+       (independent of the selected period — always "today") ── */
+    const [todayMatchRows] = await db.execute(
+      `SELECT
+         m.id,
+         m.hometeamname,
+         m.awayteamname,
+         m.status,
+         s.name AS series_name,
+         COUNT(DISTINCT mgl.user_id) AS users_used_uct,
+         COUNT(DISTINCT CASE WHEN mgl.game = 'draftkings' THEN mgl.user_id END) AS draftkings_users,
+         COUNT(DISTINCT CASE WHEN mgl.game = 'fanduel'    THEN mgl.user_id END) AS fanduel_users,
+         COUNT(DISTINCT CASE WHEN mgl.game = 'sorare'     THEN mgl.user_id END) AS sorare_users
+       FROM matches m
+       LEFT JOIN series s                ON s.seriesid   = m.series_id
+       LEFT JOIN match_generation_log mgl ON mgl.match_id = m.id
+         AND DATE(mgl.created_at) = CURDATE()
+       WHERE DATE(m.start_time) = CURDATE()
+         AND m.is_active = 1
+       GROUP BY m.id, m.hometeamname, m.awayteamname, m.status, s.name
+       ORDER BY users_used_uct DESC`
+    );
+
+    const totalUsersToday = todayMatchRows.reduce((s, m) => s + Number(m.users_used_uct), 0);
+
+    const fixturesToday = {
+      total_fixtures:        todayMatchRows.length,
+      total_users_used_uct:  totalUsersToday,
+      total_coins_consumed:  totalUsersToday, // 1 user = 1 UCT = 1 coin per match
+      matches: todayMatchRows.map((m) => ({
+        match_id:       m.id,
+        match:          `${m.hometeamname} vs ${m.awayteamname}`,
+        series:         m.series_name,
+        status:         m.status,
+        users_used_uct: Number(m.users_used_uct),
+        draftkings:     Number(m.draftkings_users),
+        fanduel:        Number(m.fanduel_users),
+        sorare:         Number(m.sorare_users),
+        share_pct:      totalUsersToday > 0
+          ? Number(((Number(m.users_used_uct) / totalUsersToday) * 100).toFixed(1))
+          : 0,
+      })),
+    };
+
     return res.status(200).json({
       success: true,
 
       period,
       range: { start_date: rangeStart, end_date: rangeEnd },
 
+      fixtures_today: fixturesToday,
       by_game: byGame,
 
       summary: {
