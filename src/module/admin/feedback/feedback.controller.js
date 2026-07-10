@@ -1,6 +1,12 @@
 import db from "../../../config/db.js";
 import * as s from "./feedback.service.js"
 import { logAdminActivity } from "../../../utils/activity.logger.js";
+import { sendPushToUser } from "../../../utils/notification.js";
+
+const FEEDBACK_ACK = {
+  bug_report:          { title: "Bug Report Received",     body: "Thank you for reporting the issue." },
+  feature_suggestion:  { title: "Feature Request Received", body: "We've received your feature request." },
+};
 
 /* ================= USER — SUBMIT FEEDBACK ================= */
  export const submitFeedback = async (req, res) => {
@@ -25,6 +31,14 @@ import { logAdminActivity } from "../../../utils/activity.logger.js";
     );
 
     res.status(200).json({ success: true, message: "Feedback submitted successfully" });
+
+    const ack = FEEDBACK_ACK[category] || { title: "Feedback Received", body: "Thank you for your feedback." };
+    await sendPushToUser({
+      userId,
+      title: ack.title,
+      body: ack.body,
+      data: { type: "feedback_received", category },
+    });
 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

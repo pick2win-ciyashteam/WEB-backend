@@ -9,6 +9,7 @@ import db        from "../../../config/db.js";
  
 import { sendSms } from "../../../utils/sms.js";
 import { validatePasswordStrength } from "../../../utils/passwordValidator.js";
+import { sendPushToUser } from "../../../utils/notification.js";
 
 import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, } from "../../../utils/mailer.js";
 
@@ -498,6 +499,13 @@ const completeRegistration = async (sessionId) => {
     }),
   }).catch(err => console.error("Welcome email failed:", err.message));
 
+  await sendPushToUser({
+    userId: newUserId,
+    title: "Welcome to PICK2WIN!",
+    body: "Your account has been created successfully.",
+    data: { type: "account_welcome" },
+  });
+
   await db.execute(`DELETE FROM signup_sessions WHERE id = ?`, [sessionId]);
 
   return newUserId;
@@ -552,7 +560,7 @@ export const loginService = async ({ email, password }) => {
 };
 
 export const updateProfileService = async (updatedUser) => {
-  const { email, fullname, mobile, country } = updatedUser;
+  const { id: userId, email, fullname, mobile, country } = updatedUser;
 
   if (!email) {
     throw new Error("User email missing for profile update notification.");
@@ -569,6 +577,15 @@ export const updateProfileService = async (updatedUser) => {
       updatedOn: new Date(),
     }),
   });
+
+  if (userId) {
+    await sendPushToUser({
+      userId,
+      title: "Account Updated",
+      body: "Your profile has been updated successfully.",
+      data: { type: "account_updated" },
+    });
+  }
 
   return { success: true, message: "Profile update email sent." };
 };
@@ -695,8 +712,15 @@ export const verifyEmailChangeService = async (userId, otp) => {
     [userId]
   );
 
+  await sendPushToUser({
+    userId,
+    title: "Email Changed",
+    body: "Your email address has been updated.",
+    data: { type: "email_changed" },
+  });
+
   return { success: true, message: "Email updated successfully" };
-};  
+};
 
 /* ══════════════════════════════════════════
    FORGOT PASSWORD
@@ -771,6 +795,13 @@ export const verifyEmailChangeService = async (userId, otp) => {
     html,
   });
 
+  await sendPushToUser({
+    userId: user.id,
+    title: "Password Reset Requested",
+    body: "We've sent password reset instructions to your email.",
+    data: { type: "password_reset_requested" },
+  });
+
   return {
     success: true,
     message: "OTP sent to your email",
@@ -805,6 +836,13 @@ export const resetPasswordService = async (email, otp, newPassword) => {
     `UPDATE users SET password = ?, loginotp = NULL, loginotpexpires = NULL WHERE id = ?`,
     [hashed, user.id]
   );
+
+  await sendPushToUser({
+    userId: user.id,
+    title: "Password Changed",
+    body: "Your password has been updated successfully.",
+    data: { type: "password_changed" },
+  });
 
   return { success: true, message: "Password reset successfully", user_id: user.id };
 };

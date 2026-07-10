@@ -1,4 +1,5 @@
 import db from "../../../config/db.js"
+import { sendPushToUser } from "../../../utils/notification.js";
 
 /* ═══════════════════════════════════════════════════
    ADMIN — GET ALL TICKETS
@@ -174,7 +175,7 @@ export const replyToTicket = async (req, res) => {
     }
 
     const [[ticket]] = await db.execute(
-      `SELECT id FROM support_tickets WHERE id = ?`,
+      `SELECT id, user_id FROM support_tickets WHERE id = ?`,
       [id]
     );
     if (!ticket) {
@@ -187,6 +188,22 @@ export const replyToTicket = async (req, res) => {
        WHERE id = ?`,
       [admin_reply.trim(), status, req.admin?.id || null, id]
     );
+
+    if (status === "closed") {
+      await sendPushToUser({
+        userId: ticket.user_id,
+        title: "Support Ticket Closed",
+        body: "Your support request has been resolved.",
+        data: { type: "support_ticket_closed", ticket_id: Number(id) },
+      });
+    } else {
+      await sendPushToUser({
+        userId: ticket.user_id,
+        title: "Support Reply",
+        body: "You've received a reply from the PICK2WIN team.",
+        data: { type: "support_reply", ticket_id: Number(id) },
+      });
+    }
 
     return res.status(200).json({ success: true, message: "Reply sent successfully" });
 
@@ -214,7 +231,7 @@ export const updateTicketStatus = async (req, res) => {
     }
 
     const [[ticket]] = await db.execute(
-      `SELECT id FROM support_tickets WHERE id = ?`,
+      `SELECT id, user_id FROM support_tickets WHERE id = ?`,
       [id]
     );
     if (!ticket) {
@@ -225,6 +242,15 @@ export const updateTicketStatus = async (req, res) => {
       `UPDATE support_tickets SET status = ? WHERE id = ?`,
       [status, id]
     );
+
+    if (status === "closed") {
+      await sendPushToUser({
+        userId: ticket.user_id,
+        title: "Support Ticket Closed",
+        body: "Your support request has been resolved.",
+        data: { type: "support_ticket_closed", ticket_id: Number(id) },
+      });
+    }
 
     return res.status(200).json({ success: true, message: "Status updated successfully" });
 

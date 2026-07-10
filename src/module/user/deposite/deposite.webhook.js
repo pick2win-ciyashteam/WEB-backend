@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import db      from "../../../config/db.js";
 import { sendBillingMail, coinPurchaseEmailHtml } from "../../../utils/mailer.js";
+import { sendPushToUser } from "../../../utils/notification.js";
 
 /* ── Razorpay sends JSON body — no raw buffer needed ── */
 export const razorpayWebhook = async (req, res) => {
@@ -168,6 +169,13 @@ export const razorpayWebhook = async (req, res) => {
     } catch (mailErr) {
       console.warn(`⚠️ Email failed: ${mailErr.message}`);
     }
+
+    await sendPushToUser({
+      userId,
+      title: "Coin Pack Purchased",
+      body: `${parsedCoins} coins from ${plan.name} have been added to your account.`,
+      data: { type: "coin_pack_purchased", plan_id: plan_id, coins: parsedCoins },
+    });
 
     console.log(`✅ Coins added — userId:${userId} coins:${parsedCoins} closing:${closingCoins}`);
     return res.json({ received: true });

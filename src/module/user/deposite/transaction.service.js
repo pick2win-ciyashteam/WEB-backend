@@ -1,4 +1,5 @@
 import db from "../../../config/db.js";
+import { sendPushToUser } from "../../../utils/notification.js";
 
 /* ════════════════════════════════════════════
    💰 ADD COINS (Purchase)
@@ -71,6 +72,14 @@ export const addCoinsService = async (userId, planId, coins, amount, referenceId
     await conn.commit();
 
     console.log(`✅ Coins Added - User:${userId} Coins:${coins} Closing:${closingCoins}`);
+
+    await sendPushToUser({
+      userId,
+      title: "Coin Pack Purchased",
+      body: `${coins} coins have been added to your account.`,
+      data: { type: "coin_pack_purchased", plan_id: planId, coins: Number(coins) },
+    });
+
     return {
       success: true,
       message: "Coins added successfully",
@@ -167,6 +176,23 @@ export const spendCoinsService = async (
     await conn.commit();
 
     console.log(`✅ Coins Spent - User:${userId} Coins:${coinsToSpend} Closing:${closingCoins}`);
+
+    await sendPushToUser({
+      userId,
+      title: "Coin Deducted",
+      body: `${coinsToSpend} coin${coinsToSpend === 1 ? "" : "s"} deducted following a successful UCT generation.`,
+      data: { type: "coin_deducted", coins: coinsToSpend, closing_coins: closingCoins },
+    });
+
+    if (closingCoins <= 2) {
+      await sendPushToUser({
+        userId,
+        title: "Low Coin Balance",
+        body: "Your coin balance is running low.",
+        data: { type: "low_coin_balance", available_coins: closingCoins },
+      });
+    }
+
     return {
       success: true,
       message: "Coins deducted successfully",

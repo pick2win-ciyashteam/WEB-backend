@@ -6,6 +6,7 @@ import {
   getUserTransactionsService,
   getWalletStatsService,
 } from "./transaction.service.js";
+import { sendPushToUser } from "../../../utils/notification.js";
 
 const razorpay = new Razorpay({
   key_id:     process.env.RAZORPAY_KEY_ID,
@@ -197,6 +198,14 @@ export const verifyCoinsPayment = async (req, res) => {
       await conn.commit();
 
       console.log(`✅ Coins added — userId:${userId} coins:${parsedCoins} closing:${closingCoins}`);
+
+      await sendPushToUser({
+        userId,
+        title: "Coin Pack Purchased",
+        body: `${parsedCoins} coins from ${plan.name} have been added to your account.`,
+        data: { type: "coin_pack_purchased", plan_id: plan_id, coins: parsedCoins },
+      });
+
       return res.json({ success: true, message: "Payment verified and coins credited" });
 
     } catch (err) {

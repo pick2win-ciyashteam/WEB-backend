@@ -1,4 +1,5 @@
 import db from "../../../config/db.js";
+import { sendPushToUser } from "../../../utils/notification.js";
 
 // ── ADMIN services ─────────────────────────────────────────────
 
@@ -102,6 +103,13 @@ export const submitAnswersService = async (userId, data) => {
     `INSERT INTO uct_answers (user_id, answers) VALUES (?, ?)`,
     [userId, JSON.stringify(answers)]
   );
+
+  await sendPushToUser({
+    userId,
+    title: "Survey Completed",
+    body: "Thanks for completing the PICK2WIN survey.",
+    data: { type: "survey_completed" },
+  });
 
   return { success: true, already_submitted: false, message: "Feedback submitted successfully" };
 };

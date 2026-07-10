@@ -6,8 +6,7 @@ import {
 } from "./sportmonks.service.js";
 
 import { cleanExpiredBlacklistTokens } from "../admin-auth/admin.auth.service.js";
-
-import { sendPushToAll } from "../../../utils/notification.js"
+import { sendPushToUser } from "../../../utils/notification.js";
 
 /* ================= HELPERS ================= */
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -79,6 +78,14 @@ const SCHEDULES = {
 const syncMatchStatuses = async () => {
   console.log("⏰ [CRON] Status sync started:", new Date().toISOString());
   try {
+    const [startingMatches] = await db.query(
+      `SELECT id, hometeamname, awayteamname
+       FROM matches
+       WHERE is_active = 1
+         AND status = 'UPCOMING'
+         AND start_time <= NOW()`
+    );
+
     const [toLive] = await db.query(
       `UPDATE matches SET status = 'LIVE'
        WHERE is_active = 1
@@ -94,6 +101,22 @@ const syncMatchStatuses = async () => {
     );
 
     console.log(`✅ [CRON] UPCOMING→LIVE: ${toLive.affectedRows} | LIVE→RESULT: ${toResult.affectedRows}`);
+
+    /* ── Notify users who generated teams for matches that just went LIVE ── */
+    for (const match of startingMatches) {
+      const [users] = await db.query(
+        `SELECT DISTINCT user_id FROM match_generation_log WHERE match_id = ?`,
+        [match.id]
+      );
+      for (const u of users) {
+        await sendPushToUser({
+          userId: u.user_id,
+          title: "Match Started",
+          body: `${match.hometeamname} vs ${match.awayteamname} has kicked off.`,
+          data: { type: "match_started", match_id: match.id },
+        });
+      }
+    }
   } catch (err) {
     console.error("❌ [CRON] syncMatchStatuses failed:", err.message);
   }

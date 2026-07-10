@@ -4,6 +4,7 @@ import axios from "axios";
 import { sendNoreplyMail, uctTeamsGeneratedEmailHtml } from "../../../utils/mailer.js";
 import { getUCTEndpoint, getValidSportsAndGames } from "../../../utils/uctApi.js";
 import { logUserActivity } from "../../../utils/activity.logger.js";
+import { sendPushToUser } from "../../../utils/notification.js";
 
 /* ================= GENERATE TEAMS ================= */
 
@@ -220,6 +221,14 @@ export const generateTeams = async (req, res) => {
       } else if (uctDetail) {
         userMessage = `Team generation failed: ${uctDetail}`;
       }
+
+      await sendPushToUser({
+        userId,
+        title: "UCT Generation Failed",
+        body: "We couldn't generate your teams.",
+        data: { type: "uct_generation_failed", match_id, game: gameName, sport: sportName },
+      });
+
       return res.status(400).json({ success: false, message: userMessage });
     }
 
@@ -331,6 +340,29 @@ export const generateTeams = async (req, res) => {
     } finally {
       conn.release();
     }
+
+    await sendPushToUser({
+      userId,
+      title: "Coin Deducted",
+      body: "1 coin has been deducted following a successful UCT generation.",
+      data: { type: "coin_deducted", coins: 1, closing_coins: coinsRemaining },
+    });
+
+    if (coinsRemaining <= 2) {
+      await sendPushToUser({
+        userId,
+        title: "Low Coin Balance",
+        body: "Your coin balance is running low.",
+        data: { type: "low_coin_balance", available_coins: coinsRemaining },
+      });
+    }
+
+    await sendPushToUser({
+      userId,
+      title: "Teams Ready",
+      body: `Your ${totalTeams} generated teams are now available in My Teams.`,
+      data: { type: "teams_ready", match_id, total_teams: totalTeams, game: gameName, sport: sportName },
+    });
 
     /* ── Email + activity log (best-effort, outside the transaction) ── */
     let emailSent = false;

@@ -1,4 +1,5 @@
 import db from "../../../config/db.js"
+import { sendPushToUser } from "../../../utils/notification.js";
 
 /* ═══════════════════════════════════════════════════
    USER — SUBMIT SUPPORT TICKET
@@ -22,6 +23,13 @@ export const submitTicket = async (req, res) => {
        VALUES (?, ?, ?)`,
       [userId, subject.trim(), message.trim()]
     );
+
+    await sendPushToUser({
+      userId,
+      title: "Support Ticket Created",
+      body: "Your support request has been received.",
+      data: { type: "support_ticket_created", ticket_id: result.insertId },
+    });
 
     return res.status(201).json({
       success: true,
