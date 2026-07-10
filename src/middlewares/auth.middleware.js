@@ -67,6 +67,18 @@ export const authenticate = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
+    /* ── Blacklist Check ── */
+    const [[blacklisted]] = await db.query(
+      `SELECT id FROM user_token_blacklist WHERE token = ? LIMIT 1`,
+      [token]
+    );
+    if (blacklisted) {
+      return res.status(401).json({
+        success: false,
+        message: "Session expired, please login again",
+      });
+    }
+
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET, {

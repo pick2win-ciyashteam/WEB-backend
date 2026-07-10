@@ -591,14 +591,46 @@ export const updateProfileService = async (updatedUser) => {
 };
 
 /* ══════════════════════════════════════════
-   LOGOUT  
+   LOGOUT
 ══════════════════════════════════════════ */
-export const logoutService = async (userId) => {
+export const logoutService = async (userId, token) => {
   await db.execute(`UPDATE users SET updated_at = NOW() WHERE id = ?`, [userId]);
+
+  if (token) {
+    const decoded = jwt.decode(token);
+    if (decoded?.exp) {
+      // Pass an explicit UTC string, not a JS Date object — mysql2 converts
+      // Date objects using the Node process's local timezone (IST here),
+      // which would drift ~5.5h from MySQL's own NOW() (true UTC) and delay cleanup.
+      const expiresAtUTC = new Date(decoded.exp * 1000).toISOString().slice(0, 19).replace("T", " ");
+      await db.execute(
+        `INSERT INTO user_token_blacklist (token, user_id, expires_at)
+         VALUES (?, ?, ?)`,
+        [token, userId, expiresAtUTC]
+      );
+    }
+  }
+
   return { success: true, message: "Logged out successfully" };
 };
 
-/* ══════════════════════════════════════════  
+/* ══════════════════════════════════════════
+   CLEAN EXPIRED BLACKLIST TOKENS (CRON)
+══════════════════════════════════════════ */
+export const cleanExpiredUserBlacklistTokens = async () => {
+  try {
+    const [result] = await db.query(
+      `DELETE FROM user_token_blacklist WHERE expires_at < NOW()`
+    );
+    if (result.affectedRows > 0) {
+      console.log(`[Cron] Cleaned ${result.affectedRows} expired user blacklist tokens`);
+    }
+  } catch (err) {
+    console.error("[Cron] User blacklist cleanup error:", err.message);
+  }
+};
+
+/* ══════════════════════════════════════════
    REQUEST MOBILE CHANGE
 ══════════════════════════════════════════ */
 export const requestMobileChangeService = async (userId, { new_mobile }) => {

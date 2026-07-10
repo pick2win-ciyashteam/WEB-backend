@@ -365,12 +365,15 @@ export const logoutService = async (token, admin) => {
   const decoded = jwt.decode(token);
   if (!decoded?.exp) throw new Error("Invalid token");
 
-  const expiresAt = new Date(decoded.exp * 1000);
+  // Explicit UTC string, not a JS Date object — mysql2 converts Date objects
+  // using the Node process's local timezone (IST), which drifts ~5.5h from
+  // MySQL's own NOW() (true UTC) and delays the nightly cleanup cron.
+  const expiresAtUTC = new Date(decoded.exp * 1000).toISOString().slice(0, 19).replace("T", " ");
 
   await db.query(
     `INSERT INTO admin_token_blacklist (token, admin_id, expires_at)
      VALUES (?, ?, ?)`,
-    [token, admin.id, expiresAt]
+    [token, admin.id, expiresAtUTC]
   );
 
   return { success: true, message: "Logged out successfully" };

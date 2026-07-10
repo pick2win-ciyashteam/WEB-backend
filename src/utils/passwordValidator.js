@@ -101,3 +101,4 @@ export const validatePasswordStrength = (password) => {
 };
 
 export default validatePasswordStrength;
+

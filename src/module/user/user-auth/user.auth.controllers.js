@@ -105,7 +105,8 @@ export const login = async (req, res) => {
 /* ================= LOGOUT ================= */
 export const logout = async (req, res) => {
   try {
-    const result = await logoutService(req.user.id);
+    const token = req.headers.authorization?.split(" ")[1];
+    const result = await logoutService(req.user.id, token);
     await logUserActivity({
       userId: req.user.id,
       category: "auth",
@@ -187,8 +188,12 @@ const [[wallet]] = await db.execute(
     );
 
     /* ── 5. Logged-in devices — distinct ip_address + user_agent combos
-       from login activity logs (no separate device/session table exists,
-       so this reuses the ip_address/user_agent already captured on every login) ── */
+       from login/logout activity logs (no separate device/session table
+       exists, so this reuses what's already captured on every login/logout).
+       A device counts as "active" (still logged in) if its most recent
+       auth event is a login with no later logout — this is a best-effort
+       signal only: user JWTs aren't server-side revoked on logout, so the
+       token itself would still work even after this flips to inactive. ── */
     const [[deviceCount]] = await db.execute(
       `SELECT COUNT(DISTINCT CONCAT(COALESCE(ip_address, ''), '|', COALESCE(user_agent, ''))) AS total
        FROM user_activity_logs
@@ -196,19 +201,34 @@ const [[wallet]] = await db.execute(
       [req.user.id]
     );
 
-    const [recentDevices] = await db.execute(
-      `SELECT ip_address, user_agent, MAX(created_at) AS last_login
-       FROM user_activity_logs
-       WHERE user_id = ? AND category = 'auth' AND action = 'login'
-       GROUP BY ip_address, user_agent
-       ORDER BY last_login DESC
-       LIMIT 5`,
-      [req.user.id]
+    const [deviceStatuses] = await db.execute(
+      `SELECT
+         ual.ip_address,
+         ual.user_agent,
+         latest.last_seen,
+         (ual.action = 'login') AS is_active
+       FROM user_activity_logs ual
+       INNER JOIN (
+         SELECT ip_address, user_agent, MAX(created_at) AS last_seen
+         FROM user_activity_logs
+         WHERE user_id = ? AND category = 'auth' AND action IN ('login', 'logout')
+         GROUP BY ip_address, user_agent
+       ) latest
+         ON latest.ip_address = ual.ip_address
+        AND latest.user_agent = ual.user_agent
+        AND latest.last_seen  = ual.created_at
+       WHERE ual.user_id = ? AND ual.category = 'auth' AND ual.action IN ('login', 'logout')
+       GROUP BY ual.ip_address, ual.user_agent, latest.last_seen, ual.action
+       ORDER BY latest.last_seen DESC`,
+      [req.user.id, req.user.id]
     );
 
+    const activeDeviceCount = deviceStatuses.filter((d) => d.is_active).length;
+    const recentDevices = deviceStatuses.slice(0, 5);
+
   const availableCoins = wallet ? Number(wallet.available_coins) : 0;
-const totalCoins     = wallet ? Number(wallet.total_coins)     : 0;
-const usedCoins      = wallet ? Number(wallet.used_coins)      : 0;
+  const totalCoins     = wallet ? Number(wallet.total_coins)     : 0;
+  const usedCoins      = wallet ? Number(wallet.used_coins)      : 0;
 
     res.status(200).json({
       success: true,
@@ -249,11 +269,13 @@ const usedCoins      = wallet ? Number(wallet.used_coins)      : 0;
 
         /* ── Security — logged-in devices ── */
         security: {
-          device_count: Number(deviceCount.total),
+          device_count:        Number(deviceCount.total),
+          active_device_count: activeDeviceCount,
           recent_devices: recentDevices.map((d) => ({
             ip_address: d.ip_address,
             user_agent: d.user_agent,
-            last_login: d.last_login,
+            last_seen:  d.last_seen,
+            is_active:  Boolean(d.is_active),
           })),
         },
       },

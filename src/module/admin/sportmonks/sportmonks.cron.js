@@ -6,6 +6,7 @@ import {
 } from "./sportmonks.service.js";
 
 import { cleanExpiredBlacklistTokens } from "../admin-auth/admin.auth.service.js";
+import { cleanExpiredUserBlacklistTokens } from "../../user/user-auth/user.auth.services.js";
 import { sendPushToUser } from "../../../utils/notification.js";
 
 /* ================= HELPERS ================= */
@@ -287,6 +288,7 @@ export const startCronJobs = () => {
   cron.schedule(SCHEDULES.DAILY_2AM_UTC, cleanupOldInactiveMatches, { scheduled: true, timezone: "UTC" });
   cron.schedule("0 0 * * *",             syncSubscriptionExpiry,    { scheduled: true, timezone: "UTC" });
   cron.schedule("0 3 * * *",             cleanExpiredBlacklistTokens, { scheduled: true, timezone: "UTC" })
+  cron.schedule("0 3 * * *",             cleanExpiredUserBlacklistTokens, { scheduled: true, timezone: "UTC" })
  cron.schedule(SCHEDULES.EVERY_5_MINS, syncSeriesDates, { scheduled: true, timezone: "UTC" });
   console.log("✅ [CRON] All jobs registered");
 };   
