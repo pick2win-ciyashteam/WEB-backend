@@ -19,144 +19,6 @@ import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml
    SIGNUP
 ══════════════════════════════════════════ */
 
-//  export const signupService = async (data) => {
-//   const {
-//     fullName,
-//     fullname,
-//     email,
-//     mobile,
-//     country,
-//     date_of_birth,
-//     password,
-//   } = data;
-
-//   const userFullName = (fullname || fullName || "").trim();
-//   const normalizedEmail = email.trim().toLowerCase();
-//   const normalizedMobile = String(mobile).replace(/\D/g, "").trim();
-
-//   /* ── Age Check ── */
-//   const age =
-//     new Date(Date.now() - new Date(date_of_birth)).getUTCFullYear() - 1970;
-
-//   if (age < 18) {
-//     throw new Error("You must be at least 18 years old");
-//   }
-
-//   /* ── Already Registered Check ── */
-//   const [[[emailUser]], [[mobileUser]]] = await Promise.all([
-//     db.execute(
-//       `SELECT id, account_status
-//        FROM users
-//        WHERE email = ?`,
-//       [normalizedEmail]
-//     ),
-//     db.execute(
-//       `SELECT id, account_status
-//        FROM users
-//        WHERE mobile = ?`,
-//       [normalizedMobile]
-//     ),
-//   ]);
-
-//   if (emailUser) {
-//     throw new Error(
-//       emailUser.account_status === "deleted"
-//         ? "This email was previously deleted. Contact support."
-//         : "Email already registered"
-//     );
-//   }
-
-//   if (mobileUser) {
-//     throw new Error(
-//       mobileUser.account_status === "deleted"
-//         ? "This mobile was previously deleted. Contact support."
-//         : "Mobile already registered"
-//     );
-//   }
-
-//   /* ── Hash Password ── */
-//   const hashedPassword = await bcrypt.hash(password, 10);
-
-//   /* ── Generate OTPs ── */
-//   const mobileOtp = crypto.randomInt(100000, 999999).toString();
-//   const emailOtp = crypto.randomInt(100000, 999999).toString();
-
-//   const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
-//   const sessionExpiry = new Date(Date.now() + 15 * 60 * 1000);
-
-//   /* ── Create or Update Signup Session ── */
-//   await db.execute(
-//     `
-//     INSERT INTO signup_sessions
-//     (
-//       fullname,
-//       email,
-//       mobile,
-//       country,
-//       date_of_birth,
-//       password,
-//       mobile_otp,
-//       mobile_otp_expiry,
-//       email_otp,
-//       email_otp_expiry,
-//       mobile_verified,
-//       email_verified,
-//       expires_at
-//     )
-//     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
-
-//     ON DUPLICATE KEY UPDATE
-//       fullname            = VALUES(fullname),
-//       email               = VALUES(email),
-//       country             = VALUES(country),
-//       date_of_birth       = VALUES(date_of_birth),
-//       password            = VALUES(password),
-//       mobile_otp          = VALUES(mobile_otp),
-//       mobile_otp_expiry   = VALUES(mobile_otp_expiry),
-//       email_otp           = VALUES(email_otp),
-//       email_otp_expiry    = VALUES(email_otp_expiry),
-//       mobile_verified     = 0,
-//       email_verified      = 0,
-//       expires_at          = VALUES(expires_at)
-//     `,
-//     [
-//       userFullName,
-//       normalizedEmail,
-//       normalizedMobile,
-//       country,
-//       date_of_birth,
-//       hashedPassword,
-//       mobileOtp,
-//       otpExpiry,
-//       emailOtp,
-//       otpExpiry,
-//       sessionExpiry,
-//     ]
-//   );
-
-//   /* ── Send Email OTP ── */
-//   await sendNoreplyMail({
-//     to: normalizedEmail,
-//     subject: "Pick2Win — Email Verification OTP",
-//     html: otpEmailHtml(emailOtp, userFullName, 5),
-//   });
-
-//   /* ── Send SMS OTP ── */
-//   await sendSms(
-//     normalizedMobile,
-//     `Your Pick2Win OTP is ${mobileOtp}. Valid for 5 minutes.`
-//   );
-
-//   return {
-//     success: true,
-//     message:
-//       "OTP sent to your mobile and email. Please verify both.",
-//     ...(process.env.NODE_ENV !== "production" && {
-//       mobileOtp,
-//       emailOtp,
-//     }),
-//   };
-// };
 
 export const signupService = async (data) => {
   const {
@@ -346,14 +208,13 @@ export const verifyEmailOtpService = async ({ email, otp }) => {
   const [[session]] = await db.execute(
   `SELECT id, email_otp, email_otp_expiry,
           mobile_verified, email_verified, expires_at
-   FROM signup_sessions 
+   FROM signup_sessions
    WHERE LOWER(email) = LOWER(?)
-   ORDER BY id DESC LIMIT 1`,  // ← latest session తీసుకో
+   ORDER BY id DESC LIMIT 1`,
   [email.trim().toLowerCase()]
 );
 
-  if (!session)                                         throw new Error("Session not found. Please signup again.");
-  // if (new Date(session.expires_at) < new Date())        throw new Error("Session expired. Please signup again.");
+  if (!session) throw new Error("Session not found. Please signup again.");
 
   if (new Date(session.expires_at).getTime() < Date.now())
   throw new Error("Session expired. Please signup again.");
@@ -631,6 +492,21 @@ export const cleanExpiredUserBlacklistTokens = async () => {
 };
 
 /* ══════════════════════════════════════════
+   LOGOUT ALL DEVICES
+   Stateless JWTs mean we can't revoke every issued token
+   individually — instead, stamp tokens_invalidated_at (SQL-side
+   UTC_TIMESTAMP(), never a JS Date — see the timezone note above)
+   and reject any token whose iat predates it, in authenticate middleware.
+══════════════════════════════════════════ */
+export const logoutAllDevicesService = async (userId) => {
+  await db.execute(
+    `UPDATE users SET tokens_invalidated_at = UTC_TIMESTAMP() WHERE id = ?`,
+    [userId]
+  );
+  return { success: true, message: "Logged out from all devices successfully" };
+};
+
+/* ══════════════════════════════════════════
    REQUEST MOBILE CHANGE
 ══════════════════════════════════════════ */
 export const requestMobileChangeService = async (userId, { new_mobile }) => {
@@ -757,35 +633,7 @@ export const verifyEmailChangeService = async (userId, otp) => {
 /* ══════════════════════════════════════════
    FORGOT PASSWORD
 ══════════════════════════════════════════ */
-// export const forgotPasswordService = async (email) => {
-//   const [[user]] = await db.execute(
-//     `SELECT id, email FROM users WHERE email = ? AND account_status != 'deleted'`,
-//     [email]
-//   );
-//   if (!user) throw new Error("No account found with this email");
-
-//   const otp    = crypto.randomInt(100000, 999999).toString();
-//   const expiry = new Date(Date.now() + 10 * 60 * 1000);
-
-//   await db.execute(
-//     `UPDATE users SET loginotp = ?, loginotpexpires = ? WHERE id = ?`,
-//     [otp, expiry, user.id]
-//   );
-
-//   /* ── Send OTP email ── */
-//   await sendNoreplyMail({
-//     to:      email,
-//     subject: "Pick2Win — Password Reset OTP",
-//     html:    otpEmailHtml(otp, "Reset Your Password"),
-//   });
-
-//   return {
-//     success: true,
-//     message: "OTP sent to your email",
-//     ...(process.env.NODE_ENV !== "production" && { otp }),
-//   };
-// };
-
+ 
  export const forgotPasswordService = async (email) => {
   const normalizedEmail = email.trim().toLowerCase();
 
@@ -914,49 +762,7 @@ export const deleteAccountService = async (userId) => {
 /* ══════════════════════════════════════════
    CONFIRM DELETE ACCOUNT
 ══════════════════════════════════════════ */
-// export const confirmDeleteAccountService = async (userId, otp) => {
-//   const [[user]] = await db.execute(
-//     `SELECT id, loginotp, loginotpexpires FROM users
-//      WHERE id = ? AND account_status != 'deleted'`,
-//     [userId]
-//   );
-
-//   if (!user)          throw new Error("User not found");
-//   if (!user.loginotp) throw new Error("OTP not requested. Please request again.");
-//   if (String(user.loginotp) !== String(otp))           throw new Error("Invalid OTP");
-//   if (new Date(user.loginotpexpires) < new Date())     throw new Error("OTP expired. Please request again.");
-
-//   const conn = await db.getConnection();
-//   try {
-//     await conn.beginTransaction();
-
-//     await conn.query(
-//       `DELETE utp FROM user_team_players utp
-//        INNER JOIN user_teams ut ON ut.id = utp.user_team_id
-//        WHERE ut.user_id = ?`,
-//       [userId]
-//     );
-//     await conn.query(`DELETE FROM user_teams            WHERE user_id = ?`, [userId]);
-//     await conn.query(`DELETE FROM match_generation_log  WHERE user_id = ?`, [userId]);
-//     await conn.query(
-//       `DELETE FROM signup_sessions WHERE email = (SELECT email FROM users WHERE id = ?)`,
-//       [userId]
-//     );
-//     await conn.query(`DELETE FROM user_subscriptions    WHERE user_id = ?`, [userId]);
-//     await conn.query(`DELETE FROM user_coins            WHERE user_id = ?`, [userId]);
-//     await conn.query(`DELETE FROM users                 WHERE id = ?`,      [userId]);
-
-//     await conn.commit();
-//     return { success: true, message: "Account deleted successfully" };
-
-//   } catch (err) {
-//     await conn.rollback().catch(() => {});
-//     throw err;
-//   } finally {
-//     conn.release();
-//   }
-// };       
-
+ 
  export const confirmDeleteAccountService = async (userId, otp) => {
   const [[user]] = await db.execute(
     `SELECT id, email, fullname, loginotp, loginotpexpires

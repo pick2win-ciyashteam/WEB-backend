@@ -47,7 +47,7 @@ export const getMatchesByTypeService = async (type, userId) => {
     [type.toUpperCase(), userId]
   );
 
-  // Group by match —  match కి multiple contests/teams 
+  // Group by match — one match can have multiple contests/teams
   const matchMap = {};
 
   rows.forEach((row) => {
@@ -87,7 +87,6 @@ export const getMatchesByTypeService = async (type, userId) => {
 };
 
 
-// ✅ contestStatus parameter add 
 export const getMatchesService = async (userId, status) => {
   switch (status) {
     case "LIVE":      return getLiveMatches(userId);
@@ -98,7 +97,7 @@ export const getMatchesService = async (userId, status) => {
   }
 };
 
-// ✅ LIVE — contest_entries లో JOINED matches (status = 'LIVE')
+// LIVE — matches joined with contest_entries (status = 'LIVE')
 const getLiveMatches = async (userId) => {
   const [rows] = await db.query(
     `SELECT DISTINCT
@@ -139,7 +138,7 @@ const getLiveMatches = async (userId) => {
   return groupMatchesWithEntries(rows);
 };
 
-// ✅ UPCOMING — user_teams create  matches 
+// UPCOMING — matches with user_teams already created
 const getUpcomingMatches = async (userId) => {
   const [rows] = await db.query(
     `SELECT DISTINCT
@@ -157,7 +156,6 @@ const getUpcomingMatches = async (userId) => {
         m.status,
         ut.id               AS userTeamId,
         ut.team_name        AS teamName,
-        -- contest join చేశాడా లేదా check
         ce.contest_id       AS contestId,
         ce.status           AS entryStatus,
         c.prize_pool        AS prizePool,
@@ -177,7 +175,7 @@ const getUpcomingMatches = async (userId) => {
     [userId, userId]
   );
 
-  // Match గా group చేయి, teams + optional entries తో
+  // Group by match, with teams + optional entries
   const matchMap = {};
 
   rows.forEach((row) => {
@@ -210,7 +208,7 @@ const getUpcomingMatches = async (userId) => {
       match.teams.push({ teamId: row.userTeamId, teamName: row.teamName });
     }
 
-    // Contest join అయి ఉంటే add చేయి
+    // Add contest if joined
     if (row.contestId && !match.contests.find(c => c.contestId === row.contestId)) {
       match.contests.push({
         contestId:    row.contestId,
@@ -227,8 +225,7 @@ const getUpcomingMatches = async (userId) => {
   return Object.values(matchMap);
 };
 
-// ✅ RESULT — completed matches (status = 'RESULT')
-
+// RESULT — completed matches (status = 'RESULT')
 const getPastMatches = async (userId, contestStatus) => {
   const [matches] = await db.query(
     `SELECT 

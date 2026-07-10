@@ -65,18 +65,3 @@ export const sendToAll = async (req, res) => {
   }
 };
 
-/* ── Send to single token ── */
-// export const sendToToken = async (req, res) => {
-//   try {
-//     const { token, title, body, data } = req.body;
-
-//     if (!token || !title || !body) {
-//       return res.status(400).json({ success: false, message: "token, title, body required" });
-//     }
-
-//     const result = await sendPushNotification({ token, title, body, data: data || {} });
-//     return res.status(200).json({ success: true, result });
-//   } catch (err) {
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// };

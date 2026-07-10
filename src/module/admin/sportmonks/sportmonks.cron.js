@@ -1,9 +1,6 @@
 import cron from "node-cron";
 import db   from "../../../config/db.js";
-import {
-  syncPlayingXIService,
-  // syncAllPlayerStatsService,   
-} from "./sportmonks.service.js";
+import { syncPlayingXIService } from "./sportmonks.service.js";
 
 import { cleanExpiredBlacklistTokens } from "../admin-auth/admin.auth.service.js";
 import { cleanExpiredUserBlacklistTokens } from "../../user/user-auth/user.auth.services.js";
@@ -47,7 +44,7 @@ const SCHEDULES = {
          AND m.start_time <= ?
          AND m.status IN ('UPCOMING', 'LIVE', 'RESULT')
        ORDER BY m.start_time ASC`,
-      [formatDateTime(ninetyMinsLater)]  // ✅ comma fix
+      [formatDateTime(ninetyMinsLater)]
     );
 
     if (!matches.length) {
@@ -148,8 +145,6 @@ const syncPlayerStatsJob = async () => {
 
     for (const m of matches) {
       try {
-        // TODO: implement syncAllPlayerStatsService
-        // await syncAllPlayerStatsService(m.id);
         console.log(`[StatsCron] Match ${m.id} — stats sync skipped (not implemented)`);
       } catch (err) {
         console.error(`[StatsCron] Match ${m.id} error:`, err.message);
@@ -222,7 +217,7 @@ const syncLineupStatus = async () => {
 
  const syncSubscriptionExpiry = async () => {
   try {
-    /* ── 1. Actual expiry — expiry_date     ── */
+    /* ── 1. Actual expiry — expiry_date ── */
     const [result] = await db.execute(
       `UPDATE user_subscriptions
        SET status = 'expired'
@@ -230,7 +225,7 @@ const syncLineupStatus = async () => {
          AND expiry_date < NOW()`
     );
 
-    /* ── 2. Old packs — same user కి latest ── */
+    /* ── 2. Old packs — keep latest per user ── */
     const [oldResult] = await db.execute(
       `UPDATE user_subscriptions us
        INNER JOIN (

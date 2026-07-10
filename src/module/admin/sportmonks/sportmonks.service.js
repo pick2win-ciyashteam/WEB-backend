@@ -694,7 +694,7 @@ export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
     const venueCity     = venue?.city_name   || null;
     const venueCountry  = venue?.country_id  || null;
 
-    /* ── Match upsert — venue add చేయి ── */
+    /* ── Match upsert — includes venue ── */
     const startingAt    = fixture.starting_at;
     const matchDateOnly = startingAt?.split(" ")[0] || null;
 

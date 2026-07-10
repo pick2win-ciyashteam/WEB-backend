@@ -548,11 +548,10 @@ export const getCoinExpiry = async (req, res) => {
       });
     }
 
-    /* Per-row logic (NOT latest-only): prati subscription row separate ga
-       check avtundi. Ex: user ki 3 packs unna prathi pack vere expiry_date
-       kaligi untundi. Latest row active aina, పాత rows expired+unused
-       unte avi kuda chupisthamu. coins > matches_used (unused coins migili
-       unna rows matrame). */
+    /* Per-row logic (NOT latest-only): each subscription row is checked
+       separately, since a user can have multiple packs with different
+       expiry dates. Even if the latest row is active, older expired rows
+       with unused coins (coins > matches_used) still show up here. */
     const statusFilter =
       window === "expired"
         ? `us.status = 'expired' AND us.coins > us.matches_used`

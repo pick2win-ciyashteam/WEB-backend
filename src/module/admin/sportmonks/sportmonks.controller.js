@@ -9,7 +9,6 @@ import {
   getAllFixturesBetween,
   getMatchesByDateRangeService,
   manualSyncPlayingXIService,
-    
 } from "./sportmonks.service.js";
 import { logAdminActivity } from "../../../utils/activity.logger.js";
 
@@ -126,30 +125,6 @@ export const getMatches = async (req, res) => {
 /* ══════════════════════════════════════════
    SYNC
 ══════════════════════════════════════════ */
-// export const syncPlayingXI = async (req, res) => {
-//   try {
-//     const { match_id } = req.params;  
-//     if (!match_id)
-//       return res.status(400).json({ success: false, message: "match_id required" });
-
-//     const result = await syncPlayingXIService(match_id);
-//     if (result.reason)
-//       return res.status(202).json({ success: false, message: result.reason, count: 0 });
-
-//     res.json({ success: true, message: `${result.count} playing XI synced`, count: result.count });
-//   } catch (err) {
-//     console.error("syncPlayingXI error:", err.message);
-//     res.status(500).json({ success: false, message: err.message });
-//   }
-// };
-
-
-
-
-  
-//=============================================================================/
-
-
 export const getFixturesByDateRange = async (req, res) => {
   try {
     const { from, to } = req.body;
@@ -309,9 +284,6 @@ export const getMatchesByDateRange = async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 };
-
-//===================================================================================
-
 
 export const manualSyncPlayingXI = async (req, res) => {
   try {

@@ -3,7 +3,7 @@ import { authenticate } from "../../../middlewares/auth.middleware.js";
 import * as v           from "./user.auth.validations.js";
 import * as c           from "./user.auth.controllers.js";
 
-const router = Router();
+const router = Router();   
 
 /* ── Public routes ── */
 router.post("/signup",            v.signup,          c.signup);
@@ -13,10 +13,10 @@ router.post("/resend-otp",        v.resendOtp,       c.resendOtp);
 router.post("/login",             v.login,           c.login);
 
 /* ── Protected routes ── */
-router.post  ("/logout",  authenticate,              c.logout);   
+router.post  ("/logout",             authenticate,   c.logout);
+router.post  ("/logout-all-devices", authenticate,   c.logoutAllDevices);
 router.get   ("/profile", authenticate,              c.getProfile);
 router.patch ("/update",  authenticate, v.updateProfile, c.updateProfile);
-// router.delete("/delete",  authenticate,              c.deleteAccount);
 
 router.post("/delete-account",         authenticate, c.deleteAccount);
 router.post("/confirm-delete-account", authenticate, c.confirmDeleteAccount);

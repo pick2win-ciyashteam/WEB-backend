@@ -6,8 +6,7 @@ import {
   getAvailableMatches,
   toggleMatches,
   getMatches,
-//   syncPlayingXI,
-manualSyncPlayingXI,
+  manualSyncPlayingXI,
   getFixturesByDateRange,
   getMatchesByDateRange,
 } from "./sportmonks.controller.js";
@@ -31,8 +30,6 @@ router.get("/matches/:seriesid",           getMatches);
 /* ══════════════════════════════════════════
    SYNC
 ══════════════════════════════════════════ */
-// router.get("/sync-playingxi/:match_id",    syncPlayingXI);
-
 router.get("/sync-playingxi/:match_id", manualSyncPlayingXI);
 
 

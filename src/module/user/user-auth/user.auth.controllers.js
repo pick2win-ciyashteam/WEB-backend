@@ -5,6 +5,7 @@ import {
   resendOtpService,
   loginService,
   logoutService,
+  logoutAllDevicesService,
   requestMobileChangeService,
   verifyMobileChangeService,
   requestEmailChangeService,
@@ -118,7 +119,24 @@ export const logout = async (req, res) => {
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-};    
+};
+
+/* ================= LOGOUT ALL DEVICES ================= */
+export const logoutAllDevices = async (req, res) => {
+  try {
+    const result = await logoutAllDevicesService(req.user.id);
+    await logUserActivity({
+      userId: req.user.id,
+      category: "auth",
+      action: "logout_all_devices",
+      details: "User logged out from all devices",
+      req,
+    });
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
   
  
 /* ================= GET PROFILE ================= */
@@ -359,15 +377,9 @@ export const updateProfile = async (req, res) => {
   }
 }; 
 
-/* ================= DELETE ACCOUNT ================= */
-
-  
-
-
 /* ================= REQUEST MOBILE CHANGE ================= */
 export const requestMobileChange = async (req, res) => {
   try {
-    // ✅ object గా pass చేయి
     const result = await requestMobileChangeService(req.user.id, { new_mobile: req.body.new_mobile });
     await logUserActivity({
       userId: req.user.id,
@@ -385,7 +397,6 @@ export const requestMobileChange = async (req, res) => {
 /* ================= VERIFY MOBILE CHANGE ================= */
 export const verifyMobileChange = async (req, res) => {
   try {
-    // ✅ object గా pass చేయి
     const result = await verifyMobileChangeService(req.user.id, { otp: req.body.otp });
     await logUserActivity({
       userId: req.user.id,
@@ -611,7 +622,7 @@ export const getMyActivityLogs = async (req, res) => {
   }
 };
   
-
+// notifications
  
 export const registerDevice = async (req, res) => {
   try {

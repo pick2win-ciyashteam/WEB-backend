@@ -9,51 +9,6 @@ const TOKEN_ERRORS = {
 };
 
 /* ================= AUTHENTICATE ================= */
-// export const authenticate = async (req, res, next) => {
-//   try {
-
-//     /* ── Extract Token ── */
-//     const authHeader = req.headers.authorization;
-
-//     if (!authHeader?.startsWith("Bearer ")) {
-//       return res.status(401).json({
-//         success: false,
-//         message: "Authorization header missing or malformed",
-//       });
-//     }
-
-//     const token = authHeader.split(" ")[1];
-
-//     /* ── Verify Token ── */
-//     let decoded;
-//     try {
-//       decoded = jwt.verify(token, process.env.JWT_SECRET, {
-//         algorithms: ["HS256"],
-//       });
-//     } catch (err) {
-//       const message = TOKEN_ERRORS[err.name] || "Token verification failed";
-//       return res.status(401).json({ success: false, message });
-//     }
-
-//     /* ── Validate Payload ── */
-//     if (!decoded?.id || !decoded?.email) {
-//       return res.status(401).json({
-//         success: false,
-//         message: "Invalid token payload",
-//       });
-//     }
-
-//     /* ── Attach User ── */
-//     req.user = decoded;
-//     next();
-
-//   } catch (err) {
-//     if (process.env.NODE_ENV !== "production")
-//       console.error("Authenticate error:", err);
-//     return res.status(500).json({ success: false, message: "Internal server error" });
-//   }
-// };
-
 export const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -96,11 +51,26 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    // ── Admin token user routes లో use చేస్తే block ──
+    // ── Block admin tokens on user routes ──
     if (decoded.type === "admin") {
       return res.status(403).json({
         success: false,
         message: "Access denied: admin token cannot be used on user routes",
+      });
+    }
+
+    /* ── "Logout all devices" check — reject any token issued before the
+       user's last logout-all-devices timestamp. Comparing decoded.iat
+       (a plain epoch-seconds number) against UNIX_TIMESTAMP() computed
+       server-side avoids the JS-Date/mysql2 timezone conversion bug. ── */
+    const [[invalidation]] = await db.query(
+      `SELECT UNIX_TIMESTAMP(tokens_invalidated_at) AS invalidated_at FROM users WHERE id = ?`,
+      [decoded.id]
+    );
+    if (invalidation?.invalidated_at && decoded.iat <= invalidation.invalidated_at) {
+      return res.status(401).json({
+        success: false,
+        message: "Session expired, please login again",
       });
     }
 
@@ -113,8 +83,6 @@ export const authenticate = async (req, res, next) => {
     return res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
-
-// 
 
 /* ================= CHECK ACCOUNT STATUS ================= */
 export const checkAccountStatus = async (req, res, next) => {

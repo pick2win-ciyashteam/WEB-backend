@@ -42,7 +42,7 @@ if (!admin.apps.length) {
   }
 }
 
-/* ── Single token కి ── */
+/* ── Single token ── */
 export const sendPushNotification = async ({ token, title, body, data = {} }) => {
   try {
     const message = {
@@ -84,7 +84,7 @@ export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => 
         const failedToken = validTokens[idx];
         const errorCode   = resp.error?.code;
 
-        // Invalid token అయితే DB నుండి delete చేయండి
+        // Remove invalid token from DB
         if (
           errorCode === "messaging/invalid-registration-token" ||
           errorCode === "messaging/registration-token-not-registered"
@@ -106,7 +106,7 @@ export const sendPushToMultiple = async ({ tokens, title, body, data = {} }) => 
   }
 };
 
-/* ── User కి (all devices) ── */
+/* ── To a user (all devices) ── */
 export const sendPushToUser = async ({ userId, title, body, data = {} }) => {
   try {
     await db.execute(
@@ -131,10 +131,10 @@ export const sendPushToUser = async ({ userId, title, body, data = {} }) => {
 
 
 
-/* ── All users కి — push + DB save ── */
+/* ── To all users — push + DB save ── */
 export const sendPushToAll = async ({ title, body, data = {} }) => {
   try {
-    /* ── DB లో అన్ని users కి save చేయండి ── */
+    /* ── Save to DB for all users ── */
     const [users] = await db.execute(
       `SELECT id AS user_id
        FROM users

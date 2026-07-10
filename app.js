@@ -11,7 +11,6 @@ const app = express();
 
 app.post("/api/razorpay/webhook", express.json(), razorpayWebhook)
 
-// ✅ STEP 2 — then other middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -27,7 +26,7 @@ const allowedOrigins = [
   "www.pick2win.io",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
-//
+
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || allowedOrigins.includes(origin)) {
@@ -41,9 +40,6 @@ app.use(cors({
   credentials:          true,
   optionsSuccessStatus: 200,
 }));
-
-// app.use(express.json());
-// app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", routes);
 
