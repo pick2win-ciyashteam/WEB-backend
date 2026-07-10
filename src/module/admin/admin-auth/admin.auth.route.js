@@ -10,7 +10,7 @@ const router = Router();
 router.post("/login",                adminLimiter, v.adminLogin,   c.adminLogin);
 /* ── Employee Management ── */
 router.post("/create-admin",       adminLimiter, adminAuth(["super_admin"]), v.createAdmin,  c.createAdmin);
-router.get("/profile",             adminLimiter, adminAuth(["super_admin"]), v.createAdmin, c.getProfile);
+router.get("/profile",             adminLimiter, adminAuth(["super_admin"]), c.getProfile);
 router.get("/get-admins",           adminLimiter, adminAuth(["super_admin"]),                 c.getAdmins);
 router.get("/get-admin-by-id/:id",   adminLimiter, adminAuth(["super_admin"]),                 c.getAdminById);
 router.patch("/update-admin/:id",    adminLimiter, adminAuth(["super_admin"]), v.updateAdmin,  c.updateAdmin);

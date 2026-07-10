@@ -3633,7 +3633,7 @@ export const getTransactionLog = async (req, res) => {
          END AS mapped_status,
          COUNT(*) AS cnt
        FROM coins_transactions ct
-       WHERE ct.coins > 0 AND ${dateCondition}
+       WHERE ${dateCondition}
        GROUP BY mapped_status`,
       params
     );
@@ -3654,13 +3654,15 @@ export const getTransactionLog = async (req, res) => {
          ct.status,
          ct.reference_id,
          ct.created_at,
+         ct.transaction_type,
+         ct.description,
          COALESCE(ct.user_name, u.fullname) AS fullname,
          u.country,
          sp.name AS plan_name
        FROM coins_transactions ct
        LEFT JOIN users u ON u.id = ct.user_id
        LEFT JOIN subscription_plans sp ON sp.id = ct.plan_id
-       WHERE ct.coins > 0 AND ${dateCondition} ${statusCondition}
+       WHERE ${dateCondition} ${statusCondition}
        ORDER BY ct.created_at DESC
        LIMIT ${limitNum} OFFSET ${offsetNum}`,
       params
@@ -3669,7 +3671,7 @@ export const getTransactionLog = async (req, res) => {
     const [[{ total }]] = await db.execute(
       `SELECT COUNT(*) AS total
        FROM coins_transactions ct
-       WHERE ct.coins > 0 AND ${dateCondition} ${statusCondition}`,
+       WHERE ${dateCondition} ${statusCondition}`,
       params
     );
 
@@ -3681,6 +3683,17 @@ export const getTransactionLog = async (req, res) => {
         return row.reference_id ? "Failed · charged" : "Failed · declined";
       }
       return row.status;
+    };
+
+    /* ── UCT-spend rows store "sport/game" at the end of their description
+       (see teams.controller.js generateTeams) — extract it for clarity on
+       which game (draftkings/fanduel/football/sorare) the coin was spent on ── */
+    const extractGame = (description) => {
+      if (!description || !description.includes("Team generation")) return null;
+      const lastPart = description.split("—").pop().trim();
+      if (!lastPart.includes("/")) return null;
+      const [sport, game] = lastPart.split("/");
+      return { sport: sport || null, game: game || null };
     };
 
     return res.status(200).json({
@@ -3704,19 +3717,25 @@ export const getTransactionLog = async (req, res) => {
         total_pages: Math.ceil(Number(total) / limitNum),
       },
 
-      transactions: rows.map((r) => ({
-        tx_id:             `TX-${r.id}`,
-        fullname:           r.fullname,
-        country:            r.country,
-        pack:               r.plan_name,
-        coins:              Number(r.coins),
-        amount_usd:         Number(r.amount).toFixed(2),
-        amount_inr:         (Number(r.amount) * usdToInr).toFixed(2),
-        status:             txStatusLabel(r),
-        payment_reference:  r.reference_id,
-        date:               r.created_at,
-        can_refund:         r.status === "failed" && Boolean(r.reference_id),
-      })),
+      transactions: rows.map((r) => {
+        const gameInfo = extractGame(r.description);
+        return {
+          tx_id:             `TX-${r.id}`,
+          fullname:           r.fullname,
+          country:            r.country,
+          type:               Number(r.coins) > 0 ? "purchase" : "spend",
+          pack:               r.plan_name,
+          coins:              Number(r.coins),
+          amount_usd:         Number(r.amount).toFixed(2),
+          amount_inr:         (Number(r.amount) * usdToInr).toFixed(2),
+          status:             txStatusLabel(r),
+          payment_reference:  r.reference_id,
+          sport:              gameInfo?.sport || null,
+          game:               gameInfo?.game || null,
+          date:               r.created_at,
+          can_refund:         r.status === "failed" && Boolean(r.reference_id),
+        };
+      }),
     });
 
   } catch (err) {

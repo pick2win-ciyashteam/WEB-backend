@@ -14,17 +14,6 @@ import Joi from "joi";
   next();
 };
 
-// export const updateAdmin = (req, res, next) => {
-//   const schema = Joi.object({
-//     role:         Joi.string().valid("super_admin", "finance", "operations", "support", "catalog", "marketing"),
-//     status:       Joi.string().valid("active", "inactive"),
-//     access_level: Joi.string().valid("read_only", "editor"),
-//   }).min(1);
-//   const { error } = schema.validate(req.body);
-//   if (error) return res.status(400).json({ success: false, message: error.details[0].message });
-//   next();
-// };
-
  export const updateAdmin = (req, res, next) => {
   const schema = Joi.object({
     name: Joi.string().trim(),

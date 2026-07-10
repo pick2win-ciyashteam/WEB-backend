@@ -186,7 +186,25 @@ const [[wallet]] = await db.execute(
       [req.user.id]
     );
 
- 
+    /* ── 5. Logged-in devices — distinct ip_address + user_agent combos
+       from login activity logs (no separate device/session table exists,
+       so this reuses the ip_address/user_agent already captured on every login) ── */
+    const [[deviceCount]] = await db.execute(
+      `SELECT COUNT(DISTINCT CONCAT(COALESCE(ip_address, ''), '|', COALESCE(user_agent, ''))) AS total
+       FROM user_activity_logs
+       WHERE user_id = ? AND category = 'auth' AND action = 'login'`,
+      [req.user.id]
+    );
+
+    const [recentDevices] = await db.execute(
+      `SELECT ip_address, user_agent, MAX(created_at) AS last_login
+       FROM user_activity_logs
+       WHERE user_id = ? AND category = 'auth' AND action = 'login'
+       GROUP BY ip_address, user_agent
+       ORDER BY last_login DESC
+       LIMIT 5`,
+      [req.user.id]
+    );
 
   const availableCoins = wallet ? Number(wallet.available_coins) : 0;
 const totalCoins     = wallet ? Number(wallet.total_coins)     : 0;
@@ -228,6 +246,16 @@ const usedCoins      = wallet ? Number(wallet.used_coins)      : 0;
           expiry_date:       user.subscription_expiry,
           status:            user.subscription_status,
         } : null,
+
+        /* ── Security — logged-in devices ── */
+        security: {
+          device_count: Number(deviceCount.total),
+          recent_devices: recentDevices.map((d) => ({
+            ip_address: d.ip_address,
+            user_agent: d.user_agent,
+            last_login: d.last_login,
+          })),
+        },
       },
     });
 
@@ -713,7 +741,7 @@ export const markAsRead = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
+  
 /* ── Delete Notification ── */
 export const deleteNotification = async (req, res) => {
   try {
