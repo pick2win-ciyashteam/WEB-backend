@@ -3,15 +3,18 @@ import db      from "../../../config/db.js";
 import { sendBillingMail, coinPurchaseEmailHtml } from "../../../utils/mailer.js";
 import { sendPushToUser } from "../../../utils/notification.js";
 
-/* ── Razorpay sends JSON body — no raw buffer needed ── */
+/* ── Razorpay signs the exact raw request bytes, so this route is mounted
+   with express.raw() (see app.js) instead of express.json() — req.body is
+   a Buffer here. HMAC-verifying that raw buffer (rather than
+   JSON.stringify-ing an already-parsed object, which isn't guaranteed to
+   reproduce the original bytes) is what Razorpay's own docs require. ── */
 export const razorpayWebhook = async (req, res) => {
   const signature = req.headers["x-razorpay-signature"];
   const secret    = process.env.RAZORPAY_WEBHOOK_SECRET;
 
-  /* ── Signature verify,mnln ── */
-  const generated = crypto  
+  const generated = crypto
     .createHmac("sha256", secret)
-    .update(JSON.stringify(req.body))
+    .update(req.body)
     .digest("hex");
 
   if (generated !== signature) {
@@ -19,7 +22,7 @@ export const razorpayWebhook = async (req, res) => {
     return res.status(400).json({ success: false, message: "Invalid signature" });
   }
 
-  const event = req.body;
+  const event = JSON.parse(req.body.toString("utf8"));
   console.log("🔔 Razorpay event:", event.event);
 
   /* ── Only handle payment.captured ── */
@@ -36,7 +39,7 @@ export const razorpayWebhook = async (req, res) => {
 
   const { userId, plan_id, coins } = notes;
   const paymentId   = payment.id;
-  const amount      = payment.amount / 100; // paise → INR
+  const amount      = payment.amount / 100; // cents → USD
 
   if (!userId || !plan_id || !coins) {
     console.error("❌ Missing notes metadata");
@@ -125,12 +128,20 @@ export const razorpayWebhook = async (req, res) => {
       ]
     );
 
-    /* ── Company ledger ── */
-    const [[lastEntry]] = await conn.query(
-      `SELECT closing_balance FROM company_ledger ORDER BY id DESC LIMIT 1`
+    /* ── Company ledger — balance tracked on a fixed single row
+       (company_balance, id=1), not "last row of company_ledger" (a moving
+       target that deadlocks under concurrent writes — see deposite.controller.js
+       for the same fix applied there). ── */
+    const [[bal]] = await conn.query(
+      `SELECT balance FROM company_balance WHERE id = 1 FOR UPDATE`
     );
-    const companyOpening = lastEntry ? Number(lastEntry.closing_balance) : 0;
+    const companyOpening = bal ? Number(bal.balance) : 0;
     const companyClosing = companyOpening + amount;
+
+    await conn.query(
+      `UPDATE company_balance SET balance = ? WHERE id = 1`,
+      [companyClosing]
+    );
 
     await conn.query(
       `INSERT INTO company_ledger

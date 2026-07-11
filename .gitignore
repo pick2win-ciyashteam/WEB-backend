@@ -93,3 +93,14 @@ src/uploads/
 .tmp/
 *.bak
 *.backup
+
+# ========================
+# DB Backups (contains user data)
+# ========================
+db_backups/
+*.sql
+
+# ========================
+# k6 load test results
+# ========================
+k6-tests/results/

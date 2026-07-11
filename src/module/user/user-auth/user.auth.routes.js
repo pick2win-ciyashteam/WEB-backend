@@ -7,8 +7,7 @@ const router = Router();
 
 /* ── Public routes ── */
 router.post("/signup",            v.signup,          c.signup);
-router.post("/verify-mobile-otp", v.verifyMobileOtp, c.verifyMobileOtp);
-router.post("/verify-email-otp",  v.verifyEmailOtp,  c.verifyEmailOtp);   
+router.post("/verify-email-otp",  v.verifyEmailOtp,  c.verifyEmailOtp);
 router.post("/resend-otp",        v.resendOtp,       c.resendOtp);
 router.post("/login",             v.login,           c.login);
 
@@ -50,4 +49,4 @@ router.delete("/notification/:id",              authenticate, c.deleteNotificati
  
 export default router;    
      
-  
+         

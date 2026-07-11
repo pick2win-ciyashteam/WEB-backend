@@ -9,7 +9,11 @@ import { razorpayWebhook } from  "./src/module/user/deposite/deposite.webhook.js
 
 const app = express();
 
-app.post("/api/razorpay/webhook", express.json(), razorpayWebhook)
+/* Razorpay signs the exact raw request bytes — express.raw() keeps req.body
+   as a Buffer here so the webhook handler can HMAC-verify against the
+   original payload, instead of a re-serialized JSON.stringify(req.body)
+   (which is not guaranteed to reproduce the original bytes). */
+app.post("/api/razorpay/webhook", express.raw({ type: "application/json" }), razorpayWebhook)
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

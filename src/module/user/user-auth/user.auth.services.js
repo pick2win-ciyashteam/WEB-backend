@@ -3,11 +3,10 @@
 // user.auth.service.js
 
 import crypto    from "crypto";
-import bcrypt    from "bcryptjs";
+import { hash as bcryptHash, compare as bcryptCompare } from "@node-rs/bcrypt";
 import jwt       from "jsonwebtoken";
 import db        from "../../../config/db.js";
  
-import { sendSms } from "../../../utils/sms.js";
 import { validatePasswordStrength } from "../../../utils/passwordValidator.js";
 import { sendPushToUser } from "../../../utils/notification.js";
 
@@ -82,10 +81,9 @@ export const signupService = async (data) => {
   }
 
   /* ── Hash Password ── */
-  const hashedPassword = await bcrypt.hash(password, 10);
+  const hashedPassword = await bcryptHash(password, 10);
 
-  /* ── Generate OTPs ── */
-  const mobileOtp = crypto.randomInt(100000, 999999).toString();
+  /* ── Generate OTP (email only — mobile is stored but not OTP-verified) ── */
   const emailOtp = crypto.randomInt(100000, 999999).toString();
 
   const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
@@ -102,15 +100,12 @@ export const signupService = async (data) => {
       country,
       date_of_birth,
       password,
-      mobile_otp,
-      mobile_otp_expiry,
       email_otp,
       email_otp_expiry,
-      mobile_verified,
       email_verified,
       expires_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
 
     ON DUPLICATE KEY UPDATE
       fullname          = VALUES(fullname),
@@ -118,11 +113,8 @@ export const signupService = async (data) => {
       country           = VALUES(country),
       date_of_birth     = VALUES(date_of_birth),
       password          = VALUES(password),
-      mobile_otp        = VALUES(mobile_otp),
-      mobile_otp_expiry = VALUES(mobile_otp_expiry),
       email_otp         = VALUES(email_otp),
       email_otp_expiry  = VALUES(email_otp_expiry),
-      mobile_verified   = 0,
       email_verified    = 0,
       expires_at        = VALUES(expires_at)
     `,
@@ -133,72 +125,27 @@ export const signupService = async (data) => {
       country,
       date_of_birth,
       hashedPassword,
-      mobileOtp,
-      otpExpiry,
       emailOtp,
       otpExpiry,
       sessionExpiry,
     ]
   );
 
-  /* ── Send Email OTP ── */
-  await sendNoreplyMail({
+  /* ── Send email OTP in the background — doesn't need to block the
+     response: in non-production the OTP is returned directly below, and
+     in production the client only needs to know it was dispatched, not
+     wait for the SMTP round-trip to complete. ── */
+  sendNoreplyMail({
     to: normalizedEmail,
     subject: "Pick2Win — Email Verification OTP",
     html: otpEmailHtml(emailOtp, userFullName, 5, new Date()),
-  });
-
-  /* ── Send SMS OTP ── */
-  await sendSms(
-    normalizedMobile,
-    `Your Pick2Win OTP is ${mobileOtp}. Valid for 5 minutes.`
-  );
+  }).catch((err) => console.error("OTP email failed:", err.message));
 
   return {
     success: true,
-    message:
-      "OTP sent to your mobile and email. Please verify both.",
-    ...(process.env.NODE_ENV !== "production" && {
-      mobileOtp,
-      emailOtp,
-    }),
+    message: "OTP sent to your email. Please verify to complete registration.",
+    ...(process.env.NODE_ENV !== "production" && { emailOtp }),
   };
-};
-
-  
-/* ══════════════════════════════════════════
-   VERIFY MOBILE OTP
-══════════════════════════════════════════ */
-export const verifyMobileOtpService = async ({ mobile, otp }) => {
-  const normalizedMobile = String(mobile).replace(/\D/g, "").trim();
-
-  const [[session]] = await db.execute(
-    `SELECT id, mobile_otp, mobile_otp_expiry,
-            mobile_verified, email_verified, expires_at
-     FROM signup_sessions WHERE mobile = ?`,
-    [normalizedMobile]
-  );
-
-  if (!session)                                          throw new Error("Session not found. Please signup again.");
-  if (new Date(session.expires_at) < new Date())         throw new Error("Session expired. Please signup again.");
-  if (session.mobile_verified === 1)                     throw new Error("Mobile already verified.");
-  if (!session.mobile_otp)                               throw new Error("OTP expired. Please request again.");
-  if (String(session.mobile_otp) !== String(otp))        throw new Error("Invalid OTP");
-  if (new Date(session.mobile_otp_expiry) < new Date())  throw new Error("OTP expired. Please request again.");
-
-  await db.execute(
-    `UPDATE signup_sessions
-     SET mobile_verified = 1, mobile_otp = NULL, mobile_otp_expiry = NULL
-     WHERE id = ?`,
-    [session.id]
-  );
-
-  if (session.email_verified === 1) {
-    await completeRegistration(session.id);
-    return { success: true, message: "Mobile verified. Registration complete! You can now login.", registered: true };
-  }
-
-  return { success: true, message: "Mobile verified. Please verify your email OTP too.", registered: false };
 };
 
 /* ══════════════════════════════════════════
@@ -206,8 +153,7 @@ export const verifyMobileOtpService = async ({ mobile, otp }) => {
 ══════════════════════════════════════════ */
 export const verifyEmailOtpService = async ({ email, otp }) => {
   const [[session]] = await db.execute(
-  `SELECT id, email_otp, email_otp_expiry,
-          mobile_verified, email_verified, expires_at
+  `SELECT id, email_otp, email_otp_expiry, email_verified, expires_at
    FROM signup_sessions
    WHERE LOWER(email) = LOWER(?)
    ORDER BY id DESC LIMIT 1`,
@@ -231,97 +177,43 @@ export const verifyEmailOtpService = async ({ email, otp }) => {
     [session.id]
   );
 
-  if (session.mobile_verified === 1) {
-    await completeRegistration(session.id);
-    return { success: true, message: "Email verified. Registration complete! You can now login.", registered: true };
-  }
-
-  return { success: true, message: "Email verified. Please verify your mobile OTP too.", registered: false };
+  await completeRegistration(session.id);
+  return { success: true, message: "Email verified. Registration complete! You can now login.", registered: true };
 };
 
-/* ══════════════════════════════════════════   
-   RESEND OTP
+/* ══════════════════════════════════════════
+   RESEND OTP (email only)
 ══════════════════════════════════════════ */
 
-export const resendOtpService = async ({ mobile, email, type = "both" }) => {
-  let session = null;
-
-  if (mobile) {
-    const normalizedMobile = String(mobile).replace(/\D/g, "").trim();
-    const [[row]] = await db.execute(
-      `SELECT id, email, mobile, fullname, mobile_verified, email_verified, expires_at
-       FROM signup_sessions WHERE mobile = ?`,
-      [normalizedMobile]
-    );
-    session = row;
-  } else if (email) {
-    const [[row]] = await db.execute(
-      `SELECT id, email, mobile, fullname, mobile_verified, email_verified, expires_at
-       FROM signup_sessions WHERE email = ?`,
-      [email.trim().toLowerCase()]
-    );
-    session = row;
-  }
+export const resendOtpService = async ({ email }) => {
+  const [[session]] = await db.execute(
+    `SELECT id, email, fullname, email_verified, expires_at
+     FROM signup_sessions WHERE email = ?`,
+    [email.trim().toLowerCase()]
+  );
 
   if (!session)                                  throw new Error("Session not found. Please signup again.");
   if (new Date(session.expires_at) < new Date()) throw new Error("Session expired. Please signup again.");
+  if (session.email_verified === 1)              throw new Error("Email already verified.");
 
-  const newMobileOtp = crypto.randomInt(100000, 999999).toString();
-  const newEmailOtp  = crypto.randomInt(100000, 999999).toString();
-  const newExpiry    = new Date(Date.now() + 5 * 60 * 1000);
+  const newEmailOtp = crypto.randomInt(100000, 999999).toString();
+  const newExpiry   = new Date(Date.now() + 5 * 60 * 1000);
 
-  // Send to mobile
-  if (type === "mobile" || type === "both") {
-    if (session.mobile_verified !== 1) {
-      /* ── 1. DB update ── */
-      await db.execute(
-        `UPDATE signup_sessions SET mobile_otp = ?, mobile_otp_expiry = ? WHERE id = ?`,
-        [newMobileOtp, newExpiry, session.id]
-      );
+  await db.execute(
+    `UPDATE signup_sessions SET email_otp = ?, email_otp_expiry = ? WHERE id = ?`,
+    [newEmailOtp, newExpiry, session.id]
+  );
 
-      /* ── 2. Send SMS ── */
-      await sendSms(
-        session.mobile,
-        `Your Pick2Win OTP is ${newMobileOtp}. Valid for 5 minutes.`
-      );
-    }
-  }
-
-  // Send to email
-  if (type === "email" || type === "both") {
-    if (session.email_verified !== 1) {
-      /* ── 1. DB update ── */
-      await db.execute(
-        `UPDATE signup_sessions SET email_otp = ?, email_otp_expiry = ? WHERE id = ?`,
-        [newEmailOtp, newExpiry, session.id]
-      );
-
-      /* ── 2. Send Email ── */
-      await sendNoreplyMail({
-        to:      session.email,
-        subject: "Verify Your Email Address · PICK2WIN OTP",
-        html:    otpEmailHtml(newEmailOtp, session.fullname, 5, new Date()),
-      });
-    }
-  }
-
-  if (type === "both") {
-    return {
-      success: true,
-      message: "OTP resent to both mobile and email",
-      ...(process.env.NODE_ENV !== "production" && { 
-        mobileOtp: newMobileOtp,
-        emailOtp: newEmailOtp 
-      }),
-    };
-  }
+  await sendNoreplyMail({
+    to:      session.email,
+    subject: "Verify Your Email Address · PICK2WIN OTP",
+    html:    otpEmailHtml(newEmailOtp, session.fullname, 5, new Date()),
+  });
 
   return {
     success: true,
-    message: `OTP resent to your ${type}`,
-    ...(process.env.NODE_ENV !== "production" && { 
-      otp: type === "mobile" ? newMobileOtp : newEmailOtp 
-    }),
+    message: "OTP resent to your email",
+    ...(process.env.NODE_ENV !== "production" && { otp: newEmailOtp }),
   };
 };
 
@@ -339,35 +231,51 @@ const completeRegistration = async (sessionId) => {
   const [result] = await db.execute(
     `INSERT INTO users
        (fullname, email, mobile, country, date_of_birth, password,
-        account_status, email_verify, mobile_verify)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 1)`,
+        account_status, email_verify)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', 1)`,
     [session.fullname, session.email, session.mobile,
      session.country, session.date_of_birth, session.password]
   );
 
   const newUserId = result.insertId;
 
-  /* ── Send welcome email ── */
-  await sendNoreplyMail({
-    to:      session.email,
-    subject: "Welcome to Pick2Win! 🎉",
-    html:    welcomeEmailHtml({
-      fullname: session.fullname,
-      email: session.email,
-      mobile: session.mobile,
-      country: session.country,
-      activationDate: new Date(),
-    }),
-  }).catch(err => console.error("Welcome email failed:", err.message));
+  /* ── Welcome email, welcome push, and signup-session cleanup are all
+     best-effort follow-ups that don't need to block the OTP-verification
+     response — they run in the background instead. ── */
+  (async () => {
+    try {
+      await sendNoreplyMail({
+        to:      session.email,
+        subject: "Welcome to Pick2Win! 🎉",
+        html:    welcomeEmailHtml({
+          fullname: session.fullname,
+          email: session.email,
+          mobile: session.mobile,
+          country: session.country,
+          activationDate: new Date(),
+        }),
+      });
+    } catch (err) {
+      console.error("Welcome email failed:", err.message);
+    }
 
-  await sendPushToUser({
-    userId: newUserId,
-    title: "Welcome to PICK2WIN!",
-    body: "Your account has been created successfully.",
-    data: { type: "account_welcome" },
-  });
+    try {
+      await sendPushToUser({
+        userId: newUserId,
+        title: "Welcome to PICK2WIN!",
+        body: "Your account has been created successfully.",
+        data: { type: "account_welcome" },
+      });
+    } catch (err) {
+      console.error("Welcome push failed:", err.message);
+    }
 
-  await db.execute(`DELETE FROM signup_sessions WHERE id = ?`, [sessionId]);
+    try {
+      await db.execute(`DELETE FROM signup_sessions WHERE id = ?`, [sessionId]);
+    } catch (err) {
+      console.error("Failed to delete signup session:", err.message);
+    }
+  })();
 
   return newUserId;
 };
@@ -378,7 +286,7 @@ const completeRegistration = async (sessionId) => {
 export const loginService = async ({ email, password }) => {
   const [[user]] = await db.execute(
     `SELECT id, fullname, email, mobile, password,
-            account_status, email_verify, mobile_verify
+            account_status, email_verify
      FROM users WHERE email = ? LIMIT 1`,
     [email.trim().toLowerCase()]
   );
@@ -390,13 +298,16 @@ export const loginService = async ({ email, password }) => {
   if (user.account_status === "blocked")
     throw new Error("Your account has been blocked. Contact support.");
 
-  if (user.mobile_verify !== 1) throw new Error("Please verify your mobile number first.");
-  if (user.email_verify  !== 1) throw new Error("Please verify your email first.");
+  if (user.email_verify !== 1) throw new Error("Please verify your email first.");
 
-  const isMatch = await bcrypt.compare(password, user.password);
+  const isMatch = await bcryptCompare(password, user.password);
   if (!isMatch) throw new Error("Invalid password or wrong password. Please try again.");
 
-  await db.execute(`UPDATE users SET updated_at = NOW() WHERE id = ?`, [user.id]);
+  // Best-effort last-seen timestamp — not needed to answer the client, so
+  // it runs in the background instead of holding a DB connection on the
+  // critical path (each held connection matters under high login concurrency).
+  db.execute(`UPDATE users SET updated_at = NOW() WHERE id = ?`, [user.id])
+    .catch((err) => console.error("Failed to update last-login timestamp:", err.message));
 
   const token = jwt.sign(
     { id: user.id, email: user.email, type: "user" },
@@ -414,7 +325,6 @@ export const loginService = async ({ email, password }) => {
       email:          user.email,
       mobile:         user.mobile,
       email_verify:   user.email_verify,
-      mobile_verify:  user.mobile_verify,
       account_status: user.account_status,
     },
   };
@@ -552,7 +462,7 @@ export const verifyMobileChangeService = async (userId, { otp }) => {
 
   await db.execute(
     `UPDATE users
-     SET mobile = pending_mobile, mobile_verify = 1,
+     SET mobile = pending_mobile,
          pending_mobile = NULL, new_contact_otp = NULL,
          new_contact_otp_expiry = NULL, contact_change_type = NULL
      WHERE id = ?`,
@@ -653,8 +563,6 @@ export const verifyEmailChangeService = async (userId, otp) => {
   const otp = crypto.randomInt(100000, 999999).toString();
   const expiry = new Date(Date.now() + 10 * 60 * 1000);
 
-  console.log("Generated OTP:", otp);
-
   await db.execute(
     `UPDATE users
      SET loginotp = ?, loginotpexpires = ?
@@ -710,7 +618,7 @@ export const resetPasswordService = async (email, otp, newPassword) => {
     throw new Error(passwordCheck.message);
   }
 
-  const hashed = await bcrypt.hash(newPassword, 10);
+  const hashed = await bcryptHash(newPassword, 10);
 
   await db.execute(
     `UPDATE users SET password = ?, loginotp = NULL, loginotpexpires = NULL WHERE id = ?`,

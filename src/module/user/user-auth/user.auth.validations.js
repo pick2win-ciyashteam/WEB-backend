@@ -14,16 +14,6 @@ export const signup = (req, res, next) => {
   next();
 };
 
-/* ── Verify Mobile OTP ── */
-export const verifyMobileOtp = (req, res, next) => {
-  const { error } = Joi.object({
-    mobile: Joi.string().pattern(/^[0-9]{5,15}$/).required(),
-    otp:    Joi.string().length(6).required(),
-  }).validate(req.body);
-  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
-  next();
-};
-
 /* ── Verify Email OTP ── */
 export const verifyEmailOtp = (req, res, next) => {
   const { error } = Joi.object({
@@ -34,13 +24,11 @@ export const verifyEmailOtp = (req, res, next) => {
   next();
 };
 
-/* ── Resend OTP ── */
+/* ── Resend OTP (email only) ── */
 export const resendOtp = (req, res, next) => {
   const { error } = Joi.object({
-    mobile: Joi.string().pattern(/^[0-9]{5,15}$/),
-    email:  Joi.string().email(),
-    type:   Joi.string().valid("mobile", "email").required(),
-  }).or("mobile", "email").validate(req.body);
+    email: Joi.string().email().required(),
+  }).validate(req.body);
   if (error) return res.status(400).json({ success: false, message: error.details[0].message });
   next();
 };

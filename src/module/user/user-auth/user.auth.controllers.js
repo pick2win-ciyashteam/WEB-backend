@@ -1,6 +1,5 @@
 import {
   signupService,
-  verifyMobileOtpService,
   verifyEmailOtpService,
   resendOtpService,
   loginService,
@@ -56,16 +55,6 @@ export const signup = async (req, res) => {
   }
 };
 
-/* ================= VERIFY MOBILE OTP ================= */
-export const verifyMobileOtp = async (req, res) => {
-  try {
-    const result = await verifyMobileOtpService(req.body);
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-};
-  
 /* ================= VERIFY EMAIL OTP ================= */
 export const verifyEmailOtp = async (req, res) => {    
   try {
@@ -90,14 +79,17 @@ export const resendOtp = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const result = await loginService(req.body);
-    await logUserActivity({
+    res.status(200).json(result);
+
+    // Best-effort activity log — runs after the response so it doesn't
+    // hold a DB connection on the critical path under high login concurrency.
+    logUserActivity({
       userId: result.user?.id,
       category: "auth",
       action: "login",
       details: "User logged in successfully",
       req,
-    });
-    res.status(200).json(result);
+    }).catch((err) => console.error("Failed to log login activity:", err.message));
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
@@ -152,7 +144,6 @@ export const getProfile = async (req, res) => {
      u.country,
      u.date_of_birth,
      u.email_verify,
-     u.mobile_verify,
      u.account_status,
      u.created_at,
      u.free_trial_used,
@@ -259,7 +250,6 @@ const [[wallet]] = await db.execute(
         country:        user.country,
         date_of_birth:  user.date_of_birth,
         email_verify:   user.email_verify,
-        mobile_verify:  user.mobile_verify,
         account_status: user.account_status,
         created_at:     user.created_at,
         free_trial_used:   user.free_trial_used,          
@@ -355,7 +345,7 @@ export const updateProfile = async (req, res) => {
       `SELECT
          id, fullname, email, mobile,
          country, date_of_birth,
-         email_verify, mobile_verify,
+         email_verify,
          account_status, created_at
        FROM users WHERE id = ?`,
       [req.user.id]
@@ -510,13 +500,13 @@ export const confirmDeleteAccount = async (req, res) => {
       action: "account_delete_confirm_requested",
       details: "User submitted account deletion confirmation",
       req,
-    });
+    });  
     const result = await confirmDeleteAccountService(req.user.id, otp);
     return res.status(200).json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
-  }
-};  
+  }  
+};        
 
 export const getMyActivityLogs = async (req, res) => {
   try {
@@ -530,7 +520,7 @@ export const getMyActivityLogs = async (req, res) => {
     const filters = ["user_id = ?"];
     const values = [req.user.id];
 
-    if (category) {
+    if (category) {  
       filters.push("category = ?");
       values.push(String(category).trim());
     }
@@ -621,7 +611,7 @@ export const getMyActivityLogs = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-  
+    
 // notifications
  
 export const registerDevice = async (req, res) => {
@@ -746,12 +736,16 @@ export const deleteNotification = async (req, res) => {
 
     await db.execute(
       `DELETE FROM user_notifications WHERE id = ? AND user_id = ?`,
-      [id, userId]
+      [id, userId] 
+      
     );
+
+
 
     return res.status(200).json({ success: true, message: "Notification deleted" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-   
+                       
+  

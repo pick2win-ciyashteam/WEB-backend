@@ -6,12 +6,24 @@ const client = twilio(
 );
 
 export const sendSms = async (to, message) => {
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`📵 [SMS SKIPPED — non-production] To: +${String(to).replace(/\D/g, "")} | ${message}`);
+    return { sid: "SKIPPED_NON_PRODUCTION" };
+  }
+
   try {
-    const result = await client.messages.create({
+    const params = {
       body: message,
-      from: process.env.TWILIO_PHONE_NUMBER,
       to:   `+${String(to).replace(/\D/g, "")}`,
-    });
+    };
+
+    if (process.env.TWILIO_MESSAGING_SERVICE_SID) {
+      params.messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+    } else {
+      params.from = process.env.TWILIO_PHONE_NUMBER;
+    }
+
+    const result = await client.messages.create(params);
     console.log(`✅ SMS sent — SID: ${result.sid}`);
     return result;
   } catch (err) {

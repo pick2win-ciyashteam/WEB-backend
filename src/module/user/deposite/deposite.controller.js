@@ -29,12 +29,12 @@ export const createCoinsPayment = async (req, res) => {
     if (!plan)
       return res.status(400).json({ success: false, message: "Invalid plan" });
 
-    const amountPaise = Math.round(Number(amount) * 100); // INR paise
+    const amountPaise = Math.round(Number(amount) * 100); // USD cents (Razorpay's smallest-unit param name is "paise" regardless of currency)
     if (amountPaise < 100)
       return res.status(400).json({ success: false, message: "Minimum amount is $1" });
 
     const order = await razorpay.orders.create({
-      amount,
+      amount: amountPaise,
       currency: "USD",
       receipt:  `receipt_${userId}_${plan_id}_${Date.now()}`,
       notes: {
@@ -85,134 +85,157 @@ export const verifyCoinsPayment = async (req, res) => {
 
     const userId        = req.user.id;
     const parsedCoins   = Number(coins);
-    const parsedAmount  = Number(amount) / 100; // paise → INR
+    const parsedAmount  = Number(amount) / 100; // cents → USD
 
-    const conn = await db.getConnection();
-    try {
-      await conn.beginTransaction();
+    /* ── company_ledger appends read-then-insert off the last row, which
+       InnoDB can deadlock on under concurrent purchases — retry a few
+       times on deadlock (MySQL's own recommended handling) rather than
+       surface a false failure to a user who was actually charged. ── */
+    const MAX_RETRIES = 5;
 
-      /* ── Duplicate check ── */
-      const [[existing]] = await conn.query(
-        `SELECT id FROM coins_transactions WHERE reference_id = ? LIMIT 1`,
-        [razorpay_payment_id]
-      );
-      if (existing) {
-        await conn.rollback();
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const conn = await db.getConnection();
+      try {
+        await conn.beginTransaction();
+
+        /* ── Duplicate check ── */
+        const [[existing]] = await conn.query(
+          `SELECT id FROM coins_transactions WHERE reference_id = ? LIMIT 1`,
+          [razorpay_payment_id]
+        );
+        if (existing) {
+          await conn.rollback();
+          return res.json({ success: true, message: "Already processed" });
+        }
+
+        /* ── Plan verify ── */
+        const [[plan]] = await conn.query(
+          `SELECT id, name, matches, validity_days FROM subscription_plans WHERE id = ? LIMIT 1`,
+          [plan_id]
+        );
+        if (!plan) throw new Error("Plan not found");
+
+        /* ── Current wallet ── */
+        const [[wallet]] = await conn.query(
+          `SELECT coins, total_coins, available_coins FROM user_coins WHERE user_id = ? FOR UPDATE`,
+          [userId]
+        );
+
+        /* ── User fetch ── */
+        const [[userInfo]] = await conn.query(
+          `SELECT fullname, email, mobile FROM users WHERE id = ?`,
+          [userId]
+        );
+
+        const openingCoins = wallet ? Number(wallet.available_coins) : 0;
+        const closingCoins = openingCoins + parsedCoins;
+
+        /* ── Coins update or insert ── */
+        if (wallet) {
+          await conn.query(
+            `UPDATE user_coins
+             SET coins           = coins + ?,
+                 total_coins     = total_coins + ?,
+                 available_coins = available_coins + ?
+             WHERE user_id = ?`,
+            [parsedCoins, parsedCoins, parsedCoins, userId]
+          );
+        } else {
+          await conn.query(
+            `INSERT INTO user_coins (user_id, coins, total_coins, used_coins, available_coins)
+             VALUES (?, ?, ?, 0, ?)`,
+            [userId, parsedCoins, parsedCoins, parsedCoins]
+          );
+        }
+
+        /* ── Coins transaction log ── */
+        const [txResult] = await conn.query(
+          `INSERT INTO coins_transactions
+             (user_id, plan_id, coins, amount,
+              opening_points, closing_points,
+              reference_id, status,
+              user_name, user_email, user_mobile)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'success', ?, ?, ?)`,
+          [
+            userId, plan_id, parsedCoins, parsedAmount,
+            openingCoins, closingCoins,
+            razorpay_payment_id,
+            userInfo?.fullname || null,
+            userInfo?.email    || null,
+            userInfo?.mobile   || null,
+          ]
+        );
+
+        /* ── Subscription record ── */
+        await conn.query(
+          `INSERT INTO user_subscriptions
+             (user_id, plan_id, plan_name, coins, matches_allowed,
+              amount, payment_reference, status, start_date, expiry_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), DATE_ADD(NOW(), INTERVAL ? DAY))`,
+          [
+            userId, plan_id, plan.name, parsedCoins,
+            plan.matches, parsedAmount, razorpay_payment_id,
+            plan.validity_days,
+          ]
+        );
+
+        /* ── Company ledger — balance tracked on a fixed single row
+           (company_balance, id=1) instead of "last row of company_ledger",
+           which was a moving target: concurrent transactions could each
+           lock a different "last" row and deadlock on insert. Every
+           transaction now locks the same row, so they queue in order
+           instead of deadlocking. ── */
+        const [[bal]] = await conn.query(
+          `SELECT balance FROM company_balance WHERE id = 1 FOR UPDATE`
+        );
+        const companyOpening = bal ? Number(bal.balance) : 0;
+        const companyClosing = companyOpening + parsedAmount;
+
+        await conn.query(
+          `UPDATE company_balance SET balance = ? WHERE id = 1`,
+          [companyClosing]
+        );
+
+        await conn.query(
+          `INSERT INTO company_ledger
+             (transaction_id, user_id, user_name, user_email,
+              plan_name, amount, opening_balance, closing_balance, payment_reference)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            txResult.insertId, userId,
+            userInfo?.fullname || null,
+            userInfo?.email    || null,
+            plan.name, parsedAmount,
+            companyOpening, companyClosing,
+            razorpay_payment_id,
+          ]
+        );
+
+        await conn.commit();
+
+        console.log(`✅ Coins added — userId:${userId} coins:${parsedCoins} closing:${closingCoins}`);
+
+        await sendPushToUser({
+          userId,
+          title: "Coin Pack Purchased",
+          body: `${parsedCoins} coins from ${plan.name} have been added to your account.`,
+          data: { type: "coin_pack_purchased", plan_id: plan_id, coins: parsedCoins },
+        });
+
+        return res.json({ success: true, message: "Payment verified and coins credited" });
+
+      } catch (err) {
+        await conn.rollback().catch(() => {});
+        if (err.code === "ER_LOCK_DEADLOCK" && attempt < MAX_RETRIES) {
+          // Small random backoff so retries don't immediately collide
+          // into the same contention again.
+          await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 150));
+          continue;
+        }
+        throw err;
+      } finally {
         conn.release();
-        return res.json({ success: true, message: "Already processed" });
       }
-
-      /* ── Plan verify ── */
-      const [[plan]] = await conn.query(
-        `SELECT id, name, matches, validity_days FROM subscription_plans WHERE id = ? LIMIT 1`,
-        [plan_id]
-      );
-      if (!plan) throw new Error("Plan not found");
-
-      /* ── Current wallet ── */
-      const [[wallet]] = await conn.query(
-        `SELECT coins, total_coins, available_coins FROM user_coins WHERE user_id = ? FOR UPDATE`,
-        [userId]
-      );
-
-      /* ── User fetch ── */
-      const [[userInfo]] = await conn.query(
-        `SELECT fullname, email, mobile FROM users WHERE id = ?`,
-        [userId]
-      );
-
-      const openingCoins = wallet ? Number(wallet.available_coins) : 0;
-      const closingCoins = openingCoins + parsedCoins;
-
-      /* ── Coins update or insert ── */
-      if (wallet) {
-        await conn.query(
-          `UPDATE user_coins
-           SET coins           = coins + ?,
-               total_coins     = total_coins + ?,
-               available_coins = available_coins + ?
-           WHERE user_id = ?`,
-          [parsedCoins, parsedCoins, parsedCoins, userId]
-        );
-      } else {
-        await conn.query(
-          `INSERT INTO user_coins (user_id, coins, total_coins, used_coins, available_coins)
-           VALUES (?, ?, ?, 0, ?)`,
-          [userId, parsedCoins, parsedCoins, parsedCoins]
-        );
-      }
-
-      /* ── Coins transaction log ── */
-      const [txResult] = await conn.query(
-        `INSERT INTO coins_transactions
-           (user_id, plan_id, coins, amount,
-            opening_points, closing_points,
-            reference_id, status,
-            user_name, user_email, user_mobile)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'success', ?, ?, ?)`,
-        [
-          userId, plan_id, parsedCoins, parsedAmount,
-          openingCoins, closingCoins,
-          razorpay_payment_id,
-          userInfo?.fullname || null,
-          userInfo?.email    || null,
-          userInfo?.mobile   || null,
-        ]
-      );
-
-      /* ── Subscription record ── */
-      await conn.query(
-        `INSERT INTO user_subscriptions
-           (user_id, plan_id, plan_name, coins, matches_allowed,
-            amount, payment_reference, status, start_date, expiry_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), DATE_ADD(NOW(), INTERVAL ? DAY))`,
-        [
-          userId, plan_id, plan.name, parsedCoins,
-          plan.matches, parsedAmount, razorpay_payment_id,
-          plan.validity_days,
-        ]
-      );
-
-      /* ── Company ledger ── */
-      const [[lastEntry]] = await conn.query(
-        `SELECT closing_balance FROM company_ledger ORDER BY id DESC LIMIT 1`
-      );
-      const companyOpening = lastEntry ? Number(lastEntry.closing_balance) : 0;
-      const companyClosing = companyOpening + parsedAmount;
-
-      await conn.query(
-        `INSERT INTO company_ledger
-           (transaction_id, user_id, user_name, user_email,
-            plan_name, amount, opening_balance, closing_balance, payment_reference)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          txResult.insertId, userId,
-          userInfo?.fullname || null,
-          userInfo?.email    || null,
-          plan.name, parsedAmount,
-          companyOpening, companyClosing,
-          razorpay_payment_id,
-        ]
-      );
-
-      await conn.commit();
-
-      console.log(`✅ Coins added — userId:${userId} coins:${parsedCoins} closing:${closingCoins}`);
-
-      await sendPushToUser({
-        userId,
-        title: "Coin Pack Purchased",
-        body: `${parsedCoins} coins from ${plan.name} have been added to your account.`,
-        data: { type: "coin_pack_purchased", plan_id: plan_id, coins: parsedCoins },
-      });
-
-      return res.json({ success: true, message: "Payment verified and coins credited" });
-
-    } catch (err) {
-      await conn.rollback().catch(() => {});
-      throw err;
-    } finally {
-      conn.release();
     }
 
   } catch (err) {

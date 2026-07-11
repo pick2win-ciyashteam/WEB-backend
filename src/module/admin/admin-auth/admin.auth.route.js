@@ -2,7 +2,6 @@ import { Router } from "express";
 import { adminAuth, adminLimiter } from "../../../middlewares/adminAuth.middleware.js"
 import * as v from "./admin.auth.validation.js";
 import * as c from  "./admin.auth.controller.js"
-import bcrypt from "bcryptjs";  
 
 const router = Router();
 

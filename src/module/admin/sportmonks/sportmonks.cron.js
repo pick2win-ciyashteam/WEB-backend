@@ -115,6 +115,28 @@ const syncMatchStatuses = async () => {
         });
       }
     }
+
+    /* ── Remove generated user_teams 5 minutes after a match went LIVE
+       (not immediately) — teams can no longer be viewed/edited once the
+       match starts (generate-teams already blocks non-UPCOMING matches),
+       so match_generation_log stays as a historical record while the
+       actual team/player rows are purged once the 5-minute grace window
+       has passed. Scoped by start_time rather than a separate "cleaned"
+       flag, so this is naturally idempotent — once rows are gone the
+       DELETE just affects 0 rows on later ticks.
+
+       TEMPORARILY DISABLED (on request) while load-testing is in progress,
+       so generated user_teams data isn't wiped mid-test. Re-enable by
+       uncommenting the block below. ── */
+    // const [deleted] = await db.query(
+    //   `DELETE ut FROM user_teams ut
+    //    INNER JOIN matches m ON m.id = ut.match_id
+    //    WHERE m.status = 'LIVE'
+    //      AND m.start_time <= DATE_SUB(NOW(), INTERVAL 5 MINUTE)`
+    // );
+    // if (deleted.affectedRows) {
+    //   console.log(`🗑️  [CRON] Removed ${deleted.affectedRows} user_teams row(s) for matches LIVE for 5+ minutes`);
+    // }
   } catch (err) {
     console.error("❌ [CRON] syncMatchStatuses failed:", err.message);
   }

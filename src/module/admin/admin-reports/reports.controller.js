@@ -52,8 +52,7 @@ export const getDashboardReport = async (req, res) => {
       `SELECT COUNT(*) AS total
        FROM users
        WHERE CAST(account_status AS CHAR) != 'deleted'
-         AND email_verify  = 1
-         AND mobile_verify = 1`
+         AND email_verify = 1`
     );
 
     const [[activePurchased]] = await db.execute(

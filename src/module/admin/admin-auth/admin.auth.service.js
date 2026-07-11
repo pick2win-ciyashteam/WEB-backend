@@ -1,4 +1,4 @@
-import bcrypt    from "bcryptjs";
+import { hash as bcryptHash, compare as bcryptCompare } from "@node-rs/bcrypt";
 import jwt       from "jsonwebtoken";
 import speakeasy from "speakeasy";
 import db        from "../../../config/db.js";
@@ -36,7 +36,7 @@ export const adminLoginService = async ({ email, password, twoFaCode }) => {
   if (admin.status === "inactive")
     throw new Error("Your account is inactive. Contact super admin.");
 
-  const isMatch = await bcrypt.compare(password, admin.password_hash);
+  const isMatch = await bcryptCompare(password, admin.password_hash);
   if (!isMatch) throw new Error("Invalid email or password");
 
   if (admin.twofa_enabled) {
@@ -101,7 +101,7 @@ export const createAdmin = async (data, admin, ip) => {
     );
     if (count >= 3) throw new Error("Sub-admin limit reached (max 3)");
 
-    const hash = await bcrypt.hash(data.password, 12);
+    const hash = await bcryptHash(data.password, 12);
 
     const [result] = await conn.query(
       `INSERT INTO admin
@@ -407,7 +407,7 @@ export const updateCredentialsService = async (adminId, data, ip) => {
   );
   if (!admin) throw new Error("Admin not found");
 
-  const isMatch = await bcrypt.compare(currentPassword, admin.password_hash);
+  const isMatch = await bcryptCompare(currentPassword, admin.password_hash);
   if (!isMatch) throw new Error("Current password is incorrect");
 
   const updates = {};
@@ -416,7 +416,7 @@ export const updateCredentialsService = async (adminId, data, ip) => {
   if (newPassword) {
     if (newPassword.length < 6) throw new Error("New password must be at least 6 characters");
     if (newPassword !== confirmPassword) throw new Error("Passwords do not match");
-    updates.password_hash = await bcrypt.hash(newPassword, 12);
+    updates.password_hash = await bcryptHash(newPassword, 12);
   }
 
   if (new2FACode) {
