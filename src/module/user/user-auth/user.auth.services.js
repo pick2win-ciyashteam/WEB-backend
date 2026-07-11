@@ -752,8 +752,7 @@ export const deleteAccountService = async (userId) => {
         html: accountDeletedEmailHtml({
           fullname,
           email,
-          deletionDateTime:
-            new Date().toLocaleString("en-IN"),
+          deletionDateTime: new Date(),
         }),
       });
 
