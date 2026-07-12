@@ -10,7 +10,7 @@ import db        from "../../../config/db.js";
 import { validatePasswordStrength } from "../../../utils/passwordValidator.js";
 import { sendPushToUser } from "../../../utils/notification.js";
 
-import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, } from "../../../utils/mailer.js";
+import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, resolveTimezone, isValidTimezone, } from "../../../utils/mailer.js";
 
 
 
@@ -26,9 +26,12 @@ export const signupService = async (data) => {
     email,
     mobile,
     country,
+    timezone,
     date_of_birth,
     password,
   } = data;
+
+  const validTimezone = isValidTimezone(timezone) ? timezone : null;
 
   const userFullName = (fullname || fullName || "").trim();
   const normalizedEmail = email.trim().toLowerCase();
@@ -98,6 +101,7 @@ export const signupService = async (data) => {
       email,
       mobile,
       country,
+      timezone,
       date_of_birth,
       password,
       email_otp,
@@ -105,12 +109,13 @@ export const signupService = async (data) => {
       email_verified,
       expires_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
 
     ON DUPLICATE KEY UPDATE
       fullname          = VALUES(fullname),
       email             = VALUES(email),
       country           = VALUES(country),
+      timezone          = VALUES(timezone),
       date_of_birth     = VALUES(date_of_birth),
       password          = VALUES(password),
       email_otp         = VALUES(email_otp),
@@ -123,6 +128,7 @@ export const signupService = async (data) => {
       normalizedEmail,
       normalizedMobile,
       country,
+      validTimezone,
       date_of_birth,
       hashedPassword,
       emailOtp,
@@ -138,7 +144,7 @@ export const signupService = async (data) => {
   sendNoreplyMail({
     to: normalizedEmail,
     subject: "Pick2Win — Email Verification OTP",
-    html: otpEmailHtml(emailOtp, userFullName, 5, new Date()),
+    html: otpEmailHtml(emailOtp, userFullName, 5, new Date(), { timeZone: resolveTimezone({ timezone: validTimezone, country }) }),
   }).catch((err) => console.error("OTP email failed:", err.message));
 
   return {
@@ -187,7 +193,7 @@ export const verifyEmailOtpService = async ({ email, otp }) => {
 
 export const resendOtpService = async ({ email }) => {
   const [[session]] = await db.execute(
-    `SELECT id, email, fullname, email_verified, expires_at
+    `SELECT id, email, fullname, country, timezone, email_verified, expires_at
      FROM signup_sessions WHERE email = ?`,
     [email.trim().toLowerCase()]
   );
@@ -207,7 +213,7 @@ export const resendOtpService = async ({ email }) => {
   await sendNoreplyMail({
     to:      session.email,
     subject: "Verify Your Email Address · PICK2WIN OTP",
-    html:    otpEmailHtml(newEmailOtp, session.fullname, 5, new Date()),
+    html:    otpEmailHtml(newEmailOtp, session.fullname, 5, new Date(), { timeZone: resolveTimezone({ timezone: session.timezone, country: session.country }) }),
   });
 
   return {
@@ -223,18 +229,18 @@ export const resendOtpService = async ({ email }) => {
 ══════════════════════════════════════════ */ 
 const completeRegistration = async (sessionId) => {
   const [[session]] = await db.execute(
-    `SELECT fullname, email, mobile, country, date_of_birth, password
+    `SELECT fullname, email, mobile, country, timezone, date_of_birth, password
      FROM signup_sessions WHERE id = ?`,
     [sessionId]
   );
 
   const [result] = await db.execute(
     `INSERT INTO users
-       (fullname, email, mobile, country, date_of_birth, password,
+       (fullname, email, mobile, country, timezone, date_of_birth, password,
         account_status, email_verify)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', 1)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 1)`,
     [session.fullname, session.email, session.mobile,
-     session.country, session.date_of_birth, session.password]
+     session.country, session.timezone, session.date_of_birth, session.password]
   );
 
   const newUserId = result.insertId;
@@ -252,6 +258,7 @@ const completeRegistration = async (sessionId) => {
           email: session.email,
           mobile: session.mobile,
           country: session.country,
+          timezone: session.timezone,
           activationDate: new Date(),
         }),
       });
@@ -331,7 +338,7 @@ export const loginService = async ({ email, password }) => {
 };
 
 export const updateProfileService = async (updatedUser) => {
-  const { id: userId, email, fullname, mobile, country } = updatedUser;
+  const { id: userId, email, fullname, mobile, country, timezone } = updatedUser;
 
   if (!email) {
     throw new Error("User email missing for profile update notification.");
@@ -345,6 +352,7 @@ export const updateProfileService = async (updatedUser) => {
       email:    email,
       mobile:   mobile || "-",
       country:  country || "-",
+      timezone,
       updatedOn: new Date(),
     }),
   });
@@ -482,7 +490,7 @@ export const requestEmailChangeService = async (userId, newEmail) => {
   const normalizedEmail = String(newEmail).trim().toLowerCase();
 
   const [[user]] = await db.execute(
-    `SELECT fullname, email FROM users WHERE id = ?`,
+    `SELECT fullname, email, country, timezone FROM users WHERE id = ?`,
     [userId]
   );
   if (!user) throw new Error("User not found");
@@ -525,6 +533,7 @@ export const requestEmailChangeService = async (userId, newEmail) => {
         "Once confirmed, we'll send a second OTP to your new email address.",
       ],
       ignoreNote: "If you did not request an email change, please ignore this email and your account will remain unchanged.",
+      timeZone: resolveTimezone({ timezone: user.timezone, country: user.country }),
     }),
   });
 
@@ -540,7 +549,7 @@ export const requestEmailChangeService = async (userId, newEmail) => {
 ══════════════════════════════════════════ */
 export const verifyOldEmailChangeService = async (userId, otp) => {
   const [[user]] = await db.execute(
-    `SELECT old_contact_otp, old_contact_otp_expiry, pending_email, contact_change_type, fullname
+    `SELECT old_contact_otp, old_contact_otp_expiry, pending_email, contact_change_type, fullname, country, timezone
      FROM users WHERE id = ?`,
     [userId]
   );
@@ -580,6 +589,7 @@ export const verifyOldEmailChangeService = async (userId, otp) => {
         "Your account email will be updated only after this OTP is verified.",
       ],
       ignoreNote: "If you did not request this email change, please ignore this email.",
+      timeZone: resolveTimezone({ timezone: user.timezone, country: user.country }),
     }),
   });
 
@@ -633,7 +643,7 @@ export const verifyEmailChangeService = async (userId, otp) => {
   const normalizedEmail = email.trim().toLowerCase();
 
   const [[user]] = await db.execute(
-    `SELECT id, fullname, email
+    `SELECT id, fullname, email, country, timezone
      FROM users
      WHERE LOWER(email) = LOWER(?)
        AND account_status != 'deleted'
@@ -659,7 +669,8 @@ export const verifyEmailChangeService = async (userId, otp) => {
     otp,
     user.fullname || "User",
     10,
-    new Date()
+    new Date(),
+    resolveTimezone({ timezone: user.timezone, country: user.country })
   );
 
   await sendNoreplyMail({
@@ -725,7 +736,7 @@ export const resetPasswordService = async (email, otp, newPassword) => {
 ══════════════════════════════════════════ */
 export const deleteAccountService = async (userId) => {
   const [[user]] = await db.execute(
-    `SELECT id, email, fullname FROM users WHERE id = ? AND account_status != 'deleted'`,
+    `SELECT id, email, fullname, country, timezone FROM users WHERE id = ? AND account_status != 'deleted'`,
     [userId]
   );
   if (!user) throw new Error("User not found");
@@ -755,6 +766,7 @@ export const deleteAccountService = async (userId) => {
         "Your account and all associated data will be permanently deleted once confirmed.",
       ],
       ignoreNote: "If you did not request account deletion, please ignore this email and your account will remain unchanged.",
+      timeZone: resolveTimezone({ timezone: user.timezone, country: user.country }),
     }),
   });
 
@@ -771,7 +783,7 @@ export const deleteAccountService = async (userId) => {
  
  export const confirmDeleteAccountService = async (userId, otp) => {
   const [[user]] = await db.execute(
-    `SELECT id, email, fullname, loginotp, loginotpexpires
+    `SELECT id, email, fullname, country, timezone, loginotp, loginotpexpires
      FROM users
      WHERE id = ? AND account_status != 'deleted'`,
     [userId]
@@ -791,6 +803,8 @@ export const deleteAccountService = async (userId) => {
 
   const email = user.email;
   const fullname = user.fullname;
+  const country = user.country;
+  const timezone = user.timezone;
 
   const conn = await db.getConnection();
 
@@ -850,6 +864,8 @@ export const deleteAccountService = async (userId) => {
         html: accountDeletedEmailHtml({
           fullname,
           email,
+          country,
+          timezone,
           deletionDateTime: new Date(),
         }),
       });

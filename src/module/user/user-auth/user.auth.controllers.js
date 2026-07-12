@@ -17,8 +17,9 @@ import {
   updateProfileService,
 } from "./user.auth.services.js"
   
-import db from "../../../config/db.js";  
+import db from "../../../config/db.js";
 import { logUserActivity } from "../../../utils/activity.logger.js";
+import { isValidTimezone } from "../../../utils/mailer.js";
 
 const parseMetadata = (metadata) => {
   if (!metadata) return null;
@@ -143,6 +144,7 @@ export const getProfile = async (req, res) => {
      u.email,
      u.mobile,
      u.country,
+     u.timezone,
      u.date_of_birth,
      u.email_verify,
      u.account_status,
@@ -249,6 +251,7 @@ const [[wallet]] = await db.execute(
         email:          user.email,
         mobile:         user.mobile,
         country:        user.country,
+        timezone:       user.timezone,
         date_of_birth:  user.date_of_birth,
         email_verify:   user.email_verify,
         account_status: user.account_status,
@@ -298,7 +301,7 @@ const [[wallet]] = await db.execute(
 /* ================= UPDATE PROFILE ================= */
 export const updateProfile = async (req, res) => {
   try {
-    const ALLOWED = ["fullname", "country", "date_of_birth"];
+    const ALLOWED = ["fullname", "country", "timezone", "date_of_birth"];
     const sanitized = {};
 
     for (const key of ALLOWED) {
@@ -309,6 +312,13 @@ export const updateProfile = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "No valid fields to update",
+      });
+    }
+
+    if (sanitized.timezone !== undefined && !isValidTimezone(sanitized.timezone)) {
+      return res.status(400).json({
+        success: false,
+        message: "timezone must be a valid IANA timezone (e.g. America/New_York)",
       });
     }
 
@@ -345,7 +355,7 @@ export const updateProfile = async (req, res) => {
     const [[updated]] = await db.execute(
       `SELECT
          id, fullname, email, mobile,
-         country, date_of_birth,
+         country, timezone, date_of_birth,
          email_verify,
          account_status, created_at
        FROM users WHERE id = ?`,
@@ -754,13 +764,26 @@ export const deleteNotification = async (req, res) => {
 
     await db.execute(
       `DELETE FROM user_notifications WHERE id = ? AND user_id = ?`,
-      [id, userId] 
-      
+      [id, userId]
     );
 
-
-
     return res.status(200).json({ success: true, message: "Notification deleted" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+/* ── Delete All Notifications ── */
+export const deleteAllNotifications = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    await db.execute(
+      `DELETE FROM user_notifications WHERE user_id = ?`,
+      [userId]
+    );
+
+    return res.status(200).json({ success: true, message: "All notifications deleted" });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

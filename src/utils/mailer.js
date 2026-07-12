@@ -4,8 +4,60 @@ import nodemailer from "nodemailer";
 
 /* ══════════════════════════════════════════
    DATE FORMATTING UTILITY
-══════════════════════════════════════════ */
-const formatDateINDIA = (date = new Date()) => {
+   Emails are generated server-side, so there's no browser to pick the
+   reader's local timezone the way the frontend can. The precise fix is
+   to capture the browser's IANA timezone (e.g. via
+   Intl.DateTimeFormat().resolvedOptions().timeZone on the frontend) and
+   store it on the user — resolveTimezone() below prefers that when
+   present. Country-based approximation is the fallback for any user
+   who hasn't got a stored timezone yet (e.g. signed up before this
+   existed, or country-only clients). Every call defaults to
+   "Asia/Kolkata" when nothing is available at all. ── */
+const COUNTRY_TIMEZONES = {
+  india:           "Asia/Kolkata",
+  "united states": "America/New_York",
+  usa:             "America/New_York",
+  "united kingdom":"Europe/London",
+  uk:              "Europe/London",
+  canada:          "America/Toronto",
+  australia:       "Australia/Sydney",
+  "united arab emirates": "Asia/Dubai",
+  uae:             "Asia/Dubai",
+  singapore:       "Asia/Singapore",
+  germany:         "Europe/Berlin",
+  france:          "Europe/Paris",
+  "south africa":  "Africa/Johannesburg",
+  "new zealand":   "Pacific/Auckland",
+};
+
+export const getTimezoneForCountry = (country) => {
+  if (!country) return "Asia/Kolkata";
+  return COUNTRY_TIMEZONES[String(country).trim().toLowerCase()] || "Asia/Kolkata";
+};
+
+/* ── True/false whether a string is a real IANA timezone, e.g.
+   "America/Los_Angeles". Used both to validate incoming values from the
+   frontend and to gate resolveTimezone()'s preference for the stored
+   value below. ── */
+export const isValidTimezone = (tz) => {
+  if (!tz || typeof tz !== "string") return false;
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/* ── Prefer the user's own captured timezone; fall back to a
+   country-based approximation, then to IST. Pass whatever subset of
+   {timezone, country} you have — e.g. resolveTimezone(user). ── */
+export const resolveTimezone = ({ timezone, country } = {}) => {
+  if (isValidTimezone(timezone)) return timezone;
+  return getTimezoneForCountry(country);
+};
+
+const formatDateINDIA = (date = new Date(), timeZone = "Asia/Kolkata") => {
   const options = {
     year: "numeric",
     month: "short",
@@ -14,17 +66,17 @@ const formatDateINDIA = (date = new Date()) => {
     minute: "2-digit",
     second: "2-digit",
     hour12: true,
-    timeZone: "Asia/Kolkata",
+    timeZone,
   };
   return new Date(date).toLocaleDateString("en-IN", options);
 };
 
-const formatDateDMY = (date = new Date()) => {
+const formatDateDMY = (date = new Date(), timeZone = "Asia/Kolkata") => {
   const options = {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    timeZone: "Asia/Kolkata",
+    timeZone,
   };
   return new Date(date).toLocaleDateString("en-IN", options);
 };
@@ -102,8 +154,6 @@ export const sendBillingMail = async ({ to, subject, html }) => {
    EMAIL TEMPLATES
 ══════════════════════════════════════════ */
 export const otpEmailHtml = (otp, fullname = "User", expiryMinutes = 5, sentDateTime = null, context = {}) => {
-  const sentDate = sentDateTime ? formatDateINDIA(sentDateTime) : formatDateINDIA();
-
   const {
     heading = "Verify your email address.",
     intro = [
@@ -117,7 +167,10 @@ export const otpEmailHtml = (otp, fullname = "User", expiryMinutes = 5, sentDate
       "Your account will be activated only after successful email and mobile verification.",
     ],
     ignoreNote = "If you did not initiate this registration request, please ignore this email.",
+    timeZone = "Asia/Kolkata",
   } = context;
+
+  const sentDate = formatDateINDIA(sentDateTime || new Date(), timeZone);
 
   const introHtml = intro
     .map((line) => `<p style="margin:0 0 12px;color:#333;font-size:15px;">${line}</p>`)
@@ -239,8 +292,8 @@ export const otpEmailHtml = (otp, fullname = "User", expiryMinutes = 5, sentDate
 `;
 };
 
-export const passwordResetEmailHtml = (otp, fullname = "User", expiryMinutes = 10, sentDateTime = null) => {
-  const sentDate = sentDateTime ? formatDateINDIA(sentDateTime) : formatDateINDIA();
+export const passwordResetEmailHtml = (otp, fullname = "User", expiryMinutes = 10, sentDateTime = null, timeZone = "Asia/Kolkata") => {
+  const sentDate = formatDateINDIA(sentDateTime || new Date(), timeZone);
 
   return `
 <!DOCTYPE html>
@@ -346,12 +399,15 @@ export const welcomeEmailHtml = (data = {}) => {
     email = "-",
     mobile = "-",
     country = "-",
+    timezone = null,
     activationDate = "-",
   } = typeof data === "string" ? { fullname: data } : data;
 
-  const formattedActivationDate = activationDate && activationDate !== "-" 
-    ? formatDateINDIA(activationDate) 
-    : formatDateINDIA();
+  const timeZone = resolveTimezone({ timezone, country });
+  const formattedActivationDate = formatDateINDIA(
+    activationDate && activationDate !== "-" ? activationDate : new Date(),
+    timeZone
+  );
 
   return `
 <!DOCTYPE html>
@@ -558,10 +614,8 @@ export const welcomeEmailHtml = (data = {}) => {
 };
 
 export const coinPurchaseEmailHtml = (data) => {
-  // Format purchase date if provided
-  const formattedPurchaseDate = data.purchaseDate 
-    ? formatDateINDIA(data.purchaseDate) 
-    : formatDateINDIA();
+  const timeZone = resolveTimezone({ timezone: data.timezone, country: data.country });
+  const formattedPurchaseDate = formatDateINDIA(data.purchaseDate || new Date(), timeZone);
 
   return `
 <!DOCTYPE html>
@@ -716,10 +770,11 @@ export const paymentFailedEmailHtml = ({
   amount = "-",
   transactionDateTime = null,
   transactionReference = "-",
+  country = null,
+  timezone = null,
 }) => {
-  // Format transaction date if provided
-  const formattedTransactionDate = transactionDateTime 
-    ? formatDateINDIA(transactionDateTime) 
+  const formattedTransactionDate = transactionDateTime
+    ? formatDateINDIA(transactionDateTime, resolveTimezone({ timezone, country }))
     : "-";
 
   return `
@@ -886,6 +941,8 @@ export const paymentFailedEmailHtml = ({
 
 export const uctTeamsGeneratedEmailHtml = ({
   fullname = "User",
+  country = null,
+  timezone = null,
   leagueName = "-",
   homeTeam = "-",
   awayTeam = "-",
@@ -895,10 +952,19 @@ export const uctTeamsGeneratedEmailHtml = ({
   coinsConsumed = 1,
   generatedOn = "-",
 }) => {
-  // Format generatedOn date if provided
-  const formattedGeneratedOn = generatedOn && generatedOn !== "-" 
-    ? formatDateINDIA(generatedOn) 
+  const timeZone = resolveTimezone({ timezone, country });
+
+  const formattedGeneratedOn = generatedOn && generatedOn !== "-"
+    ? formatDateINDIA(generatedOn, timeZone)
     : generatedOn;
+
+  const formattedMatchDate = matchDate && matchDate !== "-"
+    ? formatDateDMY(matchDate, timeZone)
+    : matchDate;
+
+  const formattedKickoffTime = kickoffTime && kickoffTime !== "-"
+    ? new Date(kickoffTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone })
+    : kickoffTime;
 
   return `
 <!DOCTYPE html>
@@ -961,11 +1027,11 @@ export const uctTeamsGeneratedEmailHtml = ({
                       </tr>
                       <tr>
                         <td style="color:#666;font-size:13px;padding:10px 0;">📅 Match Date</td>
-                        <td style="color:#333;font-size:13px;text-align:right;padding:10px 0;font-weight:500;">${matchDate}</td>
+                        <td style="color:#333;font-size:13px;text-align:right;padding:10px 0;font-weight:500;">${formattedMatchDate}</td>
                       </tr>
                       <tr>
                         <td style="color:#666;font-size:13px;padding:10px 0;">⏰ Kickoff Time</td>
-                        <td style="color:#333;font-size:13px;text-align:right;padding:10px 0;font-weight:500;">${kickoffTime}</td>
+                        <td style="color:#333;font-size:13px;text-align:right;padding:10px 0;font-weight:500;">${formattedKickoffTime}</td>
                       </tr>
                     </table>
                   </td>
@@ -1083,9 +1149,10 @@ export const profileUpdatedEmailHtml = ({
   email = "-",
   mobile = "-",
   country = "-",
+  timezone = null,
   updatedOn = new Date(),
 }) => {
-  const formattedUpdatedOn = updatedOn ? formatDateINDIA(updatedOn) : "-";
+  const formattedUpdatedOn = updatedOn ? formatDateINDIA(updatedOn, resolveTimezone({ timezone, country })) : "-";
 
   return `
 <!DOCTYPE html>
@@ -1222,8 +1289,10 @@ export const securityAlertEmailHtml = ({
   location = "Unknown location",
   ipAddress = "Unknown IP",
   actionUrl = "#",
+  country = null,
+  timezone = null,
 }) => {
-  const formattedActivityDate = activityDateTime ? formatDateINDIA(activityDateTime) : "-";
+  const formattedActivityDate = activityDateTime ? formatDateINDIA(activityDateTime, resolveTimezone({ timezone, country })) : "-";
 
   return `
 <!DOCTYPE html>
@@ -1348,8 +1417,10 @@ export const accountDeletedEmailHtml = ({
   fullname = "User",
   email = "",
   deletionDateTime = new Date(),
+  country = null,
+  timezone = null,
 }) => {
-  const formattedDeletionDate = deletionDateTime ? formatDateINDIA(deletionDateTime) : "-";
+  const formattedDeletionDate = deletionDateTime ? formatDateINDIA(deletionDateTime, resolveTimezone({ timezone, country })) : "-";
 
   return `
 <!DOCTYPE html>

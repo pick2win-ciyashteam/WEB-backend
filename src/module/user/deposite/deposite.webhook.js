@@ -37,7 +37,7 @@ export const razorpayWebhook = async (req, res) => {
   if (event.event !== "payment.captured")
     return res.json({ received: true });
 
-  const payment = event.payload.payment.entity;
+  const payment = event.payload.payment.entity;  
   const notes   = payment.notes || {};
 
   if (notes.type !== "coins_purchase") { 
@@ -85,7 +85,7 @@ export const razorpayWebhook = async (req, res) => {
 
     /* ── User ── */
     const [[userInfo]] = await conn.query(
-      `SELECT fullname, email, mobile FROM users WHERE id = ?`,
+      `SELECT fullname, email, mobile, country, timezone FROM users WHERE id = ?`,
       [userId]
     );
 
@@ -173,15 +173,15 @@ export const razorpayWebhook = async (req, res) => {
         subject: `Coin Purchase Successful · ${plan.name}`,
         html:    coinPurchaseEmailHtml({
           fullname:       userInfo?.fullname || "User",
+          country:        userInfo?.country,
+          timezone:       userInfo?.timezone,
           planName:       plan.name,
           coins:          parsedCoins,
           currentBalance: closingCoins,
           currency:       "$",
           amount,
           transactionId:  paymentId,
-          purchaseDate:   new Date().toLocaleDateString("en-IN", {
-            day: "2-digit", month: "short", year: "numeric",
-          }),
+          purchaseDate:   new Date(),
         }),
       });
       console.log(`✅ Email sent to ${userInfo?.email}`);
@@ -299,3 +299,5 @@ const handleRefundStatus = async (event, res, status) => {
     return res.status(500).json({ error: "Webhook processing failed" });
   }
 };
+
+  

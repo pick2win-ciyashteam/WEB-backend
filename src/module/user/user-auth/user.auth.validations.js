@@ -7,6 +7,7 @@ export const signup = (req, res, next) => {
     email:         Joi.string().email().required(),
     mobile:        Joi.string().pattern(/^[0-9]{5,15}$/).required(),
     country:       Joi.string().min(2).max(100).required(),
+    timezone:      Joi.string().max(64).optional(),
     date_of_birth: Joi.date().less("now").required(),
     password:      Joi.string().min(6).max(100).pattern(/^\S+$/).message("password must not contain spaces").required(),
   }).validate(req.body);
@@ -48,6 +49,7 @@ export const updateProfile = (req, res, next) => {
   const { error } = Joi.object({
     fullname:      Joi.string().min(3).max(100),
     country:       Joi.string().min(2).max(100),
+    timezone:      Joi.string().max(64),
     date_of_birth: Joi.date().less("now"),
   }).min(1).validate(req.body);
   if (error) return res.status(400).json({ success: false, message: error.details[0].message });

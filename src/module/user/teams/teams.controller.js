@@ -360,7 +360,7 @@ export const generateTeams = async (req, res) => {
         });
 
         const [[user]] = await db.execute(
-          `SELECT fullname, email FROM users WHERE id = ? LIMIT 1`,
+          `SELECT fullname, email, country, timezone FROM users WHERE id = ? LIMIT 1`,
           [userId]
         );
 
@@ -385,18 +385,16 @@ export const generateTeams = async (req, res) => {
             subject: `UCT Teams Generated — ${sportName.toUpperCase()}/${gameName.toUpperCase()}`,
             html: uctTeamsGeneratedEmailHtml({
               fullname: user.fullname || "User",
+              country: user.country,
+              timezone: user.timezone,
               leagueName: matchInfo.seriesname || "-",
               homeTeam: matchInfo.hometeamname || "-",
               awayTeam: matchInfo.awayteamname || "-",
-              matchDate: matchInfo.matchdate
-                ? new Date(matchInfo.matchdate).toLocaleDateString("en-IN")
-                : "-",
-              kickoffTime: matchInfo.start_time
-                ? new Date(matchInfo.start_time).toLocaleTimeString("en-IN")
-                : "-",
+              matchDate: matchInfo.matchdate || "-",
+              kickoffTime: matchInfo.start_time || "-",
               teamsGenerated: totalTeams,
               coinsConsumed: 1,
-              generatedOn: new Date().toLocaleString("en-IN"),
+              generatedOn: new Date(),
             }),
             text: `Your UCT teams have been generated successfully for match ${match_id}.`,
           });
