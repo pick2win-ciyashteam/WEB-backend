@@ -8,6 +8,7 @@ import {
   requestMobileChangeService,
   verifyMobileChangeService,
   requestEmailChangeService,
+  verifyOldEmailChangeService,
   verifyEmailChangeService,
   forgotPasswordService,
   resetPasswordService,
@@ -417,6 +418,23 @@ export const requestEmailChange = async (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 };
+
+/* ================= VERIFY OLD EMAIL OTP (step 1) ================= */
+export const verifyOldEmailChange = async (req, res) => {
+  try {
+    const result = await verifyOldEmailChangeService(req.user.id, req.body.otp);
+    await logUserActivity({
+      userId: req.user.id,
+      category: "profile",
+      action: "email_change_old_verified",
+      details: "User verified OTP on current email; OTP sent to new email",
+      req,
+    });
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });  
+  }
+}; 
 
 /* ================= VERIFY EMAIL CHANGE ================= */
 export const verifyEmailChange = async (req, res) => {

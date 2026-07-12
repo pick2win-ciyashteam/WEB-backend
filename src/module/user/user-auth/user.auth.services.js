@@ -473,12 +473,26 @@ export const verifyMobileChangeService = async (userId, { otp }) => {
 };
 
 /* ══════════════════════════════════════════
-   REQUEST EMAIL CHANGE
+   REQUEST EMAIL CHANGE  (step 1 — OTP to CURRENT email)
+   Sending the confirmation OTP to the user's existing address first
+   (rather than straight to the new one) means a stolen session token
+   alone can't silently redirect the account's email.
 ══════════════════════════════════════════ */
 export const requestEmailChangeService = async (userId, newEmail) => {
+  const normalizedEmail = String(newEmail).trim().toLowerCase();
+
+  const [[user]] = await db.execute(
+    `SELECT fullname, email FROM users WHERE id = ?`,
+    [userId]
+  );
+  if (!user) throw new Error("User not found");
+  if (String(user.email).toLowerCase() === normalizedEmail) {
+    throw new Error("New email must be different from current email");
+  }
+
   const [[existing]] = await db.execute(
     `SELECT id FROM users WHERE email = ? AND id != ?`,
-    [newEmail, userId]
+    [normalizedEmail, userId]
   );
   if (existing) throw new Error("Email already in use");
 
@@ -487,36 +501,107 @@ export const requestEmailChangeService = async (userId, newEmail) => {
 
   await db.execute(
     `UPDATE users
-     SET pending_email = ?, new_contact_otp = ?,
-         new_contact_otp_expiry = ?, contact_change_type = 'email'
+     SET pending_email = ?, old_contact_otp = ?, old_contact_otp_expiry = ?,
+         new_contact_otp = NULL, new_contact_otp_expiry = NULL,
+         contact_change_type = 'email'
      WHERE id = ?`,
-    [newEmail, otp, expiry, userId]
+    [normalizedEmail, otp, expiry, userId]
   );
 
-  /* ── Send OTP to new email ── */
+  /* ── Send OTP to current (old) email to authorize the change ── */
   await sendNoreplyMail({
-    to:      newEmail,
-    subject: "Pick2Win — Email Change OTP",
-    html:    otpEmailHtml(otp, "Verify Your New Email", 5, new Date()),
+    to:      user.email,
+    subject: "Pick2Win — Confirm Email Change Request",
+    html:    otpEmailHtml(otp, user.fullname || "User", 10, new Date(), {
+      heading: "Confirm your email change request.",
+      intro: [
+        "We received a request to change the email address linked to your PICK2WIN account.",
+        "Enter the OTP below to confirm this request is authorized by you.",
+      ],
+      instructions: [
+        "Enter this OTP to confirm your email change request.",
+        "This OTP can be used only once.",
+        "The OTP will expire automatically after the validity period.",
+        "Once confirmed, we'll send a second OTP to your new email address.",
+      ],
+      ignoreNote: "If you did not request an email change, please ignore this email and your account will remain unchanged.",
+    }),
   });
 
   return {
     success: true,
-    message: "OTP sent to your new email address",
+    message: "OTP sent to your current email address",
     ...(process.env.NODE_ENV !== "production" && { otp }),
   };
 };
 
 /* ══════════════════════════════════════════
-   VERIFY EMAIL CHANGE
+   VERIFY OLD EMAIL OTP  (step 2 — OTP to NEW email)
+══════════════════════════════════════════ */
+export const verifyOldEmailChangeService = async (userId, otp) => {
+  const [[user]] = await db.execute(
+    `SELECT old_contact_otp, old_contact_otp_expiry, pending_email, contact_change_type, fullname
+     FROM users WHERE id = ?`,
+    [userId]
+  );
+
+  if (!user)                                                   throw new Error("User not found");
+  if (user.contact_change_type !== "email" || !user.pending_email)
+                                                                throw new Error("No pending email change request");
+  if (!user.old_contact_otp)                                   throw new Error("OTP expired. Request again.");
+  if (String(user.old_contact_otp) !== String(otp))            throw new Error("Invalid OTP");
+  if (new Date(user.old_contact_otp_expiry) < new Date())      throw new Error("OTP expired. Request again.");
+
+  const newOtp    = crypto.randomInt(100000, 999999).toString();
+  const newExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+  await db.execute(
+    `UPDATE users
+     SET old_contact_otp = NULL, old_contact_otp_expiry = NULL,
+         new_contact_otp = ?, new_contact_otp_expiry = ?
+     WHERE id = ?`,
+    [newOtp, newExpiry, userId]
+  );
+
+  /* ── Send OTP to new email to confirm the change ── */
+  await sendNoreplyMail({
+    to:      user.pending_email,
+    subject: "Pick2Win — Verify Your New Email",
+    html:    otpEmailHtml(newOtp, user.fullname || "User", 10, new Date(), {
+      heading: "Verify your new email address.",
+      intro: [
+        "You're changing the email address linked to your PICK2WIN account.",
+        "Enter the OTP below to verify this new email address and complete the change.",
+      ],
+      instructions: [
+        "Enter this OTP to verify your new email address.",
+        "This OTP can be used only once.",
+        "The OTP will expire automatically after the validity period.",
+        "Your account email will be updated only after this OTP is verified.",
+      ],
+      ignoreNote: "If you did not request this email change, please ignore this email.",
+    }),
+  });
+
+  return {
+    success: true,
+    message: "OTP sent to your new email address",
+    ...(process.env.NODE_ENV !== "production" && { otp: newOtp }),
+  };
+};
+
+/* ══════════════════════════════════════════
+   VERIFY EMAIL CHANGE  (step 3 — apply the change)
 ══════════════════════════════════════════ */
 export const verifyEmailChangeService = async (userId, otp) => {
   const [[user]] = await db.execute(
-    `SELECT new_contact_otp, new_contact_otp_expiry, pending_email FROM users WHERE id = ?`,
+    `SELECT new_contact_otp, new_contact_otp_expiry, pending_email, contact_change_type FROM users WHERE id = ?`,
     [userId]
   );
 
   if (!user)                                               throw new Error("User not found");
+  if (user.contact_change_type !== "email" || !user.pending_email)
+                                                            throw new Error("No pending email change request");
   if (!user.new_contact_otp)                               throw new Error("OTP expired. Request again.");
   if (String(user.new_contact_otp) !== String(otp))        throw new Error("Invalid OTP");
   if (new Date(user.new_contact_otp_expiry) < new Date())  throw new Error("OTP expired. Request again.");
@@ -657,7 +742,20 @@ export const deleteAccountService = async (userId) => {
   await sendNoreplyMail({
     to:      user.email,
     subject: "Pick2Win — Account Deletion OTP",
-    html:    otpEmailHtml(otp, "Confirm Account Deletion", 5, new Date()),
+    html:    otpEmailHtml(otp, user.fullname || "User", 5, new Date(), {
+      heading: "Confirm your account deletion request.",
+      intro: [
+        "We received a request to delete your PICK2WIN account.",
+        "Enter the OTP below to confirm this action. This cannot be undone.",
+      ],
+      instructions: [
+        "Enter this OTP to confirm your account deletion request.",
+        "This OTP can be used only once.",
+        "The OTP will expire automatically after the validity period.",
+        "Your account and all associated data will be permanently deleted once confirmed.",
+      ],
+      ignoreNote: "If you did not request account deletion, please ignore this email and your account will remain unchanged.",
+    }),
   });
 
   return {

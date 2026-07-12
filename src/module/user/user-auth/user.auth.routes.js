@@ -37,6 +37,7 @@ router.post("/reset-password",   v.resetPassword,   c.resetPassword);
 router.post("/change-mobile",        authenticate, v.requestMobileChange, c.requestMobileChange);
 router.post("/verify-mobile-change", authenticate, v.verifyChangeOtp,     c.verifyMobileChange);
 router.post("/change-email",         authenticate, v.requestEmailChange,  c.requestEmailChange);
+router.post("/verify-old-email-otp", authenticate, v.verifyOldEmailOtp,   c.verifyOldEmailChange);
 router.post("/verify-email-change",  authenticate, v.verifyChangeOtp,     c.verifyEmailChange);
 
 //notifications

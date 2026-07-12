@@ -101,9 +101,32 @@ export const sendBillingMail = async ({ to, subject, html }) => {
 /* ══════════════════════════════════════════
    EMAIL TEMPLATES
 ══════════════════════════════════════════ */
-export const otpEmailHtml = (otp, fullname = "User", expiryMinutes = 5, sentDateTime = null) => {
+export const otpEmailHtml = (otp, fullname = "User", expiryMinutes = 5, sentDateTime = null, context = {}) => {
   const sentDate = sentDateTime ? formatDateINDIA(sentDateTime) : formatDateINDIA();
-  
+
+  const {
+    heading = "Verify your email address.",
+    intro = [
+      "Thank you for registering with PICK2WIN.",
+      "To continue with account creation, please verify your email address using the One-Time Password (OTP) below.",
+    ],
+    instructions = [
+      "Enter this OTP on the PICK2WIN registration screen to verify your email address.",
+      "This OTP can be used only once.",
+      "The OTP will expire automatically after the validity period.",
+      "Your account will be activated only after successful email and mobile verification.",
+    ],
+    ignoreNote = "If you did not initiate this registration request, please ignore this email.",
+  } = context;
+
+  const introHtml = intro
+    .map((line) => `<p style="margin:0 0 12px;color:#333;font-size:15px;">${line}</p>`)
+    .join("");
+
+  const instructionsHtml = instructions
+    .map((line) => `<li>${line}</li>`)
+    .join("");
+
   return `
 <!DOCTYPE html>
 <html>
@@ -143,11 +166,10 @@ export const otpEmailHtml = (otp, fullname = "User", expiryMinutes = 5, sentDate
           <tr>
             <td style="padding:40px 40px 24px;">
               <p style="margin:0 0 8px;color:#888;font-size:13px;">Email verification · OTP</p>
-              <h1 style="margin:0 0 24px;color:#1a1a1a;font-size:26px;font-weight:700;">Verify your email address.</h1>
+              <h1 style="margin:0 0 24px;color:#1a1a1a;font-size:26px;font-weight:700;">${heading}</h1>
 
               <p style="margin:0 0 12px;color:#333;font-size:15px;">Hello <strong>${fullname}</strong>,</p>
-              <p style="margin:0 0 12px;color:#333;font-size:15px;">Thank you for registering with PICK2WIN.</p>
-              <p style="margin:0 0 24px;color:#333;font-size:15px;">To continue with account creation, please verify your email address using the One-Time Password (OTP) below.</p>
+              ${introHtml}
 
               <!-- OTP Box -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 28px;">
@@ -165,10 +187,7 @@ export const otpEmailHtml = (otp, fullname = "User", expiryMinutes = 5, sentDate
                   <td style="background:#fff8f0;border:1px solid #ffe0c0;border-radius:8px;padding:20px 24px;">
                     <p style="margin:0 0 12px;color:#cc5500;font-size:14px;font-weight:700;">📌 Important Information</p>
                     <ul style="margin:0;padding-left:18px;color:#555;font-size:13px;line-height:2;">
-                      <li>Enter this OTP on the PICK2WIN registration screen to verify your email address.</li>
-                      <li>This OTP can be used only once.</li>
-                      <li>The OTP will expire automatically after the validity period.</li>
-                      <li>Your account will be activated only after successful email and mobile verification.</li>
+                      ${instructionsHtml}
                     </ul>
                   </td>
                 </tr>
@@ -182,7 +201,7 @@ export const otpEmailHtml = (otp, fullname = "User", expiryMinutes = 5, sentDate
                     <ul style="margin:0;padding-left:18px;color:#555;font-size:13px;line-height:2;">
                       <li>Never share this OTP with anyone.</li>
                       <li>PICK2WIN will never ask for your OTP through email, phone calls, messages, or social media.</li>
-                      <li>If you did not initiate this registration request, please ignore this email.</li>
+                      <li>${ignoreNote}</li>
                     </ul>
                   </td>
                 </tr>
