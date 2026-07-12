@@ -31,13 +31,13 @@ export const adminLoginService = async ({ email, password, twoFaCode }) => {
     [email.toLowerCase()]
   );
 
-  if (!admin) throw new Error("Invalid email or password");
+  if (!admin) throw new Error("No admin account found with this email");
 
   if (admin.status === "inactive")
     throw new Error("Your account is inactive. Contact super admin.");
 
   const isMatch = await bcryptCompare(password, admin.password_hash);
-  if (!isMatch) throw new Error("Invalid email or password");
+  if (!isMatch) throw new Error("Invalid password");
 
   if (admin.twofa_enabled) {
     if (!twoFaCode) {
