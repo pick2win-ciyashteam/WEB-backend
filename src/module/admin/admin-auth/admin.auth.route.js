@@ -5,7 +5,7 @@ import * as c from  "./admin.auth.controller.js"
 
 const router = Router();
 
-/* ── Auth ── */
+/* ── Auth ── */ 
 router.post("/login",                adminLimiter, v.adminLogin,   c.adminLogin);
 /* ── Employee Management ── */
 router.post("/create-admin",       adminLimiter, adminAuth(["super_admin"]), v.createAdmin,  c.createAdmin);
@@ -33,4 +33,4 @@ router.post("/logout",     adminLimiter, adminAuth(ALL_ROLES), c.logout);
       
 export default router;    
 
-        
+                                      

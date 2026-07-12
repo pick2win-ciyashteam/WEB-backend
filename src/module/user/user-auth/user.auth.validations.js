@@ -8,7 +8,7 @@ export const signup = (req, res, next) => {
     mobile:        Joi.string().pattern(/^[0-9]{5,15}$/).required(),
     country:       Joi.string().min(2).max(100).required(),
     date_of_birth: Joi.date().less("now").required(),
-    password:      Joi.string().min(6).max(100).required(),
+    password:      Joi.string().min(6).max(100).pattern(/^\S+$/).message("password must not contain spaces").required(),
   }).validate(req.body);
   if (error) return res.status(400).json({ success: false, message: error.details[0].message });
   next();
@@ -106,9 +106,10 @@ export const resetPassword = (req, res, next) => {
   const { error } = Joi.object({
     email:    Joi.string().email().required(),
     otp:      Joi.string().length(6).required(),
-    password: Joi.string().min(6).max(100).required(),
+    password: Joi.string().min(6).max(100).pattern(/^\S+$/).message("password must not contain spaces").required(),
   }).validate(req.body);
   if (error) return res.status(400).json({ success: false, message: error.details[0].message });
   next();
 };     
 
+       

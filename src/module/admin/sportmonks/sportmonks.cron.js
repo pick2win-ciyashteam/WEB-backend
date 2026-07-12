@@ -40,7 +40,7 @@ const SCHEDULES = {
        INNER JOIN teams ht  ON ht.id  = m.home_team_id
        INNER JOIN teams awt ON awt.id = m.away_team_id
        WHERE m.is_active = 1
-         AND m.lineup_status != 'confirmed'
+         AND m.lineupavailable = 0
          AND m.start_time <= ?
          AND m.status IN ('UPCOMING', 'LIVE', 'RESULT')
        ORDER BY m.start_time ASC`,

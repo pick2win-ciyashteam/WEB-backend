@@ -69,7 +69,7 @@ const positionIdMap = {
 export const syncPlayingXIService = async (providerMatchId) => {
 
   const [[matchRow]] = await db.query(
-    `SELECT id, provider_match_id, home_team_id, away_team_id, lineup_status
+    `SELECT id, provider_match_id, home_team_id, away_team_id, lineup_status, lineupavailable
      FROM matches
      WHERE provider_match_id = ?
      LIMIT 1`,
@@ -203,8 +203,12 @@ export const syncPlayingXIService = async (providerMatchId) => {
     count += await insertPlayer(p, 0, 1);
   }
 
-  // Notification only once
-  const shouldNotify = matchRow.lineup_status !== "confirmed";
+  /* ── Idempotency gate: `lineupavailable` is a dedicated boolean owned by
+     this function. `lineup_status` is NOT reliable for this — the
+     syncLineupStatus cron job (JOB 5) overwrites it with UI countdown
+     stages (LINEUPS_OUT, USERS_ADJUSTING, ...), which used to clobber
+     'confirmed' and cause this notification to re-fire every 5 minutes. ── */
+  const shouldNotify = !matchRow.lineupavailable;
 
   await db.query(
     `UPDATE matches

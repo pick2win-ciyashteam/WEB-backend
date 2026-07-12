@@ -5,7 +5,7 @@ import Joi from "joi";
     name:         Joi.string().min(3).max(100).required(),
     email:        Joi.string().email().required(),
     mobile:       Joi.string().min(10).max(15).optional(),
-    password:     Joi.string().min(8).max(100).required(),
+    password:     Joi.string().min(8).max(100).pattern(/^\S+$/).message("password must not contain spaces").required(),
     role:         Joi.string().valid("super_admin", "finance", "operations", "support", "catalog", "marketing").required(),
     access_level: Joi.string().valid("read_only", "editor").optional(),
   });
@@ -63,7 +63,7 @@ export const adminLogin = (req, res, next) => {
 export const updateCredentials = (req, res, next) => {
   const schema = Joi.object({
     currentPassword: Joi.string().required(),
-    newPassword:     Joi.string().min(6).max(100).optional(),
+    newPassword:     Joi.string().min(6).max(100).pattern(/^\S+$/).message("newPassword must not contain spaces").optional(),
     confirmPassword: Joi.string().optional(),
     new2FACode:      Joi.string().length(6).pattern(/^\d+$/).optional(),
   });
