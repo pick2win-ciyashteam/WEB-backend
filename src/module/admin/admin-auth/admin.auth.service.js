@@ -319,8 +319,10 @@ export const setup2FAService = async (adminId) => {
     length: 20,
   });
 
+  /* ── Rotating the secret invalidates any prior enablement, since the
+     old TOTP app entry no longer matches the new secret. ── */
   await db.query(
-    `UPDATE admin SET twofa_secret = ? WHERE id = ?`,
+    `UPDATE admin SET twofa_secret = ?, twofa_enabled = 0 WHERE id = ?`,
     [secret.base32, adminId]
   );
 
@@ -330,33 +332,6 @@ export const setup2FAService = async (adminId) => {
     otpauthUrl: secret.otpauth_url,
   };
 };
-
-/* ================= VERIFY & ENABLE 2FA ================= */
-export const verify2FAService = async (adminId, token) => {
-  const [[admin]] = await db.query(
-    `SELECT twofa_secret FROM admin WHERE id = ?`,
-    [adminId]
-  );
-
-  if (!admin?.twofa_secret) throw new Error("2FA not set up");
-
-  const verified = speakeasy.totp.verify({
-    secret: admin.twofa_secret,
-    encoding: "base32",
-    token,
-    window: 1,
-  });
-
-  if (!verified) throw new Error("Invalid code");
-
-  await db.query(
-    `UPDATE admin SET twofa_enabled = 1 WHERE id = ?`,
-    [adminId]
-  );
-
-  return { success: true, message: "2FA enabled successfully" };
-};
-
 
 /* ================= LOGOUT ================= */
 export const logoutService = async (token, admin) => {
@@ -459,12 +434,16 @@ export const updateProfileService = async (adminId, data) => {
 
 /* ================= TOGGLE 2FA REQUIREMENT (SUPER ADMIN) ================= */
 export const toggle2FAService = async (adminId, enabled) => {
+  const [[admin]] = await db.query(`SELECT twofa_secret FROM admin WHERE id = ?`, [adminId]);
+  if (!admin) throw new Error("Admin not found");
+
   if (!enabled) {
     await db.query(`UPDATE admin SET twofa_enabled = 0 WHERE id = ?`, [adminId]);
     return { success: true, message: "2FA disabled" };
   }
-  const [[admin]] = await db.query(`SELECT twofa_secret FROM admin WHERE id = ?`, [adminId]);
-  if (!admin?.twofa_secret) throw new Error("Set up 2FA first using /setup-2fa");
+
+  if (!admin.twofa_secret) throw new Error("This admin hasn't set up 2FA yet (they must call /setup-2fa first)");
+
   await db.query(`UPDATE admin SET twofa_enabled = 1 WHERE id = ?`, [adminId]);
   return { success: true, message: "2FA enabled" };
 };

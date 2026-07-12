@@ -72,6 +72,25 @@ export const updateCredentials = (req, res, next) => {
   next();
 };
 
+export const setup2FA = (req, res, next) => {
+  const schema = Joi.object({
+    admin_id: Joi.number().integer().positive().optional(),
+  });
+  const { error } = schema.validate(req.body);
+  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+  next();
+};
+
+export const toggle2FA = (req, res, next) => {
+  const schema = Joi.object({
+    admin_id: Joi.number().integer().positive().optional(),
+    enabled:  Joi.boolean().required(),
+  });
+  const { error } = schema.validate(req.body);
+  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+  next();
+};
+
 export const updateProfile = (req, res, next) => {
   const schema = Joi.object({
     name:   Joi.string().min(3).max(100),

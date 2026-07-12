@@ -16,19 +16,21 @@ router.patch("/update-admin/:id",    adminLimiter, adminAuth(["super_admin"]), v
 
 router.patch("/update-credentials", adminLimiter, adminAuth(["super_admin"]), v.updateCredentials, c.updateCredentials);
 router.patch("/update-profile",     adminLimiter, adminAuth(["super_admin"]), v.updateProfile,     c.updateProfile);
-router.post("/toggle-2fa",        adminLimiter, adminAuth(["super_admin"]), c.toggle2FA);
+router.post("/toggle-2fa",        adminLimiter, adminAuth(["super_admin"]), v.toggle2FA, c.toggle2FA);
 router.delete("/remove-admin/:id", adminLimiter, adminAuth(["super_admin"]), c.removeAdmin);
 router.get("/export-admins-csv",  adminLimiter, adminAuth(["super_admin"]), c.exportAdminsCSV);
 
-
+  
  const ALL_ROLES = ["super_admin", "finance", "operations", "support", "catalog", "marketing"];
 
-router.post("/setup-2fa",  adminLimiter, adminAuth(ALL_ROLES), c.setup2FA);
-router.post("/verify-2fa", adminLimiter, adminAuth(ALL_ROLES), c.verify2FA);
+/* ── 2FA: super_admin generates a sub-admin's secret via /setup-2fa
+   (passing admin_id) and relays it to them out-of-band to add to their
+   authenticator app. super_admin then flips /toggle-2fa to require it. ── */
+router.post("/setup-2fa",  adminLimiter, adminAuth(ALL_ROLES), v.setup2FA,  c.setup2FA);
 router.post("/logout",     adminLimiter, adminAuth(ALL_ROLES), c.logout);
 
 
-    
+      
 export default router;    
 
         

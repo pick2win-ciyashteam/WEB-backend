@@ -49,25 +49,35 @@ export const getProfile = async (req, res) => {
 
 export const setup2FA = async (req, res) => {
   try {
-    const result = await s.setup2FAService(req.admin.id);
+    const { admin_id } = req.body;
+    let targetId = req.admin.id;
+
+    if (admin_id && Number(admin_id) !== req.admin.id) {
+      if (req.admin.role !== "super_admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Only super_admin can set up 2FA for another admin",
+        });
+      }
+      targetId = Number(admin_id);
+    }
+
+    const result = await s.setup2FAService(targetId);
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "admin",
+      action:    "Setup 2FA",
+      details:   targetId === req.admin.id ? "Generated own 2FA secret" : `Generated 2FA secret for admin ${targetId}`,
+    });
+
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 };
-
- export const verify2FA = async (req, res) => {
-  try {
-    const { token } = req.body || {};
-    if (!token) return res.status(400).json({ success: false, message: "token is required" });
-
-    const result = await s.verify2FAService(req.admin.id, token);
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-};
-
 
 /* ================= GET ALL ADMINS ================= */
 export const getAdmins = async (req, res) => {
@@ -164,7 +174,18 @@ export const updateProfile = async (req, res) => {
 
 export const toggle2FA = async (req, res) => {
   try {
-    const result = await s.toggle2FAService(req.admin.id, req.body.enabled);
+    const targetId = req.body.admin_id || req.admin.id;
+    const result = await s.toggle2FAService(targetId, req.body.enabled);
+
+    await logAdminActivity({
+      adminId:   req.admin.id,
+      adminName: req.admin.email,
+      adminRole: req.admin.role,
+      category:  "admin",
+      action:    "Toggle 2FA",
+      details:   `${req.body.enabled ? "Enabled" : "Disabled"} 2FA for admin ${targetId}`,
+    });
+
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
