@@ -716,25 +716,39 @@ export const getCountriesReport = async (req, res) => {
 export const getUctOverview = async (req, res) => {
   try {
 
-    /* ── KPI: UCTs used today, teams generated, active fixtures, failed/refunded ── */
+    /* ── Date is selectable via ?date=YYYY-MM-DD (defaults to today).
+       Previously every query here hardcoded CURDATE(), so the admin had
+       no way to look at any day but today — e.g. today with zero UCT
+       activity would show all-zero KPIs even though yesterday had real
+       data, with no way to switch. ── */
+    const { date } = req.query;
+    const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (date && !datePattern.test(String(date))) {
+      return res.status(400).json({ success: false, message: "date must be in YYYY-MM-DD format" });
+    }
+    const targetDate = date || new Date().toISOString().slice(0, 10);
+
+    /* ── KPI: UCTs used, teams generated, active fixtures, failed/refunded ── */
     const [[kpi]] = await db.execute(
       `SELECT
          COUNT(DISTINCT mgl.id)                                                  AS ucts_today,
          COALESCE(SUM(mgl.total_teams), 0)                                       AS teams_generated,
          SUM(CASE WHEN mgl.status = 'failed' THEN 1 ELSE 0 END)                 AS failed_refunded
        FROM match_generation_log mgl
-       WHERE DATE(mgl.created_at) = CURDATE()`
+       WHERE DATE(mgl.created_at) = ?`,
+      [targetDate]
     );
 
     const [[activeFixtures]] = await db.execute(
       `SELECT COUNT(*) AS total
        FROM matches
-       WHERE DATE(start_time) = CURDATE()
+       WHERE DATE(start_time) = ?
          AND is_active = 1
-         AND status IN ('LIVE', 'UPCOMING')`
+         AND status IN ('LIVE', 'UPCOMING')`,
+      [targetDate]
     );
 
-    /* ── Today's matches — UCT usage table ── */
+    /* ── Selected date's matches — UCT usage table ── */
     const [todayMatches] = await db.execute(
       `SELECT
          m.id,
@@ -747,17 +761,18 @@ export const getUctOverview = async (req, res) => {
        FROM matches m
        LEFT JOIN series s                ON s.seriesid    = m.series_id
        LEFT JOIN match_generation_log mgl ON mgl.match_id  = m.id
-         AND DATE(mgl.created_at) = CURDATE()
-       WHERE DATE(m.start_time) = CURDATE()
+         AND DATE(mgl.created_at) = ?
+       WHERE DATE(m.start_time) = ?
          AND m.is_active = 1
        GROUP BY m.id, m.hometeamname, m.awayteamname, m.status, s.name
-       ORDER BY ucts_used DESC`
+       ORDER BY ucts_used DESC`,
+      [targetDate, targetDate]
     );
 
     const totalUctsToday = todayMatches.reduce((s, m) => s + Number(m.ucts_used), 0);
 
     /* ── Game-wise breakdown (football / fanduel / draftkings / sorare) ──
-       Always list all 4 game types, zero-filled, even with no activity today ── */
+       Always list all 4 game types, zero-filled, even with no activity ── */
     const [gameBreakdownRows] = await db.execute(
       `SELECT
          COALESCE(game, 'football')    AS game,
@@ -765,8 +780,9 @@ export const getUctOverview = async (req, res) => {
          COUNT(DISTINCT user_id)       AS unique_users,
          COALESCE(SUM(total_teams), 0) AS teams_generated
        FROM match_generation_log
-       WHERE DATE(created_at) = CURDATE()
-       GROUP BY COALESCE(game, 'football')`
+       WHERE DATE(created_at) = ?
+       GROUP BY COALESCE(game, 'football')`,
+      [targetDate]
     );
 
     /* football = default/legacy label, not a real selectable game — exclude from this breakdown */
@@ -821,6 +837,8 @@ export const getUctOverview = async (req, res) => {
 
     return res.status(200).json({
       success: true,
+
+      date: targetDate,
 
       kpis: {
         ucts_used_today:  Number(kpi.ucts_today),
@@ -1230,26 +1248,10 @@ export const getUctActivityList = async (req, res) => {
 export const getVotesSurveySummary = async (req, res) => {
   try {
 
-    const [[totals]] = await db.execute(
-      `SELECT
-         COUNT(*) AS total_responses,
-         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'like_uct'     THEN 1 ELSE 0 END) AS like_uct,
-         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'like_changes' THEN 1 ELSE 0 END) AS like_changes,
-         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q1')) = 'dislike'      THEN 1 ELSE 0 END) AS dislike,
-         SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q4')) = 'very_likely'  THEN 1 ELSE 0 END) AS would_recommend,
-         AVG(CAST(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q11')) AS DECIMAL(3,1)))     AS avg_rating
-       FROM uct_answers`
-    );
-
+    const [[totals]] = await db.execute(`SELECT COUNT(*) AS total_responses FROM uct_answers`);
     const totalResponses = Number(totals.total_responses);
-    const likeUct         = Number(totals.like_uct);
-    const likeChanges      = Number(totals.like_changes);
-    const dislike          = Number(totals.dislike);
-    const wouldRecommend   = Number(totals.would_recommend);
-    const avgRating        = totals.avg_rating ? Number(Number(totals.avg_rating).toFixed(1)) : 0;
 
-    const pct = (count, base = totalResponses) =>
-      base > 0 ? Number(((count / base) * 100).toFixed(1)) : 0;
+    const pct = (count, base) => base > 0 ? Number(((count / base) * 100).toFixed(1)) : 0;
 
     /* ── last-period comparison (prev 30d window vs current 30d) ── */
     const [[lastPeriod]] = await db.execute(
@@ -1265,205 +1267,111 @@ export const getVotesSurveySummary = async (req, res) => {
     );
     const responsesVsLastPeriod = Number(currentPeriod.total) - Number(lastPeriod.total);
 
-    /* ── helper: count single-select option frequencies for a question ── */
-    const countSingleSelect = async (qKey) => {
+    /* ── Q18 — overall UCT rating (1-5 stars). This is the one question
+       with a fixed, known domain, so it's safe to zero-fill explicitly. ── */
+    const [q18Rows] = await db.execute(
+      `SELECT
+         CAST(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q18')) AS UNSIGNED) AS stars,
+         COUNT(*) AS cnt
+       FROM uct_answers
+       WHERE JSON_EXTRACT(answers, '$.q18') IS NOT NULL
+       GROUP BY stars`
+    );
+    const starsMap = new Map([1, 2, 3, 4, 5].map((s) => [s, 0]));
+    let ratingSum = 0, ratingCount = 0;
+    for (const r of q18Rows) {
+      const stars = Number(r.stars);
+      const cnt   = Number(r.cnt);
+      if (stars >= 1 && stars <= 5) {
+        starsMap.set(stars, cnt);
+        ratingSum   += stars * cnt;
+        ratingCount += cnt;
+      }
+    }
+    const avgRating = ratingCount > 0 ? Number((ratingSum / ratingCount).toFixed(1)) : 0;
+    const ratingDistribution = [...starsMap.entries()]
+      .map(([stars, count]) => ({ stars, count, pct: pct(count, totalResponses) }))
+      .sort((a, b) => b.stars - a.stars);
+
+    /* ── Per-question breakdown — fully data-driven (no hardcoded option
+       label maps). The previous version hardcoded option codes for an
+       older survey (q1-q11 with different questions entirely) that no
+       longer matches the live 18-question survey, so every real answer
+       fell into an "unknown" bucket while the hardcoded options always
+       showed 0. Reading whatever keys/values actually exist keeps this
+       correct even as survey copy changes, and — per the original ask —
+       always returns a shaped object (never a bare possibly-empty array)
+       with an explicit total_answered, so "no data yet" reads as 0, not
+       as an ambiguous empty array. ── */
+    const singleSelectKeys = ["q1", "q4", "q5", "q6", "q7", "q8", "q9", "q10", "q11", "q12", "q13", "q15", "q16"];
+    const multiSelectKeys  = ["q2", "q3", "q14", "q17"];
+
+    const buildSingleSelect = async (qKey) => {
       const [rows] = await db.execute(
-        `SELECT
-           JSON_UNQUOTE(JSON_EXTRACT(answers, '$.${qKey}')) AS val,
-           COUNT(*) AS cnt
+        `SELECT JSON_UNQUOTE(JSON_EXTRACT(answers, '$.${qKey}')) AS val, COUNT(*) AS cnt
          FROM uct_answers
          WHERE JSON_EXTRACT(answers, '$.${qKey}') IS NOT NULL
          GROUP BY val
          ORDER BY cnt DESC`
       );
-      return rows;
+      const total = rows.reduce((s, r) => s + Number(r.cnt), 0);
+      return {
+        total_answered: total,
+        options: rows.map((r) => ({ key: r.val, count: Number(r.cnt), pct: pct(Number(r.cnt), total) })),
+      };
     };
 
-    /* ── helper: explode multi-select JSON array question ── */
-    const countMultiSelect = async (qKey, whereClause = "") => {
+    const buildMultiSelect = async (qKey) => {
+      const [[answeredCount]] = await db.execute(
+        `SELECT COUNT(*) AS cnt FROM uct_answers WHERE JSON_EXTRACT(answers, '$.${qKey}') IS NOT NULL`
+      );
+      const total = Number(answeredCount.cnt);
+
+      if (total === 0) return { total_answered: 0, options: [] };
+
       const [rows] = await db.execute(
         `SELECT jt.val, COUNT(*) AS cnt
          FROM uct_answers a,
               JSON_TABLE(
                 a.answers->'$.${qKey}',
-                '$[*]' COLUMNS (val VARCHAR(100) PATH '$')
+                '$[*]' COLUMNS (val VARCHAR(200) PATH '$')
               ) AS jt
-         ${whereClause}
          GROUP BY jt.val
          ORDER BY cnt DESC`
       );
-      return rows;
+      return {
+        total_answered: total,
+        options: rows.map((r) => ({ key: r.val, count: Number(r.cnt), pct: pct(Number(r.cnt), total) })),
+      };
     };
 
-    /* ── Q1 — overall feeling (donut) ── */
-    const q1 = {
-      label: "Overall feeling about UCT",
-      like_uct_pct: pct(likeUct),
-      breakdown: [
-        { key: "like_uct",     label: "Like UCT",          count: likeUct,    pct: pct(likeUct) },
-        { key: "like_changes", label: "Like it, want changes", count: likeChanges, pct: pct(likeChanges) },
-        { key: "dislike",      label: "Dislike",           count: dislike,    pct: pct(dislike) },
-      ],
-    };
-
-    /* ── Helper — zero-fill single/multi-select option counts against a known label map ── */
-    const zeroFillOptions = (rows, labelMap) => {
-      const map = new Map(Object.keys(labelMap).map((k) => [k, 0]));
-      for (const r of rows) map.set(r.val, (map.get(r.val) || 0) + Number(r.cnt));
-      return [...map.entries()]
-        .map(([key, count]) => ({ key, label: labelMap[key] || key, count, pct: pct(count) }))
-        .sort((a, b) => b.count - a.count);
-    };
-
-    /* ── Q2 — most-requested improvements (multi-select) ── */
-    const q2ChangeLabels = {
-      more_leagues:      "More leagues / series",
-      custom_players:     "Let me choose my 18-22 players",
-      add_sports:         "Add more sports",
-      better_coins:       "Better coin packs",
-      ui_improvements:    "Website / UI improvements",
-      remove_sub_mandate: "Remove Sub, Mandate options",
-    };
-    const q2Rows = await countMultiSelect("q2");
-    const q2 = {
-      label: "Most-requested improvements",
-      options: zeroFillOptions(q2Rows, q2ChangeLabels),
-    };
-
-    /* ── Q3 — how often they use PICK2WIN ── */
-    const q3Labels = {
-      every_matchday: "Every matchday",
-      few_times_week: "A few times a week",
-      weekly:         "Weekly",
-      very_rare:      "Very rare",
-      only_fifa_wc:   "Only FIFA WC",
-    };
-    const q3Rows = await countSingleSelect("q3");
-    const q3 = {
-      label: "How often they use PICK2WIN",
-      options: zeroFillOptions(q3Rows, q3Labels),
-    };
-
-    /* ── Q4 — likely to recommend ── */
-    const q4Labels = { very_likely: "Very likely", maybe: "Maybe", unlikely: "Unlikely" };
-    const q4Rows = await countSingleSelect("q4");
-    const q4 = {
-      label: "Likely to recommend",
-      options: zeroFillOptions(q4Rows, q4Labels),
-    };
-
-    /* ── Q5 — teams needed per match ── */
-    const q5Rows = await countSingleSelect("q5");
-    const q5 = {
-      label: "Teams needed per match",
-      options: q5Rows.map((r) => ({
-        key:   r.val,
-        label: `${r.val} teams`,
-        count: Number(r.cnt),
-        pct:   pct(Number(r.cnt)),
-      })),
-    };
-
-    /* ── Q6 — competitions to add/expand (free text, top requested) ── */
-    const [q6Rows] = await db.execute(
-      `SELECT
-         TRIM(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q6'))) AS val,
-         COUNT(*) AS cnt
-       FROM uct_answers
-       WHERE JSON_EXTRACT(answers, '$.q6') IS NOT NULL
-         AND TRIM(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q6'))) != ''
-       GROUP BY val
-       ORDER BY cnt DESC
-       LIMIT 10`
-    );
-    const q6 = {
-      label: "Competitions to add / expand (free text)",
-      top_requested: q6Rows.map((r) => ({ text: r.val, count: Number(r.cnt) })),
-    };
-
-    /* ── Q7 — which new sport first ── */
-    const q7Labels = {
-      cricket:           "Cricket",
-      basketball:         "Basketball",
-      american_football:  "American football",
-      baseball:           "Baseball",
-      football_only:      "Football only is fine",
-    };
-    const q7Rows = await countSingleSelect("q7");
-    const q7 = {
-      label: "Which new sport first",
-      options: zeroFillOptions(q7Rows, q7Labels),
-    };
-
-    /* ── Q8 — preferred pricing ── */
-    const q8Labels = {
-      current_coin_packs:    "Current Coin Packs",
-      league_series_packs:    "League / Series basis packs",
-      pay_per_match:           "Pay per match (coins)",
-      monthly_subscription:   "Monthly subscription",
-    };
-    const q8Rows = await countSingleSelect("q8");
-    const q8 = {
-      label: "Preferred pricing",
-      options: zeroFillOptions(q8Rows, q8Labels),
-    };
-
-    /* ── Q9 — where they mostly play (device) ── */
-    const q9Labels = { mobile_browser: "Mobile browser", desktop: "Desktop" };
-    const q9Rows = await countSingleSelect("q9");
-    const q9 = {
-      label: "Where they mostly play",
-      options: zeroFillOptions(q9Rows, q9Labels),
-    };
-
-    /* ── Q11 — UCT rating distribution (1-5 stars) ── */
-    const [q11Rows] = await db.execute(
-      `SELECT
-         CAST(JSON_UNQUOTE(JSON_EXTRACT(answers, '$.q11')) AS UNSIGNED) AS stars,
-         COUNT(*) AS cnt
-       FROM uct_answers
-       WHERE JSON_EXTRACT(answers, '$.q11') IS NOT NULL
-       GROUP BY stars
-       ORDER BY stars DESC`
-    );
-    const q11StarsMap = new Map([1, 2, 3, 4, 5].map((s) => [s, 0]));
-    for (const r of q11Rows) q11StarsMap.set(Number(r.stars), Number(r.cnt));
-    const q11 = {
-      label: "UCT rating (1=poor, 5=excellent)",
-      avg_rating: avgRating,
-      distribution: [...q11StarsMap.entries()]
-        .map(([stars, count]) => ({ stars, count, pct: pct(count) }))
-        .sort((a, b) => b.stars - a.stars),
-    };
+    const questions = {};
+    for (const key of singleSelectKeys) questions[key] = await buildSingleSelect(key);
+    for (const key of multiSelectKeys)  questions[key] = await buildMultiSelect(key);
 
     return res.status(200).json({
       success: true,
 
       kpis: {
-        total_responses:  totalResponses,
-        avg_uct_rating:   avgRating,
-        like_uct:         { count: likeUct,       pct: pct(likeUct) },
-        would_recommend:  { count: wouldRecommend, pct: pct(wouldRecommend) },
+        total_responses: totalResponses,
+        avg_rating:      avgRating,
       },
 
       insight: {
         responses_vs_last_period: responsesVsLastPeriod,
-        like_uct_pct:    pct(likeUct),
-        would_recommend_pct: pct(wouldRecommend),
-        avg_rating:      avgRating,
-        top_ask:         q2.options[0] ? q2.options[0].label : null,
+        avg_rating: avgRating,
+        top_improvement_request: questions.q3.options[0] ? questions.q3.options[0].key : null,
       },
 
-      q1_overall_feeling:        q1,
-      q2_most_requested:         q2,
-      q3_usage_frequency:        q3,
-      q4_recommend_likelihood:   q4,
-      q5_teams_per_match:        q5,
-      q6_competitions_requested: q6,
-      q7_next_sport:             q7,
-      q8_preferred_pricing:      q8,
-      q9_device:                 q9,
-      q11_rating:                q11,
+      /* q1 = overall feeling, q18 = final star rating — the two fixed
+         anchor questions from the live survey (see rating_distribution
+         above for q18's full 1-5 breakdown). ── */
+      q1_overall_feeling: questions.q1,
+      rating_distribution: ratingDistribution,
+
+      /* Every question q1-q17 (q18 covered above), keyed by its q-code,
+         each always shaped as { total_answered, options: [...] }. ── */
+      questions,
     });
 
   } catch (err) {
@@ -3470,37 +3378,53 @@ export const getPaymentsSummary = async (req, res) => {
     const { start: fyStart, end: fyEnd } = getFyRange(fyStartYear);
     const fyLabel = `FY ${fyStartYear}-${String(fyStartYear + 1).slice(2)}`;
 
-    /* ── KPI cards (always computed) ── */
+    /* ── KPI cards + by-status breakdown all read coins_transactions,
+       filtered to transaction_type='purchase' — the same source and
+       status vocabulary as /payments/transactions (getTransactionLog).
+       This used to read user_subscriptions instead, which caused two
+       problems: (1) "Failed"/"Pending" were structurally always 0
+       because user_subscriptions.status is an ENUM of only
+       active/expired/cancelled — those values can never appear there;
+       (2) "Refunded" was actually counting subscription *expiry*
+       (status='expired'), not real Razorpay refunds, while genuine
+       refunds (tracked via coins_transactions.status='refunded' since
+       the webhook fix) went uncounted entirely. Revenue KPIs also used
+       to require status='active', silently excluding any successful
+       purchase whose pack had since expired — undercounting revenue
+       for anything older than the pack's validity window. ── */
     const [[kpiToday]] = await db.execute(
       `SELECT
-         COALESCE(SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END), 0)  AS net_usd,
-         COALESCE(SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END), 0) * ? AS net_inr
-       FROM user_subscriptions
-       WHERE DATE(created_at) = CURDATE()`,
+         COALESCE(SUM(amount), 0)      AS net_usd,
+         COALESCE(SUM(amount), 0) * ?  AS net_inr
+       FROM coins_transactions
+       WHERE transaction_type = 'purchase' AND status = 'success'
+         AND DATE(created_at) = CURDATE()`,
       [usdToInr]
     );
 
     const [[kpiMonth]] = await db.execute(
-      `SELECT COALESCE(SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END), 0) AS net_usd
-       FROM user_subscriptions
-       WHERE MONTH(created_at) = ? AND YEAR(created_at) = ?`,
+      `SELECT COALESCE(SUM(amount), 0) AS net_usd
+       FROM coins_transactions
+       WHERE transaction_type = 'purchase' AND status = 'success'
+         AND MONTH(created_at) = ? AND YEAR(created_at) = ?`,
       [targetMonth, targetYear]
     );
 
     const [[kpiFy]] = await db.execute(
-      `SELECT COALESCE(SUM(CASE WHEN status = 'active' THEN amount ELSE 0 END), 0) AS net_usd
-       FROM user_subscriptions
-       WHERE created_at >= ? AND created_at < ?`,
+      `SELECT COALESCE(SUM(amount), 0) AS net_usd
+       FROM coins_transactions
+       WHERE transaction_type = 'purchase' AND status = 'success'
+         AND created_at >= ? AND created_at < ?`,
       [fyStart, fyEnd]
     );
 
-    /* ── Needs refund: failed+charged ── */
+    /* ── Needs refund: failed + actually charged (has a Razorpay reference) ── */
     const [[needsRefund]] = await db.execute(
       `SELECT COUNT(*) AS cnt,
               COALESCE(SUM(amount), 0) AS total_usd
-       FROM user_subscriptions
-       WHERE status = 'failed' AND payment_reference IS NOT NULL
-         AND payment_reference != ''`
+       FROM coins_transactions
+       WHERE transaction_type = 'purchase' AND status = 'failed'
+         AND reference_id IS NOT NULL AND reference_id != ''`
     );
 
     /* ── Resolve date condition for selected tab ── */
@@ -3509,14 +3433,14 @@ export const getPaymentsSummary = async (req, res) => {
     let periodLabel;
 
     if (tab === "today") {
-      dateCondition = `DATE(us.created_at) = CURDATE()`;
+      dateCondition = `DATE(ct.created_at) = CURDATE()`;
       periodLabel = `Today · ${now.toISOString().slice(0, 10)}`;
     } else if (tab === "by_month") {
-      dateCondition = `MONTH(us.created_at) = ? AND YEAR(us.created_at) = ?`;
+      dateCondition = `MONTH(ct.created_at) = ? AND YEAR(ct.created_at) = ?`;
       dateParams.push(targetMonth, targetYear);
       periodLabel = `${monthNames[targetMonth]} ${targetYear}`;
     } else {
-      dateCondition = `us.created_at >= ? AND us.created_at < ?`;
+      dateCondition = `ct.created_at >= ? AND ct.created_at < ?`;
       dateParams.push(fyStart, fyEnd);
       periodLabel = fyLabel;
     }
@@ -3525,17 +3449,16 @@ export const getPaymentsSummary = async (req, res) => {
     const [statusRows] = await db.execute(
       `SELECT
          CASE
-           WHEN us.status = 'failed' AND us.payment_reference IS NOT NULL AND us.payment_reference != ''
+           WHEN ct.status = 'failed' AND ct.reference_id IS NOT NULL AND ct.reference_id != ''
              THEN 'failed_charged'
-           WHEN us.status = 'failed'
+           WHEN ct.status = 'failed'
              THEN 'failed_declined'
-           ELSE us.status
-         END                                                                     AS mapped_status,
-         COUNT(*)                                                                 AS count,
-         COALESCE(SUM(CASE WHEN us.status = 'active'   THEN us.amount ELSE 0 END), 0) AS success_usd,
-         COALESCE(SUM(CASE WHEN us.status = 'expired'  THEN us.amount ELSE 0 END), 0) AS refunded_usd
-       FROM user_subscriptions us
-       WHERE ${dateCondition}
+           ELSE ct.status
+         END                                                                    AS mapped_status,
+         COUNT(*)                                                                AS count,
+         COALESCE(SUM(CASE WHEN ct.status = 'success' THEN ct.amount ELSE 0 END), 0) AS success_usd
+       FROM coins_transactions ct
+       WHERE ct.transaction_type = 'purchase' AND ${dateCondition}
        GROUP BY mapped_status`,
       dateParams
     );
@@ -3549,14 +3472,14 @@ export const getPaymentsSummary = async (req, res) => {
     let pendingCount    = 0;
 
     for (const r of statusRows) {
-      if (r.mapped_status === "active") {
+      if (r.mapped_status === "success") {
         successCount = Number(r.count);
         successUsd   = Number(r.success_usd);
       } else if (r.mapped_status === "failed_declined") {
         failedDeclined = Number(r.count);
       } else if (r.mapped_status === "failed_charged") {
         failedCharged = Number(r.count);
-      } else if (r.mapped_status === "expired") {
+      } else if (r.mapped_status === "refunded") {
         refundedCount = Number(r.count);
       } else if (r.mapped_status === "pending") {
         pendingCount = Number(r.count);
@@ -3663,19 +3586,26 @@ export const getTransactionLog = async (req, res) => {
     const fyStartYear = targetMonth >= 4 ? targetYear : targetYear - 1;
     const { start: fyStart, end: fyEnd } = getFyRange(fyStartYear);
 
-    /* ── Date condition ── */
+    /* ── Date condition — always scoped to 'purchase' rows. This is a
+       PAYMENTS log, but coins_transactions also holds 'spent' rows
+       (coin usage, $0, no Razorpay reference) from every UCT generation.
+       Without this filter those non-payment rows were mixed into the
+       list and its status_counts, inflating "transactions" far beyond
+       actual payments and mismatching the revenue figures shown by
+       /payments/summary (which only ever reads real purchases via
+       user_subscriptions). ── */
     let dateCondition;
     const params = [];
 
     if (tab === "all") {
-      dateCondition = `1 = 1`;
+      dateCondition = `ct.transaction_type = 'purchase'`;
     } else if (tab === "today") {
-      dateCondition = `DATE(ct.created_at) = CURDATE()`;
+      dateCondition = `ct.transaction_type = 'purchase' AND DATE(ct.created_at) = CURDATE()`;
     } else if (tab === "by_month") {
-      dateCondition = `MONTH(ct.created_at) = ? AND YEAR(ct.created_at) = ?`;
+      dateCondition = `ct.transaction_type = 'purchase' AND MONTH(ct.created_at) = ? AND YEAR(ct.created_at) = ?`;
       params.push(targetMonth, targetYear);
     } else {
-      dateCondition = `ct.created_at >= ? AND ct.created_at < ?`;
+      dateCondition = `ct.transaction_type = 'purchase' AND ct.created_at >= ? AND ct.created_at < ?`;
       params.push(fyStart, fyEnd);
     }
 

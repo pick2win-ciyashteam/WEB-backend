@@ -40,12 +40,12 @@ export const razorpayWebhook = async (req, res) => {
   const payment = event.payload.payment.entity;
   const notes   = payment.notes || {};
 
-  if (notes.type !== "coins_purchase") {
+  if (notes.type !== "coins_purchase") { 
     console.log("⚠️ Not a coins purchase");
     return res.json({ received: true });
   }
-
-  const { userId, plan_id, coins } = notes;
+   
+  const { userId, plan_id, coins } = notes;   
   const paymentId   = payment.id;
   const amount      = payment.amount / 100; // cents → USD
 
@@ -157,7 +157,7 @@ export const razorpayWebhook = async (req, res) => {
           plan_name, amount, opening_balance, closing_balance, payment_reference)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        txResult.insertId, userId,
+        txResult.insertId, userId,  
         userInfo?.fullname || null,
         userInfo?.email    || null,
         plan.name, amount, companyOpening, companyClosing, paymentId,
