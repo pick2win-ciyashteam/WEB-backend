@@ -30,6 +30,13 @@ const apiGet = async (endpoint, params = {}, retries = 3) => {
   }
 };
 
+const formatApiError = (data) => {
+  const detail = data?.errors
+    ? Object.values(data.errors).flat().join("; ")
+    : null;
+  return [data?.message || "SportMonks API error", detail].filter(Boolean).join(": ");
+};
+
 const mapStatus = (stateId) => {
   if (stateId === 5)  return "RESULT";   // FT - Full Time
   if (stateId === 1)  return "UPCOMING"; // NS - Not Started
@@ -774,7 +781,7 @@ export const getFixturesBetween = async (fromDate, toDate, page = 1) => {
   const data = await response.json();
 
   if (!response.ok || data.errors) {
-    throw new Error(data.message || "SportMonks API error");
+    throw new Error(formatApiError(data));
   }
 
   return data;
@@ -801,6 +808,60 @@ export const getAllFixturesBetween = async (fromDate, toDate) => {
 };
 
 
+/* ─── Unique Series/Leagues Within A Date Range ─── */
+export const getSeriesByDateRangeService = async (fromDate, toDate) => {
+  const fixtures = await getAllFixturesBetween(fromDate, toDate);
+
+  const fromDt = new Date(fromDate); fromDt.setHours(0, 0, 0, 0);
+  const toDt   = new Date(toDate);   toDt.setHours(23, 59, 59, 999);
+
+  const seriesMap = new Map();
+
+  for (const fixture of fixtures) {
+    if (!fixture.starting_at) continue;
+    const fixtureDate = new Date(fixture.starting_at);
+    if (fixtureDate < fromDt || fixtureDate > toDt) continue;
+
+    const league = fixture.league;
+    if (!league?.id) continue;
+
+    const key = String(league.id);
+    if (!seriesMap.has(key)) {
+      seriesMap.set(key, {
+        cid:           key,
+        name:          league.name,
+        short_code:    league.short_code || null,
+        league_image:  league.image_path || null,
+        country_id:    league.country_id || null,
+        fixture_count: 0,
+      });
+    }
+    seriesMap.get(key).fixture_count++;
+  }
+
+  if (!seriesMap.size) return [];
+
+  const seriesList = [...seriesMap.values()];
+
+  /* ── Cross-reference DB for sync/active status (same as getAvailableSeriesService) ── */
+  const [dbRows] = await db.query(
+    `SELECT seriesid, status, is_selected FROM series WHERE seriesid IN (?)`,
+    [seriesList.map((s) => s.cid)]
+  );
+  const dbMap = new Map(dbRows.map((r) => [String(r.seriesid), r]));
+
+  return seriesList
+    .map((s) => {
+      const dbRow = dbMap.get(s.cid);
+      return {
+        ...s,
+        is_active: dbRow ? dbRow.is_selected === 1 : false,
+        status:    dbRow ? dbRow.status : "pending",
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+};
+
 export const getMatchesByDateRangeService = async (fromDate, toDate) => {
   // ── All pages fetch ──
   const first = await (async (page) => {
@@ -811,7 +872,7 @@ export const getMatchesByDateRangeService = async (fromDate, toDate) => {
       `&api_token=${TOKEN}`;
     const res  = await fetch(url);
     const data = await res.json();
-    if (!res.ok || data.errors) throw new Error(data.message || "SportMonks API error");
+    if (!res.ok || data.errors) throw new Error(formatApiError(data));
     return data;
   })(1);
 

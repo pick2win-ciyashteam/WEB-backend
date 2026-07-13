@@ -149,7 +149,6 @@ export const getProfile = async (req, res) => {
      u.email_verify,
      u.account_status,
      u.created_at,
-     u.free_trial_used,
 
      us.plan_id,
      us.plan_name,
@@ -256,8 +255,6 @@ const [[wallet]] = await db.execute(
         email_verify:   user.email_verify,
         account_status: user.account_status,
         created_at:     user.created_at,
-        free_trial_used:   user.free_trial_used,          
-        free_trial_status: user.free_trial_used === 1 ? "used" : "available",   
 
         /* ── Coins Wallet ── */
         coins: {

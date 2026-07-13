@@ -7,6 +7,7 @@ import {
   toggleMatchesService,
   syncPlayingXIService,
   getAllFixturesBetween,
+  getSeriesByDateRangeService,
   getMatchesByDateRangeService,
   manualSyncPlayingXIService,
 } from "./sportmonks.service.js";
@@ -281,6 +282,44 @@ export const getMatchesByDateRange = async (req, res) => {
 
   } catch (err) {
     console.error("❌ getMatchesByDateRange error:", err.message);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+export const getSeriesByDateRange = async (req, res) => {
+  try {
+    const { from, to } = req.body;
+
+    if (!from || !to)
+      return res.status(400).json({
+        success: false,
+        message: "from and to are required (YYYY-MM-DD)",
+      });
+
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(from) || !dateRegex.test(to))
+      return res.status(400).json({
+        success: false,
+        message: "Date format must be YYYY-MM-DD",
+      });
+
+    if (new Date(from) > new Date(to))
+      return res.status(400).json({
+        success: false,
+        message: "'from' must be before 'to'",
+      });
+
+    const series = await getSeriesByDateRangeService(from, to);
+
+    return res.status(200).json({
+      success: true,
+      from,
+      to,
+      total: series.length,
+      series,
+    });
+  } catch (err) {
+    console.error("❌ getSeriesByDateRange error:", err.message);
     return res.status(500).json({ success: false, message: err.message });
   }
 };

@@ -8,6 +8,7 @@ import {
   getMatches,
   manualSyncPlayingXI,
   getFixturesByDateRange,
+  getSeriesByDateRange,
   getMatchesByDateRange,
 } from "./sportmonks.controller.js";
 
@@ -19,6 +20,7 @@ const router = express.Router();
 router.get("/series/available",            getAvailableSeries);
 router.post("/series/toggle",              toggleSeries);
 router.get("/series/active",               getActiveSeries);
+router.post("/series/by-date-range",       getSeriesByDateRange);
   
 /* ══════════════════════════════════════════
    MATCHES
@@ -32,7 +34,7 @@ router.get("/matches/:seriesid",           getMatches);
 ══════════════════════════════════════════ */
 router.get("/sync-playingxi/:match_id", manualSyncPlayingXI);
 
-
+  
 router.post("/fixtures", getFixturesByDateRange);
 
 /* Fixtures between dates, filtered to those with a published Starting XI */
