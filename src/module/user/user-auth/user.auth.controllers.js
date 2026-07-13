@@ -149,6 +149,7 @@ export const getProfile = async (req, res) => {
      u.email_verify,
      u.account_status,
      u.created_at,
+     u.tokens_invalidated_at,
 
      us.plan_id,
      us.plan_name,
@@ -202,9 +203,11 @@ const [[wallet]] = await db.execute(
        from login/logout activity logs (no separate device/session table
        exists, so this reuses what's already captured on every login/logout).
        A device counts as "active" (still logged in) if its most recent
-       auth event is a login with no later logout — this is a best-effort
-       signal only: user JWTs aren't server-side revoked on logout, so the
-       token itself would still work even after this flips to inactive. ── */
+       auth event is a login with no later logout, AND that login happened
+       after tokens_invalidated_at — logout-all-devices only stamps that
+       column (JWTs are stateless, so it can't touch individual device rows),
+       so without this check every device would still show "active" here
+       even though their tokens are now rejected by the auth middleware. ── */
     const [[deviceCount]] = await db.execute(
       `SELECT COUNT(DISTINCT CONCAT(COALESCE(ip_address, ''), '|', COALESCE(user_agent, ''))) AS total
        FROM user_activity_logs
@@ -212,12 +215,14 @@ const [[wallet]] = await db.execute(
       [req.user.id]
     );
 
+    const tokensInvalidatedAt = user.tokens_invalidated_at || new Date(0);
+
     const [deviceStatuses] = await db.execute(
       `SELECT
          ual.ip_address,
          ual.user_agent,
          latest.last_seen,
-         (ual.action = 'login') AS is_active
+         (ual.action = 'login' AND ual.created_at > ?) AS is_active
        FROM user_activity_logs ual
        INNER JOIN (
          SELECT ip_address, user_agent, MAX(created_at) AS last_seen
@@ -231,7 +236,7 @@ const [[wallet]] = await db.execute(
        WHERE ual.user_id = ? AND ual.category = 'auth' AND ual.action IN ('login', 'logout')
        GROUP BY ual.ip_address, ual.user_agent, latest.last_seen, ual.action
        ORDER BY latest.last_seen DESC`,
-      [req.user.id, req.user.id]
+      [tokensInvalidatedAt, req.user.id, req.user.id]
     );
 
     const activeDeviceCount = deviceStatuses.filter((d) => d.is_active).length;
