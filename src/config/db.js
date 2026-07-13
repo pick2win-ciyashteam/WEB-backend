@@ -31,7 +31,6 @@ const verifyConnection = async (retries = 10, delay = 5000) => {
       if (i < retries - 1) {
         console.log(`⏳ Retrying in ${delay / 1000}s...`);
         await new Promise(res => setTimeout(res, delay));
-        pool = createPool();
       } else {
         console.error("❌ Max retries reached - check DB connection!");
         process.exit(1);
@@ -42,11 +41,17 @@ const verifyConnection = async (retries = 10, delay = 5000) => {
 
 verifyConnection();
 
+/* mysql2 pools already replace a dropped connection with a fresh one
+   internally on the next getConnection() — no manual pool rebuild needed
+   here. (Previously this reassigned the local `pool` variable on error,
+   but `export default pool` below only ever captures the value at import
+   time, not a live binding — so the reassignment never reached existing
+   importers and just leaked an orphaned, unmonitored pool on every
+   transient error.) */
 pool.on("connection", (connection) => {
   connection.on("error", (err) => {
     if (err.code === "ECONNRESET" || err.code === "PROTOCOL_CONNECTION_LOST") {
-      console.warn("⚠️ MySQL connection lost, reconnecting...");
-      pool = createPool();
+      console.warn("⚠️ MySQL connection lost, pool will reconnect automatically.");
     } else {
       console.error("❌ Unexpected MySQL error:", err);
     }

@@ -235,7 +235,6 @@ export const generateTeams = async (req, res) => {
       );
       if (!currentWallet || Number(currentWallet.available_coins) < 1) {
         await conn.rollback();
-        conn.release();
         return res.status(400).json({ success: false, message: "Insufficient coins" });
       }
 

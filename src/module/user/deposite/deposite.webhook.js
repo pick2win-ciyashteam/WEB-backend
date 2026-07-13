@@ -66,7 +66,6 @@ export const razorpayWebhook = async (req, res) => {
     if (existing) {
       console.log("⚠️ Duplicate ignored:", paymentId);
       await conn.rollback();
-      conn.release();
       return res.json({ received: true });
     }
  
