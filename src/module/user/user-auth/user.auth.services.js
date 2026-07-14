@@ -11,6 +11,7 @@ import { validatePasswordStrength } from "../../../utils/passwordValidator.js";
 import { sendPushToUser } from "../../../utils/notification.js";
 
 import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, resolveTimezone, isValidTimezone, } from "../../../utils/mailer.js";
+import { sendSms } from "../../../utils/sms.js";
 
 
 
@@ -478,6 +479,29 @@ export const verifyMobileChangeService = async (userId, { otp }) => {
   );
 
   return { success: true, message: "Mobile number updated successfully" };
+};
+
+/* ══════════════════════════════════════════
+   TEST — SEND OTP VIA TWILIO (SMS DELIVERY CHECK)
+   Not tied to signup/login — just fires a real Twilio SMS to any
+   number so delivery to a given country (US/Canada/UK/etc.) can be
+   verified. No DB writes, no OTP stored/checked anywhere.
+══════════════════════════════════════════ */
+export const testMobileOtpService = async (mobile) => {
+  if (!mobile) throw new Error("mobile is required, e.g. +14155552671");
+
+  const otp = crypto.randomInt(100000, 999999).toString();
+  const message = `${otp} is your PICK2WIN verification code. Valid for 5 minutes.`;
+
+  const result = await sendSms(mobile, message);
+
+  return {
+    success: true,
+    message: "SMS dispatched via Twilio",
+    to: `+${String(mobile).replace(/\D/g, "")}`,
+    otp,
+    twilio_sid: result.sid,
+  };
 };
 
 /* ══════════════════════════════════════════

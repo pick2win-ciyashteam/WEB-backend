@@ -76,7 +76,8 @@ const positionIdMap = {
 export const syncPlayingXIService = async (providerMatchId) => {
 
   const [[matchRow]] = await db.query(
-    `SELECT id, provider_match_id, home_team_id, away_team_id, lineup_status, lineupavailable
+    `SELECT id, provider_match_id, home_team_id, away_team_id, lineup_status, lineupavailable,
+            hometeamname, awayteamname
      FROM matches
      WHERE provider_match_id = ?
      LIMIT 1`,
@@ -214,21 +215,34 @@ export const syncPlayingXIService = async (providerMatchId) => {
      this function. `lineup_status` is NOT reliable for this — the
      syncLineupStatus cron job (JOB 5) overwrites it with UI countdown
      stages (LINEUPS_OUT, USERS_ADJUSTING, ...), which used to clobber
-     'confirmed' and cause this notification to re-fire every 5 minutes. ── */
-  const shouldNotify = !matchRow.lineupavailable;
+     'confirmed' and cause this notification to re-fire every 5 minutes.
 
-  await db.query(
+     The old read-then-write version (read matchRow.lineupavailable, then
+     UPDATE afterwards) raced when two calls overlapped for the same match
+     (e.g. an overlapping cron tick) — both read lineupavailable=0 before
+     either write landed, so both sent the push, producing duplicate
+     notifications. Folding the check into the UPDATE's WHERE clause makes
+     it atomic: only the caller whose UPDATE actually flips the row
+     (affectedRows > 0) notifies. ── */
+  const [lineupUpdate] = await db.query(
     `UPDATE matches
      SET lineupavailable = 1,
          lineup_status = 'confirmed'
-     WHERE id = ?`,
+     WHERE id = ? AND lineupavailable = 0`,
     [matchRow.id]
   );
+  const shouldNotify = lineupUpdate.affectedRows > 0;
 
   if (shouldNotify) {
+    const matchLabel = matchRow.hometeamname && matchRow.awayteamname
+      ? `${matchRow.hometeamname} vs ${matchRow.awayteamname}`
+      : null;
+
     await sendPushToAll({
       title: "Lineup Released ⚽",
-      body: "Playing XI has been announced. Generate your UCT teams now!",
+      body: matchLabel
+        ? `${matchLabel} — Playing XI has been announced. Generate your UCT teams now!`
+        : "Playing XI has been announced. Generate your UCT teams now!",
       data: {
         match_id: String(matchRow.id),
         type: "lineup_released",

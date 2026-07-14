@@ -34,6 +34,10 @@ router.post("/reset-password",   v.resetPassword,   c.resetPassword);
 /* ── Change Mobile/Email — protected ── */
 router.post("/change-mobile",        authenticate, v.requestMobileChange, c.requestMobileChange);
 router.post("/verify-mobile-change", authenticate, v.verifyChangeOtp,     c.verifyMobileChange);
+
+// Twilio SMS delivery test — POST { "mobile": "+14155552671" }
+// http://localhost:3000/api/user/user-auth/test-mobile-otp
+router.post("/test-mobile-otp", c.testMobileOtp);
 router.post("/change-email",         authenticate, v.requestEmailChange,  c.requestEmailChange);
 router.post("/verify-old-email-otp", authenticate, v.verifyOldEmailOtp,   c.verifyOldEmailChange);
 router.post("/verify-email-change",  authenticate, v.verifyChangeOtp,     c.verifyEmailChange);
@@ -48,5 +52,4 @@ router.delete("/notification/:id",              authenticate, c.deleteNotificati
   
  
 export default router;     
-       
-                   
+         

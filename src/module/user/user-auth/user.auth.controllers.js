@@ -7,6 +7,7 @@ import {
   logoutAllDevicesService,
   requestMobileChangeService,
   verifyMobileChangeService,
+  testMobileOtpService,
   requestEmailChangeService,
   verifyOldEmailChangeService,
   verifyEmailChangeService,
@@ -431,6 +432,16 @@ export const requestEmailChange = async (req, res) => {
   }
 };
 
+/* ================= TEST — SEND OTP VIA TWILIO ================= */
+export const testMobileOtp = async (req, res) => {
+  try {
+    const result = await testMobileOtpService(req.body.mobile);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
 /* ================= VERIFY OLD EMAIL OTP (step 1) ================= */
 export const verifyOldEmailChange = async (req, res) => {
   try {
@@ -792,4 +803,4 @@ export const deleteAllNotifications = async (req, res) => {
   }
 };
                        
-     
+  
