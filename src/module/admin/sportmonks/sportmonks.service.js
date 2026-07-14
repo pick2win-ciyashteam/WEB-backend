@@ -159,7 +159,11 @@ export const syncPlayingXIService = async (providerMatchId) => {
 
     seen.add(pid);
 
-    const position = positionIdMap[entry.position_id] || "MID";
+    /* entry.position_id is the lineup-slot field and is unreliable (Sportmonks
+       often sends 24 for most/all entries regardless of real role) —
+       entry.player.position_id is the player's actual profile position and
+       matches real squad composition. */
+    const position = positionIdMap[entry.player?.position_id] || "MID";
     const logo = entry.player?.image_path || null;
 
     await db.query(
@@ -1043,7 +1047,9 @@ export const manualSyncPlayingXIService = async (providerMatchId) => {
       return 0;
     }
 
-    const position = positionIdMapManual[entry.position_id] || "MID";
+    /* entry.position_id is the unreliable lineup-slot field — use the
+       player's actual profile position instead (see syncPlayingXIService). */
+    const position = positionIdMapManual[entry.player?.position_id] || "MID";
 
     /* ── ✅ logo — entry.player.image_path ── */
     const logo = entry.player?.image_path || null;
