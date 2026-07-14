@@ -31,7 +31,7 @@ router.get("/matches/:seriesid",           getMatches);
 
 /* ══════════════════════════════════════════
    SYNC
-══════════════════════════════════════════ */
+══════════════════════════════════════════ */  
 router.get("/sync-playingxi/:match_id", manualSyncPlayingXI);
 
   
@@ -40,8 +40,4 @@ router.post("/fixtures", getFixturesByDateRange);
 /* Fixtures between dates, filtered to those with a published Starting XI */
 router.post("/fixtures/lineups-ready", getMatchesByDateRange);
 
-
-
-
-
-export default router;     
+export default router;             

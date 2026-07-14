@@ -775,7 +775,8 @@ export const deleteNotification = async (req, res) => {
   }
 };
 
-/* ── Delete All Notifications ── */
+/* ── Delete All Notifications ── */  
+
 export const deleteAllNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -791,4 +792,4 @@ export const deleteAllNotifications = async (req, res) => {
   }
 };
                        
-   
+     

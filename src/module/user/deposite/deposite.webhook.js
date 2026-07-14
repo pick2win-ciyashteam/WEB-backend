@@ -219,7 +219,8 @@ const handlePaymentFailed = async (event, res) => {
   }
 
   const { userId, plan_id, coins } = notes;
-  const paymentId = payment.id;
+  const paymentId     = payment.id;
+  const failureReason = payment.error_description || payment.error_reason || null;
 
   try {
     const [[existing]] = await db.query(
@@ -244,14 +245,15 @@ const handlePaymentFailed = async (event, res) => {
     await db.query(
       `INSERT INTO coins_transactions
          (user_id, plan_id, coins, amount, opening_points, closing_points,
-          reference_id, status, user_name, user_email, user_mobile)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?)`,
+          reference_id, status, user_name, user_email, user_mobile, failure_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'failed', ?, ?, ?, ?)`,
       [
         userId, plan_id, Number(coins) || 0, payment.amount / 100,
         openingCoins, openingCoins, paymentId,
         userInfo?.fullname || null,
         userInfo?.email    || null,
         userInfo?.mobile   || null,
+        failureReason,
       ]
     );
 

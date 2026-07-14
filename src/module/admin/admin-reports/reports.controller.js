@@ -3658,6 +3658,7 @@ export const getTransactionLog = async (req, res) => {
          ct.created_at,
          ct.transaction_type,
          ct.description,
+         ct.failure_reason,
          COALESCE(ct.user_name, u.fullname) AS fullname,
          u.country,
          sp.name AS plan_name
@@ -3731,6 +3732,7 @@ export const getTransactionLog = async (req, res) => {
           amount_usd:         Number(r.amount).toFixed(2),
           amount_inr:         (Number(r.amount) * usdToInr).toFixed(2),
           status:             txStatusLabel(r),
+          failure_reason:     r.failure_reason || null,
           payment_reference:  r.reference_id,
           sport:              gameInfo?.sport || null,
           game:               gameInfo?.game || null,

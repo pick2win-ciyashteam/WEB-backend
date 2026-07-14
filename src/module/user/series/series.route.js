@@ -20,3 +20,4 @@ router.get("/", authenticate,  getAllSeries);
 
 export default router;
     
+     
