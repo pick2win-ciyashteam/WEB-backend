@@ -585,7 +585,7 @@ export const getMyActivityLogs = async (req, res) => {
         success: false,
         message: "to_date must be in YYYY-MM-DD format",
       });
-    }
+    }  
 
     if (date) {
       const startDate = String(date);
@@ -650,7 +650,7 @@ export const getMyActivityLogs = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
-  }
+  }  
 };
     
 // notifications
@@ -660,7 +660,7 @@ export const registerDevice = async (req, res) => {
     const { registration_token, device_type } = req.body;
     const userId = req.user.id;
 
-    if (!registration_token) {
+    if (!registration_token) {  
       return res.status(400).json({
         success: false,
         message: "registration_token is required",
@@ -802,5 +802,6 @@ export const deleteAllNotifications = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-                       
-                           
+                         
+                             
+     

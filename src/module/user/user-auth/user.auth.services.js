@@ -195,7 +195,8 @@ export const verifyEmailOtpService = async ({ email, otp }) => {
 export const resendOtpService = async ({ email }) => {
   const [[session]] = await db.execute(
     `SELECT id, email, fullname, country, timezone, email_verified, expires_at
-     FROM signup_sessions WHERE email = ?`,
+     FROM signup_sessions WHERE email = ?
+     ORDER BY id DESC LIMIT 1`,
     [email.trim().toLowerCase()]
   );
 

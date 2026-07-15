@@ -18,7 +18,7 @@ const createPool = () => mysql.createPool({
 
 let pool = createPool();
 
-const verifyConnection = async (retries = 10, delay = 5000) => {
+const verifyConnection = async (retries = 20, delay = 3000) => {
   for (let i = 0; i < retries; i++) {
     try {
       const connection = await pool.getConnection();
