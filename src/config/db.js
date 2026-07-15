@@ -8,6 +8,12 @@ const createPool = () => mysql.createPool({
   password: process.env.DB_PASS,
   database: process.env.DB_NAME,
 
+  /* Sportmonks sends match times in UTC and they're stored as-is. Without
+     this, mysql2 defaults to 'local' and reinterprets those UTC strings
+     using the OS timezone (IST here) when converting to JS Date objects —
+     silently shifting every start_time read/write by 5.5 hours. */
+  timezone: "Z",
+
   waitForConnections:    true,
   connectionLimit:       20,
   queueLimit:            0,

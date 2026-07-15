@@ -203,11 +203,10 @@ const syncLineupStatus = async () => {
     const [matches] = await db.execute(
       `SELECT id, start_time, lineupavailable
        FROM matches
-       WHERE is_active        = 1
-         AND status           = 'UPCOMING'
-         AND DATE(start_time) = CURDATE()
-         AND start_time      <= ?
-         AND start_time      >  NOW()`,
+       WHERE is_active   = 1
+         AND status      = 'UPCOMING'
+         AND start_time <= ?
+         AND start_time  >  NOW()`,
       [twoHoursLater]
     );
 
