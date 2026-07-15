@@ -50,7 +50,19 @@ export const getAllSeries = async (req, res) => {
                 WHEN mgl.id IS NOT NULL THEN 1
                 ELSE 0
               END            AS teams_generated,
-              mgl.created_at AS generated_at
+              mgl.created_at AS generated_at,
+
+              CASE
+                WHEN mgl_fd.id IS NOT NULL THEN 1
+                ELSE 0
+              END               AS teams_generated_fanduel,
+              mgl_fd.created_at AS generated_at_fanduel,
+
+              CASE
+                WHEN mgl_dk.id IS NOT NULL THEN 1
+                ELSE 0
+              END               AS teams_generated_draftkings,
+              mgl_dk.created_at AS generated_at_draftkings
 
            FROM matches m
            LEFT JOIN teams ht  ON m.home_team_id = ht.id
@@ -59,6 +71,16 @@ export const getAllSeries = async (req, res) => {
                   ON mgl.match_id = m.id
                  AND mgl.user_id  = ?
                  AND mgl.status   = 'success'
+           LEFT JOIN match_generation_log mgl_fd
+                  ON mgl_fd.match_id = m.id
+                 AND mgl_fd.user_id  = ?
+                 AND mgl_fd.status   = 'success'
+                 AND mgl_fd.game     = 'fanduel'
+           LEFT JOIN match_generation_log mgl_dk
+                  ON mgl_dk.match_id = m.id
+                 AND mgl_dk.user_id  = ?
+                 AND mgl_dk.status   = 'success'
+                 AND mgl_dk.game     = 'draftkings'
 
            WHERE m.series_id = ?
              AND m.is_active = 1
@@ -67,7 +89,7 @@ export const getAllSeries = async (req, res) => {
 
            ORDER BY m.start_time ASC`,
 
-          [userId, Number(series.seriesid)]
+          [userId, userId, userId, Number(series.seriesid)]
         );
 
         return {
@@ -75,8 +97,12 @@ export const getAllSeries = async (req, res) => {
           total_matches: matches.length,
           matches: matches.map((m) => ({
             ...m,
-            teams_generated: Boolean(m.teams_generated),
-            generated_at:    m.generated_at || null,
+            teams_generated:            Boolean(m.teams_generated),
+            generated_at:               m.generated_at || null,
+            teams_generated_fanduel:    Boolean(m.teams_generated_fanduel),
+            generated_at_fanduel:       m.generated_at_fanduel || null,
+            teams_generated_draftkings: Boolean(m.teams_generated_draftkings),
+            generated_at_draftkings:    m.generated_at_draftkings || null,
           })),
         };
       })
