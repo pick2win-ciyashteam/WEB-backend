@@ -783,6 +783,85 @@ export const toggleMatchesService = async (matchIds, isActive, seriesId) => {
 };
 
 /* ══════════════════════════════════════════
+   REFRESH UNRESOLVED BRACKET MATCH NAMES
+   Sportmonks fixtures for not-yet-decided knockout stages come back with
+   placeholder participant names (e.g. "Winner Quarter-final 3"). Once the
+   earlier round finishes, Sportmonks swaps in the real team — but nothing
+   re-fetches an already-added match to pick that up (toggleMatchesService
+   only fetches on first insert, see the early `continue` above), so those
+   placeholders sit stale in our DB forever. This re-fetches just the
+   still-unresolved ones and updates the real team once known.
+══════════════════════════════════════════ */
+export const refreshUnresolvedBracketMatches = async () => {
+  const [matches] = await db.query(
+    `SELECT id, provider_match_id, series_id
+     FROM matches
+     WHERE is_active = 1
+       AND status = 'UPCOMING'
+       AND provider_match_id IS NOT NULL
+       AND (hometeamname LIKE '%Winner%' OR awayteamname LIKE '%Winner%'
+         OR hometeamname LIKE '%Loser%'  OR awayteamname LIKE '%Loser%'
+         OR hometeamname LIKE '%TBD%'    OR awayteamname LIKE '%TBD%')`
+  );
+
+  const results = [];
+
+  for (const match of matches) {
+    try {
+      const data    = await apiGet(`/fixtures/${match.provider_match_id}`, {
+        include: "participants",
+      });
+      const fixture = data?.data;
+      if (!fixture) continue;
+
+      const home = fixture.participants?.find((p) => p.meta?.location === "home");
+      const away = fixture.participants?.find((p) => p.meta?.location === "away");
+      if (!home || !away) continue;
+
+      const teamIds = {};
+      for (const participant of [home, away]) {
+        await db.query(
+          `INSERT INTO teams (name, short_name, series_id, provider_team_id, logo)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE
+             name       = VALUES(name),
+             short_name = VALUES(short_name),
+             logo       = VALUES(logo)`,
+          [
+            participant.name,
+            participant.short_code || participant.name.substring(0, 3),
+            match.series_id,
+            String(participant.id),
+            participant.image_path || null,
+          ]
+        );
+
+        const [[teamRow]] = await db.query(
+          `SELECT id FROM teams WHERE provider_team_id = ? LIMIT 1`,
+          [String(participant.id)]
+        );
+        teamIds[participant.meta.location] = teamRow?.id || null;
+      }
+
+      await db.query(
+        `UPDATE matches
+         SET hometeamname = ?, awayteamname = ?,
+             home_team_id = COALESCE(?, home_team_id),
+             away_team_id = COALESCE(?, away_team_id)
+         WHERE id = ?`,
+        [home.name, away.name, teamIds.home, teamIds.away, match.id]
+      );
+
+      results.push({ match_id: match.id, home: home.name, away: away.name });
+    } catch (err) {
+      console.error(`[BracketRefresh] Match ${match.provider_match_id} failed:`, err.message);
+    }
+  }
+
+  return results;
+};
+
+/* ══════════════════════════════════════════
    FIXTURES BY DATE RANGE
 ══════════════════════════════════════════ */
 

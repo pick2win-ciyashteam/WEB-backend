@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import db   from "../../../config/db.js";
-import { syncPlayingXIService } from "./sportmonks.service.js";
+import { syncPlayingXIService, refreshUnresolvedBracketMatches } from "./sportmonks.service.js";
 
 import { cleanExpiredBlacklistTokens } from "../admin-auth/admin.auth.service.js";
 import { cleanExpiredUserBlacklistTokens } from "../../user/user-auth/user.auth.services.js";
@@ -24,6 +24,7 @@ const isLiveWindow = () => {
 /* ================= SCHEDULES ================= */
 const SCHEDULES = {
   EVERY_5_MINS:  "*/5 * * * *",
+  EVERY_30_MINS: "*/30 * * * *",
   DAILY_2AM_UTC: "0 2 * * *",
 };
 
@@ -267,6 +268,18 @@ const syncLineupStatus = async () => {
   }
 };
 
+/* ================= JOB 7 — BRACKET NAME RESOLUTION ================= */
+const syncBracketMatchNames = async () => {
+  try {
+    const results = await refreshUnresolvedBracketMatches();
+    if (results.length) {
+      console.log(`✅ [BracketRefreshCron] Resolved ${results.length} match(es):`, results);
+    }
+  } catch (err) {
+    console.error("❌ [BracketRefreshCron] Error:", err.message);
+  }
+};
+
 /* ================= JOB 6 — SERIES DATES ================= */
 const syncSeriesDates = async () => {
   try {
@@ -307,6 +320,7 @@ export const startCronJobs = () => {
   cron.schedule("0 3 * * *",             cleanExpiredBlacklistTokens, { scheduled: true, timezone: "UTC" })
   cron.schedule("0 3 * * *",             cleanExpiredUserBlacklistTokens, { scheduled: true, timezone: "UTC" })
  cron.schedule(SCHEDULES.EVERY_5_MINS, syncSeriesDates, { scheduled: true, timezone: "UTC" });
+  cron.schedule(SCHEDULES.EVERY_30_MINS, syncBracketMatchNames, { scheduled: true, timezone: "UTC" });
   console.log("✅ [CRON] All jobs registered");
 };   
 
