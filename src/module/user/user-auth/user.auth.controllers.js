@@ -742,9 +742,9 @@ export const getMyNotifications = async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
-};
-
-/* ── Mark as Read ── */
+};   
+     
+/* ── Mark as Read ── */  
 export const markAsRead = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -803,4 +803,4 @@ export const deleteAllNotifications = async (req, res) => {
   }
 };
                        
-           
+                           

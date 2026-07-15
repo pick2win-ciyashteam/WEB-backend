@@ -47,12 +47,6 @@ export const getAllSeries = async (req, res) => {
               awt.logo AS away_team_logo,
 
               CASE
-                WHEN mgl.id IS NOT NULL THEN 1
-                ELSE 0
-              END            AS teams_generated,
-              mgl.created_at AS generated_at,
-
-              CASE
                 WHEN mgl_fd.id IS NOT NULL THEN 1
                 ELSE 0
               END               AS teams_generated_fanduel,
@@ -67,10 +61,6 @@ export const getAllSeries = async (req, res) => {
            FROM matches m
            LEFT JOIN teams ht  ON m.home_team_id = ht.id
            LEFT JOIN teams awt ON m.away_team_id = awt.id
-           LEFT JOIN match_generation_log mgl
-                  ON mgl.match_id = m.id
-                 AND mgl.user_id  = ?
-                 AND mgl.status   = 'success'
            LEFT JOIN match_generation_log mgl_fd
                   ON mgl_fd.match_id = m.id
                  AND mgl_fd.user_id  = ?
@@ -89,21 +79,32 @@ export const getAllSeries = async (req, res) => {
 
            ORDER BY m.start_time ASC`,
 
-          [userId, userId, userId, Number(series.seriesid)]
+          [userId, userId, Number(series.seriesid)]
         );
 
         return {
           ...series,
           total_matches: matches.length,
-          matches: matches.map((m) => ({
-            ...m,
-            teams_generated:            Boolean(m.teams_generated),
-            generated_at:               m.generated_at || null,
-            teams_generated_fanduel:    Boolean(m.teams_generated_fanduel),
-            generated_at_fanduel:       m.generated_at_fanduel || null,
-            teams_generated_draftkings: Boolean(m.teams_generated_draftkings),
-            generated_at_draftkings:    m.generated_at_draftkings || null,
-          })),
+          matches: matches.map((m) => {
+            const fanduelDone    = Boolean(m.teams_generated_fanduel);
+            const draftkingsDone = Boolean(m.teams_generated_draftkings);
+            const bothDone       = fanduelDone && draftkingsDone;
+
+            return {
+              ...m,
+              teams_generated:            bothDone,
+              generated_at:               bothDone
+                ? new Date(Math.max(
+                    new Date(m.generated_at_fanduel).getTime(),
+                    new Date(m.generated_at_draftkings).getTime()
+                  ))
+                : null,
+              teams_generated_fanduel:    fanduelDone,
+              generated_at_fanduel:       m.generated_at_fanduel || null,
+              teams_generated_draftkings: draftkingsDone,
+              generated_at_draftkings:    m.generated_at_draftkings || null,
+            };
+          }),
         };
       })
     );
