@@ -523,7 +523,32 @@
               "response": []
             },
             {
-              "name": "Test Mobile OTP (Twilio SMS test)",
+              "name": "Send Mobile OTP (profile — verify own mobile)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/user/user-auth/send-mobile-otp",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "user",
+                    "user-auth",
+                    "send-mobile-otp"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Verify Mobile OTP (profile — verify own mobile)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -531,22 +556,27 @@
                     "key": "Content-Type",
                     "value": "application/json",
                     "type": "text"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "type": "text"
                   }
                 ],
                 "url": {
-                  "raw": "{{base_url}}/user/user-auth/test-mobile-otp",
+                  "raw": "{{base_url}}/user/user-auth/verify-mobile-otp",
                   "host": [
                     "{{base_url}}"
                   ],
                   "path": [
                     "user",
                     "user-auth",
-                    "test-mobile-otp"
+                    "verify-mobile-otp"
                   ]
                 },
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"mobile\": \"+14155552671\"\n}",
+                  "raw": "{\n  \"otp\": \"123456\"\n}",
                   "options": {
                     "raw": {
                       "language": "json"

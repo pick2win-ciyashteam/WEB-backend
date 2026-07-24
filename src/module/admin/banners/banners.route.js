@@ -11,4 +11,4 @@ router.patch ("/:id",        adminLimiter, adminAuth(["super_admin"]), v.updateB
 router.delete("/:id",        adminLimiter, adminAuth(["super_admin"]),                 c.deleteBanner);
 router.patch ("/:id/toggle", adminLimiter, adminAuth(["super_admin"]),                 c.toggleBanner);
 
-export default router;
+export default router;      

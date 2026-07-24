@@ -11,7 +11,7 @@ import { validatePasswordStrength } from "../../../utils/passwordValidator.js";
 import { sendPushToUser } from "../../../utils/notification.js";
 
 import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, resolveTimezone, isValidTimezone, } from "../../../utils/mailer.js";
-import { sendSms } from "../../../utils/sms.js";
+import { sendVerificationOtp, checkVerificationOtp } from "../../../utils/twilioVerify.js";
 
 
 
@@ -34,33 +34,39 @@ export const signupService = async (data) => {
 
   const validTimezone = isValidTimezone(timezone) ? timezone : null;
 
-  const userFullName = (fullname || fullName || "").trim();
+  const userFullName = (fullname || fullName || "").trim() || null;
   const normalizedEmail = email.trim().toLowerCase();
-  const normalizedMobile = String(mobile).replace(/\D/g, "").trim();
+  const normalizedMobile = mobile ? String(mobile).replace(/\D/g, "").trim() || null : null;
+  const normalizedCountry = country ? String(country).trim() : null;
 
-  /* ── Age Check ── */
-  const age =
-    new Date(Date.now() - new Date(date_of_birth)).getUTCFullYear() - 1970;
-
-  if (age < 18) {
-    throw new Error("You must be at least 18 years old");
+  /* ── Age Check (only if date of birth was provided) ── */
+  if (date_of_birth) {
+    const age = new Date(Date.now() - new Date(date_of_birth)).getUTCFullYear() - 1970;
+    if (age < 18) {
+      throw new Error("You must be at least 18 years old");
+    }
   }
 
   /* ── Already Registered Check ── */
-  const [[[emailUser]], [[mobileUser]]] = await Promise.all([
+  const [emailResult, mobileResult] = await Promise.all([
     db.execute(
       `SELECT id, account_status
        FROM users
        WHERE LOWER(email) = LOWER(?)`,
       [normalizedEmail]
     ),
-    db.execute(
-      `SELECT id, account_status
-       FROM users
-       WHERE mobile = ?`,
-      [normalizedMobile]
-    ),
+    normalizedMobile
+      ? db.execute(
+          `SELECT id, account_status
+           FROM users
+           WHERE mobile = ?`,
+          [normalizedMobile]
+        )
+      : Promise.resolve([[]]),
   ]);
+
+  const emailUser  = emailResult[0][0];
+  const mobileUser = mobileResult[0][0];
 
   if (emailUser) {
     throw new Error(
@@ -128,9 +134,9 @@ export const signupService = async (data) => {
       userFullName,
       normalizedEmail,
       normalizedMobile,
-      country,
+      normalizedCountry,
       validTimezone,
-      date_of_birth,
+      date_of_birth || null,
       hashedPassword,
       emailOtp,
       otpExpiry,
@@ -145,7 +151,7 @@ export const signupService = async (data) => {
   sendNoreplyMail({
     to: normalizedEmail,
     subject: "Pick2Win — Email Verification OTP",
-    html: otpEmailHtml(emailOtp, userFullName, 5, new Date(), { timeZone: resolveTimezone({ timezone: validTimezone, country }) }),
+    html: otpEmailHtml(emailOtp, userFullName || "there", 5, new Date(), { timeZone: resolveTimezone({ timezone: validTimezone, country: normalizedCountry }) }),
   }).catch((err) => console.error("OTP email failed:", err.message));
 
   return {
@@ -256,10 +262,10 @@ const completeRegistration = async (sessionId) => {
         to:      session.email,
         subject: "Welcome to Pick2Win! 🎉",
         html:    welcomeEmailHtml({
-          fullname: session.fullname,
+          fullname: session.fullname || "User",
           email: session.email,
-          mobile: session.mobile,
-          country: session.country,
+          mobile: session.mobile || "-",
+          country: session.country || "-",
           timezone: session.timezone,
           activationDate: new Date(),
         }),
@@ -427,54 +433,59 @@ export const logoutAllDevicesService = async (userId) => {
 };
 
 /* ══════════════════════════════════════════
-   REQUEST MOBILE CHANGE
+   REQUEST MOBILE CHANGE (step 1 — send OTP via Twilio Verify)
 ══════════════════════════════════════════ */
 export const requestMobileChangeService = async (userId, { new_mobile }) => {
-  const normalizedMobile = String(new_mobile).replace(/\D/g, "").trim();
+  const normalizedMobile = `+${String(new_mobile).replace(/\D/g, "")}`;
 
   const [[existing]] = await db.execute(
     `SELECT id FROM users WHERE mobile = ? AND id != ?`,
-    [normalizedMobile, userId]
+    [normalizedMobile.replace(/\D/g, ""), userId]
   );
   if (existing) throw new Error("This mobile is already registered");
 
-  const otp    = crypto.randomInt(100000, 999999).toString();
-  const expiry = new Date(Date.now() + 5 * 60 * 1000);
-
+  // Store which number is pending so step 2 knows what to verify/apply —
+  // Twilio Verify itself handles OTP generation, storage, and expiry.
   await db.execute(
     `UPDATE users
-     SET pending_mobile = ?, new_contact_otp = ?,
-         new_contact_otp_expiry = ?, contact_change_type = 'mobile'
+     SET pending_mobile = ?, contact_change_type = 'mobile'
      WHERE id = ?`,
-    [normalizedMobile, otp, expiry, userId]
+    [normalizedMobile.replace(/\D/g, ""), userId]
   );
 
-  return {  
+  await sendVerificationOtp(normalizedMobile);
+
+  return {
     success: true,
     message: "OTP sent to your new mobile number",
-    ...(process.env.NODE_ENV !== "production" && { otp }),
   };
 };
 
 /* ══════════════════════════════════════════
-   VERIFY MOBILE CHANGE
+   VERIFY MOBILE CHANGE (step 2 — check OTP via Twilio Verify, apply change)
 ══════════════════════════════════════════ */
 export const verifyMobileChangeService = async (userId, { otp }) => {
   const [[user]] = await db.execute(
-    `SELECT new_contact_otp, new_contact_otp_expiry, pending_mobile FROM users WHERE id = ?`,
+    `SELECT pending_mobile, contact_change_type FROM users WHERE id = ?`,
     [userId]
   );
 
-  if (!user)                                               throw new Error("User not found");
-  if (!user.new_contact_otp)                               throw new Error("OTP expired. Request again.");
-  if (String(user.new_contact_otp) !== String(otp))        throw new Error("Invalid OTP");
-  if (new Date(user.new_contact_otp_expiry) < new Date())  throw new Error("OTP expired. Request again.");
+  if (!user) throw new Error("User not found");
+  if (user.contact_change_type !== "mobile" || !user.pending_mobile) {
+    throw new Error("No pending mobile change request");
+  }
+
+  const pendingMobileE164 = `+${user.pending_mobile}`;
+  const result = await checkVerificationOtp(pendingMobileE164, otp);
+
+  if (!result.approved) {
+    throw new Error("Invalid or expired OTP");
+  }
 
   await db.execute(
     `UPDATE users
      SET mobile = pending_mobile,
-         pending_mobile = NULL, new_contact_otp = NULL,
-         new_contact_otp_expiry = NULL, contact_change_type = NULL
+         pending_mobile = NULL, contact_change_type = NULL
      WHERE id = ?`,
     [userId]
   );
@@ -483,26 +494,52 @@ export const verifyMobileChangeService = async (userId, { otp }) => {
 };
 
 /* ══════════════════════════════════════════
-   TEST — SEND OTP VIA TWILIO (SMS DELIVERY CHECK)
-   Not tied to signup/login — just fires a real Twilio SMS to any
-   number so delivery to a given country (US/Canada/UK/etc.) can be
-   verified. No DB writes, no OTP stored/checked anywhere.
+   SEND MOBILE OTP (step 1 — verify own current mobile, profile-only)
+   Not part of signup — mobile is stored unverified at signup, and the
+   user verifies it later from their profile screen.
 ══════════════════════════════════════════ */
-export const testMobileOtpService = async (mobile) => {
-  if (!mobile) throw new Error("mobile is required, e.g. +14155552671");
+export const sendMobileOtpService = async (userId) => {
+  const [[user]] = await db.execute(
+    `SELECT mobile, mobile_verify FROM users WHERE id = ?`,
+    [userId]
+  );
+  if (!user) throw new Error("User not found");
+  if (user.mobile_verify) throw new Error("Mobile number already verified");
 
-  const otp = crypto.randomInt(100000, 999999).toString();
-  const message = `${otp} is your PICK2WIN verification code. Valid for 5 minutes.`;
-
-  const result = await sendSms(mobile, message);
+  const normalized = `+${String(user.mobile).replace(/\D/g, "")}`;
+  const result = await sendVerificationOtp(normalized);
 
   return {
     success: true,
-    message: "SMS dispatched via Twilio",
-    to: `+${String(mobile).replace(/\D/g, "")}`,
-    otp,
-    twilio_sid: result.sid,
+    message: "OTP sent to your mobile number",
+    to: normalized,
+    status: result.status,
+    // NOTE: otp value is never returned — Twilio Verify checks it
+    // server-side, it's never stored or exposed by your API.
   };
+};
+
+/* ══════════════════════════════════════════
+   VERIFY MOBILE OTP (step 2 — apply verified status)
+══════════════════════════════════════════ */
+export const verifyMobileOtpService = async (userId, otp) => {
+  const [[user]] = await db.execute(
+    `SELECT mobile, mobile_verify FROM users WHERE id = ?`,
+    [userId]
+  );
+  if (!user) throw new Error("User not found");
+  if (user.mobile_verify) throw new Error("Mobile number already verified");
+
+  const normalized = `+${String(user.mobile).replace(/\D/g, "")}`;
+  const result = await checkVerificationOtp(normalized, otp);
+
+  if (!result.approved) {
+    throw new Error("Invalid or expired OTP");
+  }
+
+  await db.execute(`UPDATE users SET mobile_verify = 1 WHERE id = ?`, [userId]);
+
+  return { success: true, message: "Mobile number verified successfully" };
 };
 
 /* ══════════════════════════════════════════

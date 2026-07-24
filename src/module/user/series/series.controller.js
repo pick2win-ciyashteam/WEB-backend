@@ -18,8 +18,7 @@ export const getAllSeries = async (req, res) => {
       return res.status(200).json({ success: true, count: 0, data: [] });
     }
 
-    const result = await Promise.all(
-      seriesRows.map(async (series) => {
+    const result = await Promise.all(seriesRows.map(async (series) => {
 
         const [matches] = await db.execute(
           `SELECT

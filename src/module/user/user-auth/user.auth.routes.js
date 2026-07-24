@@ -35,9 +35,13 @@ router.post("/reset-password",   v.resetPassword,   c.resetPassword);
 router.post("/change-mobile",        authenticate, v.requestMobileChange, c.requestMobileChange);
 router.post("/verify-mobile-change", authenticate, v.verifyChangeOtp,     c.verifyMobileChange);
 
-// Twilio SMS delivery test — POST { "mobile": "+14155552671" }
-// http://localhost:3000/api/user/user-auth/test-mobile-otp
-router.post("/test-mobile-otp", c.testMobileOtp);
+/* ── Verify own mobile — profile only, not part of signup.
+   Signup just stores the phone number; the user verifies it later
+   from their profile screen. ── */
+// POST http://localhost:3000/api/user/user-auth/send-mobile-otp   (no body — sends to own stored mobile)
+router.post("/send-mobile-otp",   authenticate, c.sendMobileOtp);
+// POST http://localhost:3000/api/user/user-auth/verify-mobile-otp { "otp": "123456" }
+router.post("/verify-mobile-otp", authenticate, v.verifyMobileOtp, c.verifyMobileOtp);
 router.post("/change-email",         authenticate, v.requestEmailChange,  c.requestEmailChange);
 router.post("/verify-old-email-otp", authenticate, v.verifyOldEmailOtp,   c.verifyOldEmailChange);
 router.post("/verify-email-change",  authenticate, v.verifyChangeOtp,     c.verifyEmailChange);
@@ -52,4 +56,4 @@ router.delete("/notification/:id",              authenticate, c.deleteNotificati
   
  
 export default router;     
-                    
+                         

@@ -3,12 +3,12 @@ import Joi from "joi";
 /* ── Signup ── */
 export const signup = (req, res, next) => {
   const { error } = Joi.object({
-    fullname:      Joi.string().min(3).max(100).required(),
+    fullname:      Joi.string().min(3).max(100).allow(null, "").optional(),
     email:         Joi.string().email().required(),
-    mobile:        Joi.string().pattern(/^[0-9]{5,15}$/).required(),
-    country:       Joi.string().min(2).max(100).required(),
-    timezone:      Joi.string().max(64).optional(),
-    date_of_birth: Joi.date().less("now").required(),
+    mobile:        Joi.string().pattern(/^[0-9]{5,15}$/).allow(null, "").optional(),
+    country:       Joi.string().min(2).max(100).allow(null, "").optional(),
+    timezone:      Joi.string().max(64).allow(null, "").optional(),
+    date_of_birth: Joi.date().less("now").allow(null, "").optional(),
     password:      Joi.string().min(6).max(100).pattern(/^\S+$/).message("password must not contain spaces").required(),
   }).validate(req.body);
   if (error) return res.status(400).json({ success: false, message: error.details[0].message });
@@ -42,7 +42,7 @@ export const login = (req, res, next) => {
   }).validate(req.body);
   if (error) return res.status(400).json({ success: false, message: error.details[0].message });
   next();
-};
+};  
 
 /* ── Update Profile ── */
 export const updateProfile = (req, res, next) => {
@@ -56,7 +56,7 @@ export const updateProfile = (req, res, next) => {
   next();
 };   
 
-
+  
 
 /* ── Change Mobile ── */
 export const requestMobileChange = (req, res, next) => {
@@ -78,6 +78,15 @@ export const requestEmailChange = (req, res, next) => {
 
 /* ── Verify Old Email OTP (step 1 of change-email) ── */
 export const verifyOldEmailOtp = (req, res, next) => {
+  const { error } = Joi.object({
+    otp: Joi.string().length(6).required(),
+  }).validate(req.body);
+  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
+  next();
+};
+
+/* ── Verify Mobile OTP (profile — verify own mobile) ── */
+export const verifyMobileOtp = (req, res, next) => {
   const { error } = Joi.object({
     otp: Joi.string().length(6).required(),
   }).validate(req.body);
@@ -114,4 +123,4 @@ export const resetPassword = (req, res, next) => {
   next();
 };     
 
-       
+                  

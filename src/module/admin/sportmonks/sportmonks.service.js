@@ -797,7 +797,7 @@ export const refreshUnresolvedBracketMatches = async () => {
     `SELECT id, provider_match_id, series_id
      FROM matches
      WHERE is_active = 1
-       AND status = 'UPCOMING'
+       AND status IN ('UPCOMING', 'LIVE', 'RESULT')
        AND provider_match_id IS NOT NULL
        AND (hometeamname LIKE '%Winner%' OR awayteamname LIKE '%Winner%'
          OR hometeamname LIKE '%Loser%'  OR awayteamname LIKE '%Loser%'

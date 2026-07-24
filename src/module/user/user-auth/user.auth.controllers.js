@@ -7,7 +7,8 @@ import {
   logoutAllDevicesService,
   requestMobileChangeService,
   verifyMobileChangeService,
-  testMobileOtpService,
+  sendMobileOtpService,
+  verifyMobileOtpService,
   requestEmailChangeService,
   verifyOldEmailChangeService,
   verifyEmailChangeService,
@@ -148,6 +149,7 @@ export const getProfile = async (req, res) => {
      u.timezone,
      u.date_of_birth,
      u.email_verify,
+     u.mobile_verify,
      u.account_status,
      u.created_at,
      u.tokens_invalidated_at,
@@ -259,6 +261,7 @@ const [[wallet]] = await db.execute(
         timezone:       user.timezone,
         date_of_birth:  user.date_of_birth,
         email_verify:   user.email_verify,
+        mobile_verify:  Boolean(user.mobile_verify),
         account_status: user.account_status,
         created_at:     user.created_at,
 
@@ -359,7 +362,7 @@ export const updateProfile = async (req, res) => {
       `SELECT
          id, fullname, email, mobile,
          country, timezone, date_of_birth,
-         email_verify,
+         email_verify, mobile_verify,
          account_status, created_at
        FROM users WHERE id = ?`,
       [req.user.id]
@@ -432,10 +435,27 @@ export const requestEmailChange = async (req, res) => {
   }
 };
 
-/* ================= TEST — SEND OTP VIA TWILIO ================= */
-export const testMobileOtp = async (req, res) => {
+/* ================= SEND MOBILE OTP (profile — verify own mobile) ================= */
+export const sendMobileOtp = async (req, res) => {
   try {
-    const result = await testMobileOtpService(req.body.mobile);
+    const result = await sendMobileOtpService(req.user.id);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= VERIFY MOBILE OTP (profile — verify own mobile) ================= */
+export const verifyMobileOtp = async (req, res) => {
+  try {
+    const result = await verifyMobileOtpService(req.user.id, req.body.otp);
+    await logUserActivity({
+      userId: req.user.id,
+      category: "profile",
+      action: "mobile_verified",
+      details: "User verified mobile number via OTP",
+      req,
+    });
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -727,7 +747,7 @@ export const getMyNotifications = async (req, res) => {
       pagination: {
         total:       Number(total),
         page,
-        limit,
+        limit,  
         total_pages: Math.ceil(Number(total) / limit),
       },
       data: notifications.map((n) => ({
@@ -785,7 +805,7 @@ export const deleteNotification = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
+  
 /* ── Delete All Notifications ── */  
 
 export const deleteAllNotifications = async (req, res) => {
@@ -802,6 +822,5 @@ export const deleteAllNotifications = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-                         
-                             
-               
+           
+    
