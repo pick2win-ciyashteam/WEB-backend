@@ -28,9 +28,5 @@ router.get("/export-admins-csv",  adminLimiter, adminAuth(["super_admin"]), c.ex
    authenticator app. super_admin then flips /toggle-2fa to require it. ── */
 router.post("/setup-2fa",  adminLimiter, adminAuth(ALL_ROLES), v.setup2FA,  c.setup2FA);
 router.post("/logout",     adminLimiter, adminAuth(ALL_ROLES), c.logout);
-
-
       
 export default router;    
-
-                                      

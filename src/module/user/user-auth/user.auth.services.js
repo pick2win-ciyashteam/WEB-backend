@@ -11,7 +11,6 @@ import { validatePasswordStrength } from "../../../utils/passwordValidator.js";
 import { sendPushToUser } from "../../../utils/notification.js";
 
 import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, resolveTimezone, isValidTimezone, } from "../../../utils/mailer.js";
-import { sendVerificationOtp, checkVerificationOtp } from "../../../utils/twilioVerify.js";
 
 
 
@@ -433,113 +432,21 @@ export const logoutAllDevicesService = async (userId) => {
 };
 
 /* ══════════════════════════════════════════
-   REQUEST MOBILE CHANGE (step 1 — send OTP via Twilio Verify)
+   CHANGE MOBILE (direct update — mobile is never OTP-verified,
+   it's just a stored field like fullname/country/etc.)
 ══════════════════════════════════════════ */
 export const requestMobileChangeService = async (userId, { new_mobile }) => {
-  const normalizedMobile = `+${String(new_mobile).replace(/\D/g, "")}`;
+  const normalizedMobile = String(new_mobile).replace(/\D/g, "").trim();
 
   const [[existing]] = await db.execute(
     `SELECT id FROM users WHERE mobile = ? AND id != ?`,
-    [normalizedMobile.replace(/\D/g, ""), userId]
+    [normalizedMobile, userId]
   );
   if (existing) throw new Error("This mobile is already registered");
 
-  // Store which number is pending so step 2 knows what to verify/apply —
-  // Twilio Verify itself handles OTP generation, storage, and expiry.
-  await db.execute(
-    `UPDATE users
-     SET pending_mobile = ?, contact_change_type = 'mobile'
-     WHERE id = ?`,
-    [normalizedMobile.replace(/\D/g, ""), userId]
-  );
-
-  await sendVerificationOtp(normalizedMobile);
-
-  return {
-    success: true,
-    message: "OTP sent to your new mobile number",
-  };
-};
-
-/* ══════════════════════════════════════════
-   VERIFY MOBILE CHANGE (step 2 — check OTP via Twilio Verify, apply change)
-══════════════════════════════════════════ */
-export const verifyMobileChangeService = async (userId, { otp }) => {
-  const [[user]] = await db.execute(
-    `SELECT pending_mobile, contact_change_type FROM users WHERE id = ?`,
-    [userId]
-  );
-
-  if (!user) throw new Error("User not found");
-  if (user.contact_change_type !== "mobile" || !user.pending_mobile) {
-    throw new Error("No pending mobile change request");
-  }
-
-  const pendingMobileE164 = `+${user.pending_mobile}`;
-  const result = await checkVerificationOtp(pendingMobileE164, otp);
-
-  if (!result.approved) {
-    throw new Error("Invalid or expired OTP");
-  }
-
-  await db.execute(
-    `UPDATE users
-     SET mobile = pending_mobile,
-         pending_mobile = NULL, contact_change_type = NULL
-     WHERE id = ?`,
-    [userId]
-  );
+  await db.execute(`UPDATE users SET mobile = ? WHERE id = ?`, [normalizedMobile, userId]);
 
   return { success: true, message: "Mobile number updated successfully" };
-};
-
-/* ══════════════════════════════════════════
-   SEND MOBILE OTP (step 1 — verify own current mobile, profile-only)
-   Not part of signup — mobile is stored unverified at signup, and the
-   user verifies it later from their profile screen.
-══════════════════════════════════════════ */
-export const sendMobileOtpService = async (userId) => {
-  const [[user]] = await db.execute(
-    `SELECT mobile, mobile_verify FROM users WHERE id = ?`,
-    [userId]
-  );
-  if (!user) throw new Error("User not found");
-  if (user.mobile_verify) throw new Error("Mobile number already verified");
-
-  const normalized = `+${String(user.mobile).replace(/\D/g, "")}`;
-  const result = await sendVerificationOtp(normalized);
-
-  return {
-    success: true,
-    message: "OTP sent to your mobile number",
-    to: normalized,
-    status: result.status,
-    // NOTE: otp value is never returned — Twilio Verify checks it
-    // server-side, it's never stored or exposed by your API.
-  };
-};
-
-/* ══════════════════════════════════════════
-   VERIFY MOBILE OTP (step 2 — apply verified status)
-══════════════════════════════════════════ */
-export const verifyMobileOtpService = async (userId, otp) => {
-  const [[user]] = await db.execute(
-    `SELECT mobile, mobile_verify FROM users WHERE id = ?`,
-    [userId]
-  );
-  if (!user) throw new Error("User not found");
-  if (user.mobile_verify) throw new Error("Mobile number already verified");
-
-  const normalized = `+${String(user.mobile).replace(/\D/g, "")}`;
-  const result = await checkVerificationOtp(normalized, otp);
-
-  if (!result.approved) {
-    throw new Error("Invalid or expired OTP");
-  }
-
-  await db.execute(`UPDATE users SET mobile_verify = 1 WHERE id = ?`, [userId]);
-
-  return { success: true, message: "Mobile number verified successfully" };
 };
 
 /* ══════════════════════════════════════════

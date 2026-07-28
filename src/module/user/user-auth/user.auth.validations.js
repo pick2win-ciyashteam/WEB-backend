@@ -58,7 +58,7 @@ export const updateProfile = (req, res, next) => {
 
   
 
-/* ── Change Mobile ── */
+/* ── Change Mobile (direct update, no OTP) ── */
 export const requestMobileChange = (req, res, next) => {
   const { error } = Joi.object({
     new_mobile: Joi.string().pattern(/^[0-9]{5,15}$/).required(),
@@ -78,15 +78,6 @@ export const requestEmailChange = (req, res, next) => {
 
 /* ── Verify Old Email OTP (step 1 of change-email) ── */
 export const verifyOldEmailOtp = (req, res, next) => {
-  const { error } = Joi.object({
-    otp: Joi.string().length(6).required(),
-  }).validate(req.body);
-  if (error) return res.status(400).json({ success: false, message: error.details[0].message });
-  next();
-};
-
-/* ── Verify Mobile OTP (profile — verify own mobile) ── */
-export const verifyMobileOtp = (req, res, next) => {
   const { error } = Joi.object({
     otp: Joi.string().length(6).required(),
   }).validate(req.body);

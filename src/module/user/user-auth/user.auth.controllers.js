@@ -6,9 +6,6 @@ import {
   logoutService,
   logoutAllDevicesService,
   requestMobileChangeService,
-  verifyMobileChangeService,
-  sendMobileOtpService,
-  verifyMobileOtpService,
   requestEmailChangeService,
   verifyOldEmailChangeService,
   verifyEmailChangeService,
@@ -149,7 +146,6 @@ export const getProfile = async (req, res) => {
      u.timezone,
      u.date_of_birth,
      u.email_verify,
-     u.mobile_verify,
      u.account_status,
      u.created_at,
      u.tokens_invalidated_at,
@@ -261,7 +257,6 @@ const [[wallet]] = await db.execute(
         timezone:       user.timezone,
         date_of_birth:  user.date_of_birth,
         email_verify:   user.email_verify,
-        mobile_verify:  Boolean(user.mobile_verify),
         account_status: user.account_status,
         created_at:     user.created_at,
 
@@ -362,7 +357,7 @@ export const updateProfile = async (req, res) => {
       `SELECT
          id, fullname, email, mobile,
          country, timezone, date_of_birth,
-         email_verify, mobile_verify,
+         email_verify,
          account_status, created_at
        FROM users WHERE id = ?`,
       [req.user.id]
@@ -384,27 +379,10 @@ export const updateProfile = async (req, res) => {
   }
 }; 
 
-/* ================= REQUEST MOBILE CHANGE ================= */
+/* ================= CHANGE MOBILE (direct update, no OTP) ================= */
 export const requestMobileChange = async (req, res) => {
   try {
     const result = await requestMobileChangeService(req.user.id, { new_mobile: req.body.new_mobile });
-    await logUserActivity({
-      userId: req.user.id,
-      category: "profile",
-      action: "mobile_change_requested",
-      details: "User requested mobile number change",
-      req,
-    });
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-};
-
-/* ================= VERIFY MOBILE CHANGE ================= */
-export const verifyMobileChange = async (req, res) => {
-  try {
-    const result = await verifyMobileChangeService(req.user.id, { otp: req.body.otp });
     await logUserActivity({
       userId: req.user.id,
       category: "profile",
@@ -427,33 +405,6 @@ export const requestEmailChange = async (req, res) => {
       category: "profile",
       action: "email_change_requested",
       details: "User requested email change",
-      req,
-    });
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-};
-
-/* ================= SEND MOBILE OTP (profile — verify own mobile) ================= */
-export const sendMobileOtp = async (req, res) => {
-  try {
-    const result = await sendMobileOtpService(req.user.id);
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-};
-
-/* ================= VERIFY MOBILE OTP (profile — verify own mobile) ================= */
-export const verifyMobileOtp = async (req, res) => {
-  try {
-    const result = await verifyMobileOtpService(req.user.id, req.body.otp);
-    await logUserActivity({
-      userId: req.user.id,
-      category: "profile",
-      action: "mobile_verified",
-      details: "User verified mobile number via OTP",
       req,
     });
     res.status(200).json(result);
