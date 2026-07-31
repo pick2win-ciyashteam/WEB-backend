@@ -101,6 +101,11 @@ db_backups/
 *.sql
 
 # ========================
+# Local standalone dev MySQL instance (data files)
+# ========================
+.devdb/
+
+# ========================
 # k6 load test results
 # ========================
 k6-tests/results/

@@ -16,3 +16,4 @@ router.get("/user-my-teams/:matchId/:sport/:game", getMyTeams);
 router.get ("/team-players/:teamId",     getTeamPlayers);
 
 export default router;   
+       

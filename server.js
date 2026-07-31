@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "./src/config/loadEnv.js";
 import app from "./app.js";
 import "./src/config/db.js";
 import { startCronJobs } from "./src/module/admin/sportmonks/sportmonks.cron.js";
