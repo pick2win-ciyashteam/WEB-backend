@@ -70,8 +70,7 @@ export const requestMobileChange = (req, res, next) => {
 /* ── Verify Mobile Change (step 2 — confirm OTP) ── */
 export const verifyMobileChange = (req, res, next) => {
   const { error } = Joi.object({
-    type: Joi.string().valid("mobile").required(),
-    otp:  Joi.string().min(4).max(10).required(),
+    otp: Joi.string().min(4).max(10).required(),
   }).validate(req.body);
   if (error) return res.status(400).json({ success: false, message: error.details[0].message });
   next();
