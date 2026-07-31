@@ -31,9 +31,10 @@ router.get("/activity-logs", authenticate, c.getMyActivityLogs);
 router.post("/forgot-password",  v.forgotPassword,  c.forgotPassword);
 router.post("/reset-password",   v.resetPassword,   c.resetPassword);
 
-/* ── Change Mobile — protected. Mobile is never OTP-verified, it's just
-   a stored field updated directly (like fullname/country/etc). ── */
-router.post("/change-mobile", authenticate, v.requestMobileChange, c.requestMobileChange);
+/* ── Change Mobile — protected. Step 1 sends an OTP (Twilio Verify) to the
+   new mobile number; step 2 verifies it and applies the change. ── */
+router.post("/change-mobile",        authenticate, v.requestMobileChange, c.requestMobileChange);
+router.post("/verify-mobile-change", authenticate, v.verifyMobileChange,  c.verifyMobileChange);
 
 /* ── Change Email — protected ── */
 router.post("/change-email",         authenticate, v.requestEmailChange,  c.requestEmailChange);

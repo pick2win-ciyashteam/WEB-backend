@@ -11,6 +11,7 @@ import { validatePasswordStrength } from "../../../utils/passwordValidator.js";
 import { sendPushToUser } from "../../../utils/notification.js";
 
 import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, resolveTimezone, isValidTimezone, } from "../../../utils/mailer.js";
+import { sendVerificationOtp, checkVerificationOtp } from "../../../utils/twilioVerify.js";
 
 
 
@@ -432,8 +433,7 @@ export const logoutAllDevicesService = async (userId) => {
 };
 
 /* ══════════════════════════════════════════
-   CHANGE MOBILE (direct update — mobile is never OTP-verified,
-   it's just a stored field like fullname/country/etc.)
+   REQUEST MOBILE CHANGE  (step 1 — OTP to the NEW mobile via Twilio Verify)
 ══════════════════════════════════════════ */
 export const requestMobileChangeService = async (userId, { new_mobile }) => {
   const normalizedMobile = String(new_mobile).replace(/\D/g, "").trim();
@@ -444,7 +444,46 @@ export const requestMobileChangeService = async (userId, { new_mobile }) => {
   );
   if (existing) throw new Error("This mobile is already registered");
 
-  await db.execute(`UPDATE users SET mobile = ? WHERE id = ?`, [normalizedMobile, userId]);
+  await sendVerificationOtp(`+${normalizedMobile}`);
+
+  await db.execute(
+    `UPDATE users
+     SET pending_mobile = ?, contact_change_type = 'mobile'
+     WHERE id = ?`,
+    [normalizedMobile, userId]
+  );
+
+  return { success: true, message: "OTP sent to your new mobile number" };
+};
+
+/* ══════════════════════════════════════════
+   VERIFY MOBILE CHANGE  (step 2 — confirm OTP, apply the pending mobile)
+══════════════════════════════════════════ */
+export const verifyMobileChangeService = async (userId, otp) => {
+  const [[user]] = await db.execute(
+    `SELECT pending_mobile, contact_change_type FROM users WHERE id = ?`,
+    [userId]
+  );
+
+  if (!user)                                                     throw new Error("User not found");
+  if (user.contact_change_type !== "mobile" || !user.pending_mobile)
+                                                                  throw new Error("No pending mobile change request");
+
+  const { approved } = await checkVerificationOtp(`+${user.pending_mobile}`, otp);
+  if (!approved) throw new Error("Invalid or expired OTP");
+
+  const [[existing]] = await db.execute(
+    `SELECT id FROM users WHERE mobile = ? AND id != ?`,
+    [user.pending_mobile, userId]
+  );
+  if (existing) throw new Error("This mobile is already registered");
+
+  await db.execute(
+    `UPDATE users
+     SET mobile = ?, pending_mobile = NULL, contact_change_type = NULL
+     WHERE id = ?`,
+    [user.pending_mobile, userId]
+  );
 
   return { success: true, message: "Mobile number updated successfully" };
 };

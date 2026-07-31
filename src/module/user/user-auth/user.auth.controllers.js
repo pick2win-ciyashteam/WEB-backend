@@ -6,6 +6,7 @@ import {
   logoutService,
   logoutAllDevicesService,
   requestMobileChangeService,
+  verifyMobileChangeService,
   requestEmailChangeService,
   verifyOldEmailChangeService,
   verifyEmailChangeService,
@@ -379,10 +380,27 @@ export const updateProfile = async (req, res) => {
   }
 }; 
 
-/* ================= CHANGE MOBILE (direct update, no OTP) ================= */
+/* ================= REQUEST MOBILE CHANGE (step 1 — send OTP) ================= */
 export const requestMobileChange = async (req, res) => {
   try {
     const result = await requestMobileChangeService(req.user.id, { new_mobile: req.body.new_mobile });
+    await logUserActivity({
+      userId: req.user.id,
+      category: "profile",
+      action: "mobile_change_requested",
+      details: "User requested mobile number change; OTP sent",
+      req,
+    });
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= VERIFY MOBILE CHANGE (step 2 — confirm OTP) ================= */
+export const verifyMobileChange = async (req, res) => {
+  try {
+    const result = await verifyMobileChangeService(req.user.id, req.body.otp);
     await logUserActivity({
       userId: req.user.id,
       category: "profile",
