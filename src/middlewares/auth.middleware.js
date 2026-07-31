@@ -78,9 +78,11 @@ export const authenticate = async (req, res, next) => {
     next();
 
   } catch (err) {
-    if (process.env.NODE_ENV !== "production")
-      console.error("Authenticate error:", err);
-    return res.status(500).json({ success: false, message: "Internal server error" });
+    console.error("Authenticate error:", err);
+    return res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === "production" ? "Internal server error" : err.message,
+    });
   }
 };
 

@@ -12,20 +12,32 @@ const FEEDBACK_ACK = {
  export const submitFeedback = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { category, importance, subject, description, email, location, email_followup } = req.body;
+    const {
+      category, priority, subject, description, email, location,
+      reproducible, device, browser, related_match, uct_number, team_number,
+      email_followup,
+    } = req.body;
 
     await db.execute(
       `INSERT INTO feedbacks
-        (user_id, type, subject, importance, message, email, location, email_followup, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'New')`,
+        (user_id, type, subject, priority, message, email, location,
+         reproducible, device, browser, related_match, uct_number, team_number,
+         email_followup, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'New')`,
       [
         userId,
         category,
         subject.trim(),
-        importance,
+        priority,
         description.trim(),
         email?.trim()    || null,
         location?.trim() || null,
+        reproducible     || null,
+        device            || null,
+        browser           || null,
+        related_match?.trim() || null,
+        uct_number?.trim()    || null,
+        team_number?.trim()   || null,
         email_followup   ? 1 : 0,
       ]
     );
@@ -317,16 +329,6 @@ export const deleteQuestion = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
-
-export const getAdminAnswers = async (req, res) => {
-  try {
-    const result = await s.getAdminAnswersService();
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-};
-
 
 export const getUserQuestions = async (req, res) => {
   try {

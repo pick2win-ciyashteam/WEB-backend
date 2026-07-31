@@ -58,27 +58,6 @@ export const deleteQuestionService = async (id) => {
   return { success: true, message: "Question deleted" };
 };
 
-export const getAdminAnswersService = async () => {
-  const [rows] = await db.execute(
-    `SELECT
-       a.id,
-       a.comment,
-       a.created_at,
-       u.id       AS user_id,
-       u.fullname AS user_name,
-       q.question,
-       o.emoji,
-       o.label    AS selected_option
-     FROM uct_answers a
-     LEFT JOIN users         u ON u.id = a.user_id
-     JOIN      uct_questions q ON q.id = a.question_id
-     JOIN      uct_options   o ON o.id = a.option_id
-     ORDER BY a.created_at DESC`
-  );
-
-  return { success: true, data: rows };
-};  
-
 // ── USER services ──────────────────────────────────────────────
 
 export const submitAnswersService = async (userId, data) => {

@@ -11,7 +11,6 @@ import {
   getAdminQuestions,
   updateQuestion,
   deleteQuestion,
-  getAdminAnswers,
   getUserQuestions,
   submitAnswers,
 } from "./feedback.controller.js";   
@@ -31,7 +30,7 @@ router.get("/feedback-get", authenticate,  getFeedbackPosts);
   
    
 // ──────────────────────────
-
+   
 
 router.get("/feedback-post", adminLimiter, adminAuth(["super_admin", "admin"]), getAdminFeedbackPosts);
 router.patch ("/feedback-post/:id",   adminLimiter, adminAuth(["super_admin", "admin"]), updateFeedbackPost);
@@ -50,7 +49,8 @@ router.post("/user-answers",   authenticate, submitAnswers);
 
 router.patch ("/question/:id", adminLimiter, adminAuth(["super_admin", "admin"]), updateQuestion);
 router.delete("/question/:id", adminLimiter, adminAuth(["super_admin", "admin"]), deleteQuestion);
-router.get   ("/answers",      adminLimiter, adminAuth(["super_admin", "admin"]), getAdminAnswers);
+// NOTE: admin answer viewing is served by /api/admin/reports/votes-summary and
+// /votes-list (reports.controller.js), which read the uct_answers JSON blob directly.
 
 // ── USER ───────────────────────────────────────────────────────
 

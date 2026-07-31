@@ -1,5 +1,12 @@
 //  // reports.controller.js
 import db from "../../../config/db.js";
+import {
+  FEEDBACK_CATEGORIES,
+  FEEDBACK_PRIORITIES,
+  FEEDBACK_LOCATIONS,
+  FEEDBACK_DEVICES,
+  FEEDBACK_BROWSERS,
+} from "../feedback/feedback.validate.js";
 
 const parseJsonValue = (value) => {
   if (!value) return null;
@@ -1477,7 +1484,7 @@ export const getDetailedFeedbackSummary = async (req, res) => {
       `SELECT
          COUNT(*)                                                        AS total_submissions,
          SUM(CASE WHEN status = 'New' OR status = '' OR status IS NULL THEN 1 ELSE 0 END) AS new_unreviewed,
-         SUM(CASE WHEN importance = 'stopping_me_from_using_pick2win' THEN 1 ELSE 0 END) AS blockers,
+         SUM(CASE WHEN priority = 'critical' THEN 1 ELSE 0 END)         AS blockers,
          SUM(CASE WHEN status = 'Resolved'   THEN 1 ELSE 0 END)         AS resolved
        FROM feedbacks
        WHERE user_id IS NOT NULL`
@@ -1486,6 +1493,17 @@ export const getDetailedFeedbackSummary = async (req, res) => {
     const totalSubmissions = Number(kpi.total_submissions);
     const pct = (count) => totalSubmissions > 0 ? Number(((count / totalSubmissions) * 100).toFixed(1)) : 0;
 
+    /* zero-fill helper: groups `rows` by `col`, filling in every value from `allValues` */
+    const zeroFillCount = (rows, col, allValues) => {
+      const map = new Map(allValues.map((v) => [v, 0]));
+      for (const r of rows) {
+        if (r[col]) map.set(r[col], Number(r.cnt));
+      }
+      return [...map.entries()]
+        .map(([value, count]) => ({ [col]: value, count, pct: pct(count) }))
+        .sort((a, b) => b.count - a.count);
+    };
+
     /* ── By category (zero-filled — always list all known categories) ── */
     const [categoryRows] = await db.execute(
       `SELECT type AS category, COUNT(*) AS cnt
@@ -1493,33 +1511,16 @@ export const getDetailedFeedbackSummary = async (req, res) => {
        WHERE user_id IS NOT NULL
        GROUP BY type`
     );
-    const ALL_FEEDBACK_CATEGORIES = [
-      "bug_report", "uct_tuning_request", "feature_suggestion",
-      "league_coverage_request", "other_general",
-    ];
-    const categoryMap = new Map(ALL_FEEDBACK_CATEGORIES.map((c) => [c, 0]));
-    for (const r of categoryRows) categoryMap.set(r.category, Number(r.cnt));
-    const byCategory = [...categoryMap.entries()]
-      .map(([category, count]) => ({ category, count, pct: pct(count) }))
-      .sort((a, b) => b.count - a.count);
+    const byCategory = zeroFillCount(categoryRows, "category", FEEDBACK_CATEGORIES);
 
-    /* ── By importance (zero-filled) ── */
-    const [importanceRows] = await db.execute(
-      `SELECT importance, COUNT(*) AS cnt
+    /* ── By priority (zero-filled) ── */
+    const [priorityRows] = await db.execute(
+      `SELECT priority, COUNT(*) AS cnt
        FROM feedbacks
        WHERE user_id IS NOT NULL
-       GROUP BY importance`
+       GROUP BY priority`
     );
-    const ALL_FEEDBACK_IMPORTANCE = [
-      "stopping_me_from_using_pick2win", "would_really_help_my_workflow", "nice_to_have",
-    ];
-    const importanceMap = new Map(ALL_FEEDBACK_IMPORTANCE.map((i) => [i, 0]));
-    for (const r of importanceRows) {
-      if (r.importance) importanceMap.set(r.importance, Number(r.cnt));
-    }
-    const byImportance = [...importanceMap.entries()]
-      .map(([importance, count]) => ({ importance, count, pct: pct(count) }))
-      .sort((a, b) => b.count - a.count);
+    const byPriority = zeroFillCount(priorityRows, "priority", FEEDBACK_PRIORITIES);
 
     /* ── Where in PICK2WIN (location) — zero-filled ── */
     const [locationRows] = await db.execute(
@@ -1528,14 +1529,25 @@ export const getDetailedFeedbackSummary = async (req, res) => {
        WHERE user_id IS NOT NULL
        GROUP BY location`
     );
-    const ALL_FEEDBACK_LOCATIONS = ["anywhere_general", "uct_configuration_step", "run_uct"];
-    const locationMap = new Map(ALL_FEEDBACK_LOCATIONS.map((l) => [l, 0]));
-    for (const r of locationRows) {
-      if (r.location) locationMap.set(r.location, Number(r.cnt));
-    }
-    const byLocation = [...locationMap.entries()]
-      .map(([location, count]) => ({ location, count, pct: pct(count) }))
-      .sort((a, b) => b.count - a.count);
+    const byLocation = zeroFillCount(locationRows, "location", FEEDBACK_LOCATIONS);
+
+    /* ── By device (zero-filled) ── */
+    const [deviceRows] = await db.execute(
+      `SELECT device, COUNT(*) AS cnt
+       FROM feedbacks
+       WHERE user_id IS NOT NULL
+       GROUP BY device`
+    );
+    const byDevice = zeroFillCount(deviceRows, "device", FEEDBACK_DEVICES);
+
+    /* ── By browser/app (zero-filled) ── */
+    const [browserRows] = await db.execute(
+      `SELECT browser, COUNT(*) AS cnt
+       FROM feedbacks
+       WHERE user_id IS NOT NULL
+       GROUP BY browser`
+    );
+    const byBrowser = zeroFillCount(browserRows, "browser", FEEDBACK_BROWSERS);
 
     return res.status(200).json({
       success: true,
@@ -1547,9 +1559,11 @@ export const getDetailedFeedbackSummary = async (req, res) => {
         resolved:          Number(kpi.resolved),
       },
 
-      by_category:   byCategory,
-      by_importance: byImportance,
-      by_location:   byLocation,
+      by_category: byCategory,
+      by_priority: byPriority,
+      by_location: byLocation,
+      by_device:   byDevice,
+      by_browser:  byBrowser,
     });
 
   } catch (err) {
@@ -1585,8 +1599,14 @@ export const getDetailedFeedbackList = async (req, res) => {
          f.type        AS category,
          f.subject,
          f.message      AS suggestion,
-         f.importance,
+         f.priority,
          f.location,
+         f.reproducible,
+         f.device,
+         f.browser,
+         f.related_match,
+         f.uct_number,
+         f.team_number,
          f.email,
          f.status,
          f.created_at,
@@ -1617,16 +1637,22 @@ export const getDetailedFeedbackList = async (req, res) => {
       },
       filters: { status },
       submissions: rows.map((r) => ({
-        id:          r.id,
-        category:    r.category,
-        subject:     r.subject,
-        suggestion:  r.suggestion,
-        importance:  r.importance,
-        location:    r.location,
-        from_name:   r.fullname,
-        from_email:  r.email || r.user_email,
-        status:      r.status,
-        date:        r.created_at,
+        id:            r.id,
+        category:      r.category,
+        subject:       r.subject,
+        suggestion:    r.suggestion,
+        priority:      r.priority,
+        location:      r.location,
+        reproducible:  r.reproducible,
+        device:        r.device,
+        browser:       r.browser,
+        related_match: r.related_match,
+        uct_number:    r.uct_number,
+        team_number:   r.team_number,
+        from_name:     r.fullname,
+        from_email:    r.email || r.user_email,
+        status:        r.status,
+        date:          r.created_at,
       })),
     });
 
