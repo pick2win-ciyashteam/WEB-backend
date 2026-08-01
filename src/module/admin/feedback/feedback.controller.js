@@ -44,13 +44,14 @@ const FEEDBACK_ACK = {
 
     res.status(200).json({ success: true, message: "Feedback submitted successfully" });
 
-    const ack = FEEDBACK_ACK[category] || { title: "Feedback Received", body: "Thank you for your feedback." };
-    await sendPushToUser({
-      userId,
-      title: ack.title,
-      body: ack.body,
-      data: { type: "feedback_received", category },
-    });
+    // Disabled — "feedback_received" not in the approved notification list.
+    // const ack = FEEDBACK_ACK[category] || { title: "Feedback Received", body: "Thank you for your feedback." };
+    // await sendPushToUser({
+    //   userId,
+    //   title: ack.title,
+    //   body: ack.body,
+    //   data: { type: "feedback_received", category },
+    // });
 
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -83,12 +83,13 @@ export const submitAnswersService = async (userId, data) => {
     [userId, JSON.stringify(answers)]
   );
 
-  await sendPushToUser({
-    userId,
-    title: "Survey Completed",
-    body: "Thanks for completing the PICK2WIN survey.",
-    data: { type: "survey_completed" },
-  });
+  // Disabled — "survey_completed" not in the approved notification list.
+  // await sendPushToUser({
+  //   userId,
+  //   title: "Survey Completed",
+  //   body: "Thanks for completing the PICK2WIN survey.",
+  //   data: { type: "survey_completed" },
+  // });
 
   return { success: true, already_submitted: false, message: "Feedback submitted successfully" };
 };

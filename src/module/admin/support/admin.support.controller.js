@@ -190,12 +190,13 @@ export const replyToTicket = async (req, res) => {
     );
 
     if (status === "closed") {
-      await sendPushToUser({
-        userId: ticket.user_id,
-        title: "Support Ticket Closed",
-        body: "Your support request has been resolved.",
-        data: { type: "support_ticket_closed", ticket_id: Number(id) },
-      });
+      // Disabled — "support_ticket_closed" not in the approved notification list.
+      // await sendPushToUser({
+      //   userId: ticket.user_id,
+      //   title: "Support Ticket Closed",
+      //   body: "Your support request has been resolved.",
+      //   data: { type: "support_ticket_closed", ticket_id: Number(id) },
+      // });
     } else {
       await sendPushToUser({
         userId: ticket.user_id,
@@ -243,14 +244,15 @@ export const updateTicketStatus = async (req, res) => {
       [status, id]
     );
 
-    if (status === "closed") {
-      await sendPushToUser({
-        userId: ticket.user_id,
-        title: "Support Ticket Closed",
-        body: "Your support request has been resolved.",
-        data: { type: "support_ticket_closed", ticket_id: Number(id) },
-      });
-    }
+    // Disabled — "support_ticket_closed" not in the approved notification list.
+    // if (status === "closed") {
+    //   await sendPushToUser({
+    //     userId: ticket.user_id,
+    //     title: "Support Ticket Closed",
+    //     body: "Your support request has been resolved.",
+    //     data: { type: "support_ticket_closed", ticket_id: Number(id) },
+    //   });
+    // }
 
     return res.status(200).json({ success: true, message: "Status updated successfully" });
 

@@ -237,24 +237,25 @@ export const syncPlayingXIService = async (providerMatchId) => {
   );
   const shouldNotify = lineupUpdate.affectedRows > 0;
 
-  if (shouldNotify) {
-    const matchLabel = matchRow.hometeamname && matchRow.awayteamname
-      ? `${matchRow.hometeamname} vs ${matchRow.awayteamname}`
-      : null;
-
-    await sendPushToAll({
-      title: "Lineup Released ⚽",
-      body: matchLabel
-        ? `${matchLabel} — Playing XI has been announced. Generate your UCT teams now!`
-        : "Playing XI has been announced. Generate your UCT teams now!",
-      data: {
-        match_id: String(matchRow.id),
-        type: "lineup_released",
-      },
-    });
-
-    console.log(`📲 Notification sent for match ${matchRow.id}`);
-  }
+  // Disabled — "lineup_released" not in the approved notification list.
+  // if (shouldNotify) {
+  //   const matchLabel = matchRow.hometeamname && matchRow.awayteamname
+  //     ? `${matchRow.hometeamname} vs ${matchRow.awayteamname}`
+  //     : null;
+  //
+  //   await sendPushToAll({
+  //     title: "Lineup Released ⚽",
+  //     body: matchLabel
+  //       ? `${matchLabel} — Playing XI has been announced. Generate your UCT teams now!`
+  //       : "Playing XI has been announced. Generate your UCT teams now!",
+  //     data: {
+  //       match_id: String(matchRow.id),
+  //       type: "lineup_released",
+  //     },
+  //   });
+  //
+  //   console.log(`📲 Notification sent for match ${matchRow.id}`);
+  // }
 
   console.log(
     `✅ Playing XI synced: ${count} players for match ${providerMatchId}`

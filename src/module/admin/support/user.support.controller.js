@@ -24,12 +24,13 @@ export const submitTicket = async (req, res) => {
       [userId, subject.trim(), message.trim()]
     );
 
-    await sendPushToUser({
-      userId,
-      title: "Support Ticket Created",
-      body: "Your support request has been received.",
-      data: { type: "support_ticket_created", ticket_id: result.insertId },
-    });
+    // Disabled — "support_ticket_created" not in the approved notification list.
+    // await sendPushToUser({
+    //   userId,
+    //   title: "Support Ticket Created",
+    //   body: "Your support request has been received.",
+    //   data: { type: "support_ticket_created", ticket_id: result.insertId },
+    // });
 
     return res.status(201).json({
       success: true,

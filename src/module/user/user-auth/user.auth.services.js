@@ -274,16 +274,17 @@ const completeRegistration = async (sessionId) => {
       console.error("Welcome email failed:", err.message);
     }
 
-    try {
-      await sendPushToUser({
-        userId: newUserId,
-        title: "Welcome to PICK2WIN!",
-        body: "Your account has been created successfully.",
-        data: { type: "account_welcome" },
-      });
-    } catch (err) {
-      console.error("Welcome push failed:", err.message);
-    }
+    // Disabled — "account_welcome" not in the approved notification list.
+    // try {
+    //   await sendPushToUser({
+    //     userId: newUserId,
+    //     title: "Welcome to PICK2WIN!",
+    //     body: "Your account has been created successfully.",
+    //     data: { type: "account_welcome" },
+    //   });
+    // } catch (err) {
+    //   console.error("Welcome push failed:", err.message);
+    // }
 
     try {
       await db.execute(`DELETE FROM signup_sessions WHERE id = ?`, [sessionId]);
@@ -365,14 +366,15 @@ export const updateProfileService = async (updatedUser) => {
     }),
   });
 
-  if (userId) {
-    await sendPushToUser({
-      userId,
-      title: "Account Updated",
-      body: "Your profile has been updated successfully.",
-      data: { type: "account_updated" },
-    });
-  }
+  // Disabled — "account_updated" not in the approved notification list.
+  // if (userId) {
+  //   await sendPushToUser({
+  //     userId,
+  //     title: "Account Updated",
+  //     body: "Your profile has been updated successfully.",
+  //     data: { type: "account_updated" },
+  //   });
+  // }
 
   return { success: true, message: "Profile update email sent." };
 };
@@ -633,12 +635,13 @@ export const verifyEmailChangeService = async (userId, otp) => {
     [userId]
   );
 
-  await sendPushToUser({
-    userId,
-    title: "Email Changed",
-    body: "Your email address has been updated.",
-    data: { type: "email_changed" },
-  });
+  // Disabled — "email_changed" not in the approved notification list.
+  // await sendPushToUser({
+  //   userId,
+  //   title: "Email Changed",
+  //   body: "Your email address has been updated.",
+  //   data: { type: "email_changed" },
+  // });
 
   return { success: true, message: "Email updated successfully" };
 };
@@ -687,12 +690,13 @@ export const verifyEmailChangeService = async (userId, otp) => {
     html,
   });
 
-  await sendPushToUser({
-    userId: user.id,
-    title: "Password Reset Requested",
-    body: "We've sent password reset instructions to your email.",
-    data: { type: "password_reset_requested" },
-  });
+  // Disabled — "password_reset_requested" not in the approved notification list.
+  // await sendPushToUser({
+  //   userId: user.id,
+  //   title: "Password Reset Requested",
+  //   body: "We've sent password reset instructions to your email.",
+  //   data: { type: "password_reset_requested" },
+  // });
 
   return {
     success: true,

@@ -101,21 +101,22 @@ const syncMatchStatuses = async () => {
 
     console.log(`✅ [CRON] UPCOMING→LIVE: ${toLive.affectedRows} | LIVE→RESULT: ${toResult.affectedRows}`);
 
-    /* ── Notify users who generated teams for matches that just went LIVE ── */
-    for (const match of startingMatches) {
-      const [users] = await db.query(
-        `SELECT DISTINCT user_id FROM match_generation_log WHERE match_id = ?`,
-        [match.id]
-      );
-      for (const u of users) {
-        await sendPushToUser({
-          userId: u.user_id,
-          title: "Match Started",
-          body: `${match.hometeamname} vs ${match.awayteamname} has kicked off.`,
-          data: { type: "match_started", match_id: match.id },
-        });
-      }
-    }
+    // Disabled — "match_started" not in the approved notification list.
+    // /* ── Notify users who generated teams for matches that just went LIVE ── */
+    // for (const match of startingMatches) {
+    //   const [users] = await db.query(
+    //     `SELECT DISTINCT user_id FROM match_generation_log WHERE match_id = ?`,
+    //     [match.id]
+    //   );
+    //   for (const u of users) {
+    //     await sendPushToUser({
+    //       userId: u.user_id,
+    //       title: "Match Started",
+    //       body: `${match.hometeamname} vs ${match.awayteamname} has kicked off.`,
+    //       data: { type: "match_started", match_id: match.id },
+    //     });
+    //   }
+    // }
 
     /* ── Remove generated user_teams 5 minutes after a match went LIVE
        (not immediately) — teams can no longer be viewed/edited once the
