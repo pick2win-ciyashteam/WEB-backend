@@ -264,7 +264,7 @@ export const generateTeams = async (req, res) => {
          INSERT collapses that to one round-trip. ── */
       const teamRows = uctTeams.map((player) => {
         const realName = nameMap[player.name] || player.name;
-        const playerCap = player.cap && player.cap !== "" ? player.cap : null;
+        const playerCap = player.captain && player.captain !== "" ? player.captain : null;
         const selected = selectedMap[player.name] || 0;
         const mandate = mandateMap[player.name] || null;
         const teamSide = sideMap[player.name]
@@ -425,44 +425,35 @@ export const generateTeams = async (req, res) => {
   }
 };
 
-/* ================= GET MY TEAMS ================= */
+/* ================= Shared: build generated-teams payload ================= */
+/* Used by both getMyTeams (GET) and generateTeams (POST success response) so
+   the two endpoints never drift out of sync on team-list shape. */
 
-export const getMyTeams = async (req, res) => {
-  try {
-    const { matchId, game, sport } = req.params;
-    const userId = req.user.id;
-    const gameName = game ? String(game).toLowerCase().trim() : null;
-    const sportName = sport ? String(sport).toLowerCase().trim() : null;
+const buildGeneratedTeamsPayload = async ({ matchId, userId, game, sport }) => {
+  const gameName = game ? String(game).toLowerCase().trim() : null;
+  const sportName = sport ? String(sport).toLowerCase().trim() : null;
 
-    /* ───────── VALIDATE SPORT & GAME ───────── */
+  const { sports: validSports, games: validGames } = getValidSportsAndGames();
 
-    const { sports: validSports, games: validGames } = getValidSportsAndGames();
+  if (sportName && !validSports.includes(sportName)) {
+    return { error: { status: 400, message: `Invalid sport '${sportName}'. Supported sports: ${validSports.join(", ")}` } };
+  }
 
-    if (sportName && !validSports.includes(sportName)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid sport '${sportName}'. Supported sports: ${validSports.join(", ")}`
-      });
-    }
+  if (gameName && !validGames.includes(gameName)) {
+    return { error: { status: 400, message: `Invalid game '${gameName}'. Supported games: ${validGames.join(", ")}` } };
+  }
 
-    if (gameName && !validGames.includes(gameName)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid game '${gameName}'. Supported games: ${validGames.join(", ")}`
-      });
-    }
+  if (!matchId) {
+    return { error: { status: 400, message: "matchId is required" } };
+  }
 
-    if (!matchId) {
-      return res.status(400).json({ success: false, message: "matchId is required" });
-    }
-
-    const [[match]] = await db.execute(
+  const [[match]] = await db.execute(
       `SELECT id, hometeamname, awayteamname FROM matches WHERE id = ? LIMIT 1`,
       [matchId]
     );
 
     if (!match) {
-      return res.status(404).json({ success: false, message: "Match not found" });
+      return { error: { status: 404, message: "Match not found" } };
     }
 
     /* ── Fetch players ── */
@@ -500,7 +491,7 @@ export const getMyTeams = async (req, res) => {
     );
 
     if (!players.length) {
-      return res.status(404).json({ success: false, message: "No teams found for this match" });
+      return { error: { status: 404, message: "No teams found for this match" } };
     }
 
     /* ── Detect game from data ── */
@@ -575,12 +566,8 @@ export const getMyTeams = async (req, res) => {
         const awayCount = teamPlayers.filter((p) => p.team_side === "team_b").length;
         const totalSalary = teamPlayers.reduce((sum, p) => sum + (p.salary || 0), 0);
 
-        const captain = isCaptainGame
-          ? teamPlayers.find((p) => p.cap === "C")?.original_name || null
-          : null;
-        const vice_captain = isCaptainGame
-          ? teamPlayers.find((p) => p.cap === "VC")?.original_name || null
-          : null;
+        const captain = teamPlayers.find((p) => p.cap === "C")?.original_name || null;
+        const vice_captain = teamPlayers.find((p) => p.cap === "VC")?.original_name || null;
 
         return {
           team_no: Number(dt_no),
@@ -678,8 +665,8 @@ export const getMyTeams = async (req, res) => {
       }),
     };
 
-    return res.status(200).json({
-      success: true,
+  return {
+    data: {
       match_id: Number(matchId),
       game: detectedGame,
       sport: detectedSport,
@@ -693,13 +680,28 @@ export const getMyTeams = async (req, res) => {
 
       preview,
       teams,
-    });
+    },
+  };
+};
 
+/* ================= GET MY TEAMS ================= */
+
+export const getMyTeams = async (req, res) => {
+  try {
+    const { matchId, game, sport } = req.params;
+    const userId = req.user.id;
+
+    const result = await buildGeneratedTeamsPayload({ matchId, userId, game, sport });
+    if (result.error) {
+      return res.status(result.error.status).json({ success: false, message: result.error.message });
+    }
+
+    return res.status(200).json({ success: true, ...result.data });
   } catch (error) {
     console.error("getMyTeams Error:", error);
     return res.status(500).json({ success: false, message: error.message });
   }
-};  
+};
 
 /* ================= GET MY GENERATED MATCHES ================= */
 export const getMyGeneratedMatches = async (req, res) => {
@@ -800,3 +802,4 @@ export const getTeamPlayers = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+  
