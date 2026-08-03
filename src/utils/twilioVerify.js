@@ -27,7 +27,7 @@ export const sendVerificationOtp = async (mobile) => {
     return { sid: verification.sid, status: verification.status };
   } catch (err) {
     console.error("Twilio sendVerificationOtp error:", err.message);
-    if (err.code === 21211) throw new Error("Invalid mobile number");
+    if (err.code === 21211 || err.code === 60200) throw new Error("Invalid mobile number");
     throw new Error("Failed to send verification code. Please try again.");
   }
 };
