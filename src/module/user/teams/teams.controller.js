@@ -45,6 +45,9 @@ export const generateTeams = async (req, res) => {
     }
 
     const capValue = cap !== undefined && cap !== null ? Number(cap) : null;
+    if (capValue !== null && Number.isNaN(capValue)) {
+      return res.status(400).json({ success: false, message: "cap must be a number" });
+    }
     const uctUrl   = getUCTEndpoint(gameName, sportName);
 
     if (!uctUrl) {
@@ -233,6 +236,26 @@ export const generateTeams = async (req, res) => {
         `SELECT available_coins, used_coins, total_coins FROM user_coins WHERE user_id = ? FOR UPDATE`,
         [userId]
       );
+
+      /* ── Re-check "already generated" now that we hold the per-user wallet
+         lock. The earlier check (step 4) ran before any lock was taken, so
+         two concurrent requests for the same match+user+game could both pass
+         it and both reach here; because match_generation_log is unique on
+         (match_id, user_id, game), any such race is necessarily the same
+         user, so this SELECT is serialized behind the FOR UPDATE above and
+         reliably sees a generation committed by the other request. ── */
+      const [[existingLog]] = await conn.query(
+        `SELECT id FROM match_generation_log WHERE match_id = ? AND user_id = ? AND game = ?`,
+        [match_id, userId, gameName]
+      );
+      if (existingLog) {
+        await conn.rollback();
+        return res.status(400).json({
+          success: false,
+          message: `Teams already generated for ${gameName} in this match`,
+        });
+      }
+
       if (!currentWallet || Number(currentWallet.available_coins) < 1) {
         await conn.rollback();
         return res.status(400).json({ success: false, message: "Insufficient coins" });
@@ -509,9 +532,8 @@ const buildGeneratedTeamsPayload = async ({ matchId, userId, game, sport }) => {
       [matchId, userId, detectedGame]
     );
 
-    /* ── FanDuel/DraftKings = salary based, Sorare = captain based ── */
+    /* ── FanDuel/DraftKings = salary based ── */
     const isSalaryGame = ["fanduel", "draftkings"].includes(detectedGame);
-    const isCaptainGame = ["sorare", "football"].includes(detectedGame);
 
     /* ── Build teams map — dt_no=0 skip ── */
     const teamsMap = {};
@@ -593,16 +615,14 @@ const buildGeneratedTeamsPayload = async ({ matchId, userId, game, sport }) => {
     const mandateYes = uniqueByName(allPlayers.filter((p) => p.mandate?.toLowerCase() === "yes"));
     const mandateNo = uniqueByName(mandateNoPlayers);
 
-    const isCVCMode = isCaptainGame && allPlayers.some((p) => p.captain_mode === "CVC");
-    const captainPlayers = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "C")) : [];
-    const viceCaptainPlayers = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "VC")) : [];
-    const cvcPlayers = isCaptainGame ? uniqueByName(allPlayers.filter((p) => p.captain_mode === "CVC")) : [];
+    const isCVCMode = allPlayers.some((p) => p.captain_mode === "CVC");
+    const captainPlayers = uniqueByName(allPlayers.filter((p) => p.captain_mode === "C"));
+    const viceCaptainPlayers = uniqueByName(allPlayers.filter((p) => p.captain_mode === "VC"));
+    const cvcPlayers = uniqueByName(allPlayers.filter((p) => p.captain_mode === "CVC"));
 
-    const captaincyPool = isCaptainGame
-      ? uniqueByName(allPlayers.filter((p) =>
-        p.captain_mode === "C" || p.captain_mode === "VC" || p.captain_mode === "CVC"
-      ))
-      : [];
+    const captaincyPool = uniqueByName(allPlayers.filter((p) =>
+      p.captain_mode === "C" || p.captain_mode === "VC" || p.captain_mode === "CVC"
+    ));
 
     const preview = {
       game: detectedGame,
@@ -638,7 +658,7 @@ const buildGeneratedTeamsPayload = async ({ matchId, userId, game, sport }) => {
         salary: p.salary,
       })),
 
-      ...(isCaptainGame ? {
+      ...(captaincyPool.length ? {
         captaincy_count: captaincyPool.length,
         captaincy_mode: isCVCMode ? "CVC" : "C & VC",
 

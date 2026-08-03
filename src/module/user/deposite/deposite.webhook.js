@@ -17,7 +17,13 @@ export const razorpayWebhook = async (req, res) => {
     .update(req.body)
     .digest("hex");
 
-  if (generated !== signature) {
+  const generatedBuf = Buffer.from(generated, "utf8");
+  const signatureBuf = Buffer.from(signature || "", "utf8");
+  const signatureValid =
+    generatedBuf.length === signatureBuf.length &&
+    crypto.timingSafeEqual(generatedBuf, signatureBuf);
+
+  if (!signatureValid) {
     console.error("❌ Razorpay webhook signature mismatch");
     return res.status(400).json({ success: false, message: "Invalid signature" });
   }

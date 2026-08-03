@@ -141,11 +141,11 @@ export const sendPushToAll = async ({ title, body, data = {} }) => {
        WHERE account_status IS NULL OR CAST(account_status AS CHAR) != 'deleted'`
     );
 
-    for (const u of users) {
-      await db.execute(
-        `INSERT INTO user_notifications (user_id, title, body, data)
-         VALUES (?, ?, ?, ?)`,
-        [u.user_id, title, body, JSON.stringify(data || {})]
+    if (users.length) {
+      const notificationRows = users.map((u) => [u.user_id, title, body, JSON.stringify(data || {})]);
+      await db.query(
+        `INSERT INTO user_notifications (user_id, title, body, data) VALUES ?`,
+        [notificationRows]
       );
     }
 

@@ -253,6 +253,17 @@ const completeRegistration = async (sessionId) => {
 
   const newUserId = result.insertId;
 
+  /* ── Create the wallet row up front — user_coins previously only got a
+     row on first coin purchase, so a brand-new user hitting any
+     coins-gated feature (e.g. generate-teams) before ever buying coins
+     would see a misleading "Insufficient coins" from a missing row rather
+     than an actual zero balance. ── */
+  await db.execute(
+    `INSERT INTO user_coins (user_id, coins, total_coins, used_coins, available_coins)
+     VALUES (?, 0, 0, 0, 0)`,
+    [newUserId]
+  );
+
   /* ── Welcome email, welcome push, and signup-session cleanup are all
      best-effort follow-ups that don't need to block the OTP-verification
      response — they run in the background instead. ── */
@@ -859,6 +870,17 @@ export const deleteAccountService = async (userId) => {
        WHERE user_id = ?`,
       [userId]
     );
+
+    /* ── Remaining tables that reference user_id — without these, a
+       users FK constraint would abort the whole deletion, and even
+       without one the rows would be left orphaned under a deleted user. ── */
+    await conn.query(`DELETE FROM coins_transactions WHERE user_id = ?`, [userId]);
+    await conn.query(`DELETE FROM user_activity_logs WHERE user_id = ?`, [userId]);
+    await conn.query(`DELETE FROM support_tickets WHERE user_id = ?`, [userId]);
+    await conn.query(`DELETE FROM uct_answers WHERE user_id = ?`, [userId]);
+    await conn.query(`DELETE FROM user_token_blacklist WHERE user_id = ?`, [userId]);
+    await conn.query(`DELETE FROM user_devices WHERE user_id = ?`, [userId]);
+    await conn.query(`DELETE FROM user_notifications WHERE user_id = ?`, [userId]);
 
     await conn.query(
       `DELETE FROM users
