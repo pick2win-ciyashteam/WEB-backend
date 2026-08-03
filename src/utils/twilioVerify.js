@@ -19,11 +19,17 @@ const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
  * @returns {Promise<{sid: string, status: string}>}
  */
 export const sendVerificationOtp = async (mobile) => {
-  const verification = await client.verify.v2
-    .services(verifyServiceSid)
-    .verifications.create({ to: mobile, channel: "sms" });
+  try {
+    const verification = await client.verify.v2
+      .services(verifyServiceSid)
+      .verifications.create({ to: mobile, channel: "sms" });
 
-  return { sid: verification.sid, status: verification.status };
+    return { sid: verification.sid, status: verification.status };
+  } catch (err) {
+    console.error("Twilio sendVerificationOtp error:", err.message);
+    if (err.code === 21211) throw new Error("Invalid mobile number");
+    throw new Error("Failed to send verification code. Please try again.");
+  }
 };
 
 /**
@@ -47,6 +53,7 @@ export const checkVerificationOtp = async (mobile, otp) => {
     if (err.code === 20404) {
       return { approved: false, status: "not_found" };
     }
-    throw err;
+    console.error("Twilio checkVerificationOtp error:", err.message);
+    throw new Error("Failed to verify code. Please try again.");
   }
 };
