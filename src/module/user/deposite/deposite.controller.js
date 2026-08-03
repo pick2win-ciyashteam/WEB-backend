@@ -80,12 +80,14 @@ export const verifyCoinsPayment = async (req, res) => {
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
-    if (generated !== razorpay_signature)
+    const sigA = Buffer.from(generated);
+    const sigB = Buffer.from(razorpay_signature || "");
+    if (sigA.length !== sigB.length || !crypto.timingSafeEqual(sigA, sigB))
       return res.status(400).json({ success: false, message: "Payment verification failed" });
 
     const userId        = req.user.id;
-    const parsedCoins   = Number(coins);
-    const parsedAmount  = Number(amount) / 100; // cents → USD
+    let parsedCoins      = Number(coins);
+    let parsedAmount     = Number(amount) / 100; // cents → USD (overwritten from plan below)
 
     /* ── company_ledger appends read-then-insert off the last row, which
        InnoDB can deadlock on under concurrent purchases — retry a few
@@ -110,10 +112,14 @@ export const verifyCoinsPayment = async (req, res) => {
 
         /* ── Plan verify ── */
         const [[plan]] = await conn.query(
-          `SELECT id, name, matches, validity_days FROM subscription_plans WHERE id = ? LIMIT 1`,
+          `SELECT id, name, coins, price, matches, validity_days FROM subscription_plans WHERE id = ? LIMIT 1`,
           [plan_id]
         );
         if (!plan) throw new Error("Plan not found");
+
+        /* ── Credit the plan's real coins/price — never trust the client body ── */
+        parsedCoins  = Number(plan.coins);
+        parsedAmount = Number(plan.price);
 
         /* ── Current wallet ── */
         const [[wallet]] = await conn.query(

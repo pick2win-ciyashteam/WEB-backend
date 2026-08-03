@@ -497,7 +497,7 @@ export const updateUserAccountStatus = async (req, res) => {
     const { id } = req.params;
     const { account_status } = req.body;
 
-    const allowedStatuses = ["active", "blocked"];
+    const allowedStatuses = ["active", "blocked", "deleted"];
     if (!allowedStatuses.includes(account_status)) {
       return res.status(400).json({
         success: false,

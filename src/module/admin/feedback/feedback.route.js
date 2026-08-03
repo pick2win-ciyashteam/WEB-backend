@@ -2,7 +2,7 @@ import { Router } from "express";
 import { adminLimiter, adminAuth } from "../../../middlewares/adminAuth.middleware.js";
 import { authenticate } from "../../../middlewares/auth.middleware.js";
 import {
-  getAllFeedbacks, 
+  getAllFeedbacks,
   updateFeedbackPost, deleteFeedbackPost,
   createFeedbackPost, submitFeedback,
    getFeedbackPosts,
@@ -13,7 +13,8 @@ import {
   deleteQuestion,
   getUserQuestions,
   submitAnswers,
-} from "./feedback.controller.js";   
+} from "./feedback.controller.js";
+import { submitFeedback as validateSubmitFeedback } from "./feedback.validate.js";
 
 const router = Router();  
 
@@ -25,7 +26,7 @@ router.post  ("/feedback-post",       adminLimiter, adminAuth(["super_admin", "a
 
 // ──────── status base no post user────────────────────────────────────────────
 
-router.post("/user-post",   authenticate,  submitFeedback);
+router.post("/user-post",   authenticate,  validateSubmitFeedback, submitFeedback);
 router.get("/feedback-get", authenticate,  getFeedbackPosts);
   
    

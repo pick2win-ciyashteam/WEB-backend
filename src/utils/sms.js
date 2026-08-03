@@ -30,4 +30,4 @@ export const sendSms = async (to, message) => {
     console.error(`❌ SMS failed: ${err.message}`);
     throw err;
   }
-};
+};    

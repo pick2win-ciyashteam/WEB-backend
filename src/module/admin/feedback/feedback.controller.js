@@ -126,9 +126,9 @@ export const updateFeedbackPost = async (req, res) => {
     const { title, message } = req.body;
 
     await db.execute(
-      `UPDATE feedback_posts
-       SET title = ?, message = ?
-       WHERE id = ?`,
+      `UPDATE feedbacks
+       SET type = ?, message = ?
+       WHERE id = ? AND user_id IS NULL`,
       [title, message, id]
     );
 
@@ -159,8 +159,8 @@ export const deleteFeedbackPost = async (req, res) => {
     const { id } = req.params;
 
     await db.execute(
-      `DELETE FROM feedback_posts
-       WHERE id = ?`,
+      `DELETE FROM feedbacks
+       WHERE id = ? AND user_id IS NULL`,
       [id]
     );
 

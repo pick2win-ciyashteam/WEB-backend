@@ -1,5 +1,5 @@
 import { Router }       from "express";
-import { authenticate } from "../../middlewares/auth.middleware.js";
+import { authenticate, checkAccountStatus } from "../../middlewares/auth.middleware.js";
 import userAuthRoutes       from "./user-auth/user.auth.routes.js"
 import seriesRoutes     from "./series/series.route.js"
 import countriesRoutes   from "./countries/countries.route.js"
@@ -16,12 +16,12 @@ const router = Router();
 router.use("/user-auth",   userAuthRoutes);
 router.use("/series", seriesRoutes);
 router.use("/countries",  countriesRoutes);
-router.use("/matches",authenticate,matchesRoutes);
+router.use("/matches",authenticate,checkAccountStatus,matchesRoutes);
 router.use("/banner",bannerRoutes);
 router.use("/plans",planRoutes);
-router.use("/deposite",authenticate,depositeRoutes);
+router.use("/deposite",authenticate,checkAccountStatus,depositeRoutes);
 router.use("/lineup",lineupRoutes);
-router.use("/teams",authenticate,teamsRoutes);
+router.use("/teams",authenticate,checkAccountStatus,teamsRoutes);
 router.use("/support",supportUserRoutes) 
 
 

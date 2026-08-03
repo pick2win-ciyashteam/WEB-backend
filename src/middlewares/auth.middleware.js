@@ -86,11 +86,53 @@ export const authenticate = async (req, res, next) => {
   }
 };
 
+/* ================= OPTIONAL AUTHENTICATE =================
+   Sets req.user when a valid Bearer token is present; otherwise proceeds
+   as a guest (req.user left undefined) instead of returning 401. */
+export const optionalAuthenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) return next();
+
+    const token = authHeader.split(" ")[1];
+
+    const [[blacklisted]] = await db.query(
+      `SELECT id FROM user_token_blacklist WHERE token = ? LIMIT 1`,
+      [token]
+    );
+    if (blacklisted) return next();
+
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
+    } catch {
+      return next();
+    }
+
+    if (!decoded?.id || !decoded?.email || decoded.type === "admin") return next();
+
+    const [[invalidation]] = await db.query(
+      `SELECT UNIX_TIMESTAMP(tokens_invalidated_at) AS invalidated_at FROM users WHERE id = ?`,
+      [decoded.id]
+    );
+    if (invalidation?.invalidated_at && decoded.iat <= invalidation.invalidated_at) {
+      return next();
+    }
+
+    req.user = decoded;
+    next();
+
+  } catch (err) {
+    console.error("optionalAuthenticate error:", err);
+    next();
+  }
+};
+
 /* ================= CHECK ACCOUNT STATUS ================= */
 export const checkAccountStatus = async (req, res, next) => {
   try {
 
-    const [[user]] = await pool.execute(
+    const [[user]] = await db.execute(
       `SELECT account_status FROM users WHERE id = ?`,
       [req.user.id]
     );
@@ -127,7 +169,7 @@ export const checkAccountStatus = async (req, res, next) => {
 
 /* ================= DELETE ALL USER DATA ================= */
 const deleteAllUserData = async (userId) => {
-  const connection = await pool.getConnection();
+  const connection = await db.getConnection();
 
   try {
     await connection.beginTransaction();

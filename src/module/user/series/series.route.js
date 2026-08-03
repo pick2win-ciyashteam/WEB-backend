@@ -2,7 +2,7 @@
 import express from "express";
 
 import { getAllSeries, getSeriesById, getVisibleLeagues } from "./series.controller.js";
-import { authenticate } from "../../../middlewares/auth.middleware.js";
+import { authenticate, optionalAuthenticate } from "../../../middlewares/auth.middleware.js";
 
 const router = express.Router();
 
@@ -14,7 +14,7 @@ router.get("/leagues", getVisibleLeagues);
 
 router.get("/:seriesid", authenticate,  getSeriesById);
 
-router.get("/", authenticate,  getAllSeries);  
+router.get("/", optionalAuthenticate,  getAllSeries);
   
 
 

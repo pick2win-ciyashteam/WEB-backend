@@ -1,15 +1,25 @@
 import { Router }       from "express";
+import rateLimit        from "express-rate-limit";
 import { authenticate } from "../../../middlewares/auth.middleware.js";
 import * as v           from "./user.auth.validations.js";
 import * as c           from "./user.auth.controllers.js";
 
-const router = Router();   
+const router = Router();
+
+/* 20 requests / 15 min / IP on sensitive public auth endpoints (brute-force / OTP cost abuse) */
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many attempts. Please try again later." },
+});
 
 /* ── Public routes ── */
-router.post("/signup",            v.signup,          c.signup);
-router.post("/verify-email-otp",  v.verifyEmailOtp,  c.verifyEmailOtp);
-router.post("/resend-otp",        v.resendOtp,       c.resendOtp);
-router.post("/login",             v.login,           c.login);
+router.post("/signup",            authLimiter, v.signup,          c.signup);
+router.post("/verify-email-otp",  authLimiter, v.verifyEmailOtp,  c.verifyEmailOtp);
+router.post("/resend-otp",        authLimiter, v.resendOtp,       c.resendOtp);
+router.post("/login",             authLimiter, v.login,           c.login);
 
 /* ── Protected routes ── */
 router.post  ("/logout",             authenticate,   c.logout);
@@ -28,8 +38,8 @@ router.get("/activity-logs", authenticate, c.getMyActivityLogs);
 
 
 /* ── Forgot Password — public ── */
-router.post("/forgot-password",  v.forgotPassword,  c.forgotPassword);
-router.post("/reset-password",   v.resetPassword,   c.resetPassword);
+router.post("/forgot-password",  authLimiter, v.forgotPassword,  c.forgotPassword);
+router.post("/reset-password",   authLimiter, v.resetPassword,   c.resetPassword);
 
 /* ── Change Mobile — protected. Step 1 sends an OTP (Twilio Verify) to the
    new mobile number; step 2 verifies it and applies the change. ── */

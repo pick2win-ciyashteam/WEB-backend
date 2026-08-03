@@ -114,9 +114,10 @@ export const signupService = async (data) => {
       email_otp,
       email_otp_expiry,
       email_verified,
-      expires_at
+      expires_at,
+      otp_attempts
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)
 
     ON DUPLICATE KEY UPDATE
       fullname          = VALUES(fullname),
@@ -128,7 +129,8 @@ export const signupService = async (data) => {
       email_otp         = VALUES(email_otp),
       email_otp_expiry  = VALUES(email_otp_expiry),
       email_verified    = 0,
-      expires_at        = VALUES(expires_at)
+      expires_at        = VALUES(expires_at),
+      otp_attempts      = 0
     `,
     [
       userFullName,
@@ -157,7 +159,7 @@ export const signupService = async (data) => {
   return {
     success: true,
     message: "OTP sent to your email. Please verify to complete registration.",
-    ...(process.env.NODE_ENV !== "production" && { emailOtp }),
+    ...(process.env.EXPOSE_OTP === "true" && { emailOtp }),
   };
 };
 
@@ -180,7 +182,18 @@ export const verifyEmailOtpService = async ({ email, otp }) => {
 
   if (session.email_verified === 1)                     throw new Error("Email already verified.");
   if (!session.email_otp)                               throw new Error("OTP expired. Please request again.");
-  if (String(session.email_otp) !== String(otp))        throw new Error("Invalid OTP");
+
+  if (String(session.email_otp) !== String(otp)) {
+    await db.execute(
+      `UPDATE signup_sessions
+          SET otp_attempts = otp_attempts + 1,
+              email_otp    = IF(otp_attempts + 1 >= 5, NULL, email_otp)
+        WHERE id = ?`,
+      [session.id]
+    );
+    throw new Error("Invalid OTP");
+  }
+
   if (new Date(session.email_otp_expiry) < new Date())  throw new Error("OTP expired. Please request again.");
 
   await db.execute(
@@ -214,7 +227,7 @@ export const resendOtpService = async ({ email }) => {
   const newExpiry   = new Date(Date.now() + 5 * 60 * 1000);
 
   await db.execute(
-    `UPDATE signup_sessions SET email_otp = ?, email_otp_expiry = ? WHERE id = ?`,
+    `UPDATE signup_sessions SET email_otp = ?, email_otp_expiry = ?, otp_attempts = 0 WHERE id = ?`,
     [newEmailOtp, newExpiry, session.id]
   );
 
@@ -227,7 +240,7 @@ export const resendOtpService = async ({ email }) => {
   return {
     success: true,
     message: "OTP resent to your email",
-    ...(process.env.NODE_ENV !== "production" && { otp: newEmailOtp }),
+    ...(process.env.EXPOSE_OTP === "true" && { otp: newEmailOtp }),
   };
 };
 
@@ -561,7 +574,7 @@ export const requestEmailChangeService = async (userId, newEmail) => {
   return {
     success: true,
     message: "OTP sent to your current email address",
-    ...(process.env.NODE_ENV !== "production" && { otp }),
+    ...(process.env.EXPOSE_OTP === "true" && { otp }),
   };
 };
 
@@ -617,7 +630,7 @@ export const verifyOldEmailChangeService = async (userId, otp) => {
   return {
     success: true,
     message: "OTP sent to your new email address",
-    ...(process.env.NODE_ENV !== "production" && { otp: newOtp }),
+    ...(process.env.EXPOSE_OTP === "true" && { otp: newOtp }),
   };
 };
 
@@ -712,7 +725,7 @@ export const verifyEmailChangeService = async (userId, otp) => {
   return {
     success: true,
     message: "OTP sent to your email",
-    ...(process.env.NODE_ENV !== "production" && { otp }),
+    ...(process.env.EXPOSE_OTP === "true" && { otp }),
   };
 };
 
@@ -796,7 +809,7 @@ export const deleteAccountService = async (userId) => {
   return {
     success: true,
     message: "OTP sent to your email. Please verify to delete your account.",
-    ...(process.env.NODE_ENV !== "production" && { otp }),
+    ...(process.env.EXPOSE_OTP === "true" && { otp }),
   };
 };
 

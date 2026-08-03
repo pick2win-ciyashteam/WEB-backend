@@ -31,7 +31,7 @@ export const submitFeedback = (req, res, next) => {
 
     subject: Joi.string().min(3).max(120).required(),
 
-    description: Joi.string().min(10).required(),
+    description: Joi.string().min(10).max(5000).required(),
 
     email: Joi.string().email().allow("", null).optional(),
 
