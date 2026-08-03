@@ -4,6 +4,7 @@ export const FEEDBACK_CATEGORIES = [
   "bug_report",
   "feature_suggestion",
   "uct_tuning_request",
+  "uct_workflow",
   "league_coverage_request",
   "what_you_love",
   "other_general",
@@ -11,7 +12,7 @@ export const FEEDBACK_CATEGORIES = [
 
 export const FEEDBACK_PRIORITIES = ["critical", "high", "medium", "low"];
 
-export const FEEDBACK_LOCATIONS = ["anywhere_general", "uct_configuration_step", "run_uct"];
+export const FEEDBACK_LOCATIONS = ["anywhere_general", "uct_configuration_step", "run_uct", "my_teams_view"];
 
 export const FEEDBACK_REPRODUCIBLE = ["always", "sometimes", "once", "cannot_reproduce"];
 
