@@ -13,13 +13,23 @@ import { sendPushToUser } from "../../../utils/notification.js";
 import { sendNoreplyMail, otpEmailHtml, passwordResetEmailHtml, welcomeEmailHtml, profileUpdatedEmailHtml, accountDeletedEmailHtml, resolveTimezone, isValidTimezone, } from "../../../utils/mailer.js";
 import { sendVerificationOtp, checkVerificationOtp } from "../../../utils/twilioVerify.js";
 
+/* ── Shared constants — values unchanged from before, just centralized
+   so a future OTP/expiry policy change doesn't require hunting through
+   every service function for the same magic number. ── */
+const BCRYPT_SALT_ROUNDS       = 10;
+const OTP_MIN                  = 100000;
+const OTP_MAX                  = 999999;
+const EMAIL_OTP_EXPIRY_MS      = 5 * 60 * 1000;  // signup + resend email OTP
+const SIGNUP_SESSION_EXPIRY_MS = 15 * 60 * 1000; // signup_sessions row TTL
+const SECURITY_OTP_EXPIRY_MS   = 10 * 60 * 1000; // forgot-password / email-change / delete-account OTPs
 
+const generateOtp = () => crypto.randomInt(OTP_MIN, OTP_MAX).toString();
 
 /* ══════════════════════════════════════════
    SIGNUP
 ══════════════════════════════════════════ */
 
-
+  
 export const signupService = async (data) => {
   const {
     fullName,
@@ -91,13 +101,13 @@ export const signupService = async (data) => {
   }
 
   /* ── Hash Password ── */
-  const hashedPassword = await bcryptHash(password, 10);
+  const hashedPassword = await bcryptHash(password, BCRYPT_SALT_ROUNDS);
 
   /* ── Generate OTP (email only — mobile is stored but not OTP-verified) ── */
-  const emailOtp = crypto.randomInt(100000, 999999).toString();
+  const emailOtp = generateOtp();
 
-  const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
-  const sessionExpiry = new Date(Date.now() + 15 * 60 * 1000);
+  const otpExpiry = new Date(Date.now() + EMAIL_OTP_EXPIRY_MS);
+  const sessionExpiry = new Date(Date.now() + SIGNUP_SESSION_EXPIRY_MS);
 
   /* ── Create or Update Signup Session ── */
   await db.execute(
@@ -223,8 +233,8 @@ export const resendOtpService = async ({ email }) => {
   if (new Date(session.expires_at) < new Date()) throw new Error("Session expired. Please signup again.");
   if (session.email_verified === 1)              throw new Error("Email already verified.");
 
-  const newEmailOtp = crypto.randomInt(100000, 999999).toString();
-  const newExpiry   = new Date(Date.now() + 5 * 60 * 1000);
+  const newEmailOtp = generateOtp();
+  const newExpiry   = new Date(Date.now() + EMAIL_OTP_EXPIRY_MS);
 
   await db.execute(
     `UPDATE signup_sessions SET email_otp = ?, email_otp_expiry = ?, otp_attempts = 0 WHERE id = ?`,
@@ -270,11 +280,23 @@ const completeRegistration = async (sessionId) => {
      row on first coin purchase, so a brand-new user hitting any
      coins-gated feature (e.g. generate-teams) before ever buying coins
      would see a misleading "Insufficient coins" from a missing row rather
-     than an actual zero balance. ── */
+     than an actual zero balance. Every new signup also gets 1 free coin
+     to try the product. ── */
+  const SIGNUP_BONUS_COINS = 1;
+
   await db.execute(
     `INSERT INTO user_coins (user_id, coins, total_coins, used_coins, available_coins)
-     VALUES (?, 0, 0, 0, 0)`,
-    [newUserId]
+     VALUES (?, ?, ?, 0, ?)`,
+    [newUserId, SIGNUP_BONUS_COINS, SIGNUP_BONUS_COINS, SIGNUP_BONUS_COINS]
+  );
+
+  await db.execute(
+    `INSERT INTO coins_transactions
+       (user_id, coins, amount, transaction_type, opening_points, closing_points,
+        description, status, user_name, user_email, user_mobile)
+     VALUES (?, ?, 0, 'purchase', 0, ?, 'Signup bonus', 'success', ?, ?, ?)`,
+    [newUserId, SIGNUP_BONUS_COINS, SIGNUP_BONUS_COINS,
+     session.fullname, session.email, session.mobile]
   );
 
   /* ── Welcome email, welcome push, and signup-session cleanup are all
@@ -538,8 +560,8 @@ export const requestEmailChangeService = async (userId, newEmail) => {
   );
   if (existing) throw new Error("Email already in use");
 
-  const otp    = crypto.randomInt(100000, 999999).toString();
-  const expiry = new Date(Date.now() + 10 * 60 * 1000);
+  const otp    = generateOtp();
+  const expiry = new Date(Date.now() + SECURITY_OTP_EXPIRY_MS);
 
   await db.execute(
     `UPDATE users
@@ -595,8 +617,8 @@ export const verifyOldEmailChangeService = async (userId, otp) => {
   if (String(user.old_contact_otp) !== String(otp))            throw new Error("Invalid OTP");
   if (new Date(user.old_contact_otp_expiry) < new Date())      throw new Error("OTP expired. Request again.");
 
-  const newOtp    = crypto.randomInt(100000, 999999).toString();
-  const newExpiry = new Date(Date.now() + 10 * 60 * 1000);
+  const newOtp    = generateOtp();
+  const newExpiry = new Date(Date.now() + SECURITY_OTP_EXPIRY_MS);
 
   await db.execute(
     `UPDATE users
@@ -690,8 +712,8 @@ export const verifyEmailChangeService = async (userId, otp) => {
     throw new Error("No account found with this email");
   }
 
-  const otp = crypto.randomInt(100000, 999999).toString();
-  const expiry = new Date(Date.now() + 10 * 60 * 1000);
+  const otp = generateOtp();
+  const expiry = new Date(Date.now() + SECURITY_OTP_EXPIRY_MS);
 
   await db.execute(
     `UPDATE users
@@ -750,7 +772,7 @@ export const resetPasswordService = async (email, otp, newPassword) => {
     throw new Error(passwordCheck.message);
   }
 
-  const hashed = await bcryptHash(newPassword, 10);
+  const hashed = await bcryptHash(newPassword, BCRYPT_SALT_ROUNDS);
 
   await db.execute(
     `UPDATE users SET password = ?, loginotp = NULL, loginotpexpires = NULL WHERE id = ?`,
@@ -777,8 +799,8 @@ export const deleteAccountService = async (userId) => {
   );
   if (!user) throw new Error("User not found");
 
-  const otp       = crypto.randomInt(100000, 999999).toString();
-  const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+  const otp       = generateOtp();
+  const otpExpiry = new Date(Date.now() + SECURITY_OTP_EXPIRY_MS);
 
   await db.execute(
     `UPDATE users SET loginotp = ?, loginotpexpires = ? WHERE id = ?`,
