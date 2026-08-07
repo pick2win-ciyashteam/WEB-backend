@@ -50,12 +50,11 @@ export default function () {
 
   /* ── 1. SIGNUP ── */
   const signupPayload = JSON.stringify({
-    fullname:      `K6 Test User ${uid}`,
+    fullname: `K6 Test User ${uid}`,
     email,
     mobile,
-    country:       'India',
-    date_of_birth: '1995-05-15',
-    password:      'Test@123',
+    country:  'India',
+    password: 'Test@123',
   });
 
   const signupRes = http.post(`${BASE_URL}/signup`, signupPayload, params);

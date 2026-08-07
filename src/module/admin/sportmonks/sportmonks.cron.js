@@ -3,7 +3,7 @@ import db   from "../../../config/db.js";
 import { syncPlayingXIService, refreshUnresolvedBracketMatches } from "./sportmonks.service.js";
 
 import { cleanExpiredBlacklistTokens } from "../admin-auth/admin.auth.service.js";
-import { cleanExpiredUserBlacklistTokens } from "../../user/user-auth/user.auth.services.js";
+import { cleanExpiredUserBlacklistTokens, purgeDeletedAccountsService } from "../../user/user-auth/user.auth.services.js";
 import { sendPushToUser } from "../../../utils/notification.js";
 
 /* ================= HELPERS ================= */
@@ -319,6 +319,7 @@ export const startCronJobs = () => {
   cron.schedule("0 0 * * *",             syncSubscriptionExpiry,    { scheduled: true, timezone: "UTC" });
   cron.schedule("0 3 * * *",             cleanExpiredBlacklistTokens, { scheduled: true, timezone: "UTC" })
   cron.schedule("0 3 * * *",             cleanExpiredUserBlacklistTokens, { scheduled: true, timezone: "UTC" })
+  cron.schedule("0 4 * * *",             purgeDeletedAccountsService, { scheduled: true, timezone: "UTC" })
  cron.schedule(SCHEDULES.EVERY_5_MINS, syncSeriesDates, { scheduled: true, timezone: "UTC" });
   cron.schedule(SCHEDULES.EVERY_30_MINS, syncBracketMatchNames, { scheduled: true, timezone: "UTC" });
   console.log("✅ [CRON] All jobs registered");

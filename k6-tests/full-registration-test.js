@@ -36,7 +36,6 @@ async function registerOne(i) {
         email,
         mobile,
         country: "India",
-        date_of_birth: "1995-05-15",
         password: PASSWORD,
       }),
     });

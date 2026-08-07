@@ -20,6 +20,8 @@ router.post("/signup",            authLimiter, v.signup,          c.signup);
 router.post("/verify-email-otp",  authLimiter, v.verifyEmailOtp,  c.verifyEmailOtp);
 router.post("/resend-otp",        authLimiter, v.resendOtp,       c.resendOtp);
 router.post("/login",             authLimiter, v.login,           c.login);
+router.post("/restore-account",   authLimiter, v.restoreAccount,  c.restoreAccount);
+router.post("/decline-restore",   authLimiter, v.restoreAccount,  c.declineRestore);
 
 /* ── Protected routes ── */
 router.post  ("/logout",             authenticate,   c.logout);
@@ -41,9 +43,9 @@ router.get("/activity-logs", authenticate, c.getMyActivityLogs);
 router.post("/forgot-password",  authLimiter, v.forgotPassword,  c.forgotPassword);
 router.post("/reset-password",   authLimiter, v.resetPassword,   c.resetPassword);
 
-/* ── Change Mobile — protected. Step 1 sends an OTP (Twilio Verify) to the
-   new mobile number; step 2 verifies it and applies the change. ── */
-router.post("/change-mobile",        authenticate, v.requestMobileChange, c.requestMobileChange);
+/* ── Change Mobile — initiating a mobile change now happens through
+   PATCH /update (send `mobile` in the body); this just confirms the
+   OTP (Twilio Verify) sent to the new number and applies the change. ── */
 router.post("/verify-mobile-change", authenticate, v.verifyMobileChange,  c.verifyMobileChange);
 
 /* ── Change Email — protected ── */

@@ -3,6 +3,8 @@ import {
   verifyEmailOtpService,
   resendOtpService,
   loginService,
+  restoreAccountService,
+  declineRestoreService,
   logoutService,
   logoutAllDevicesService,
   requestMobileChangeService,
@@ -93,6 +95,47 @@ export const login = async (req, res) => {
       req,
     }).catch((err) => console.error("Failed to log login activity:", err.message));
   } catch (err) {
+    const payload = { success: false, message: err.message };
+    if (err.accountDeleted) {
+      payload.accountDeleted = true;
+      payload.deletionDate = err.deletionDate;
+    }
+    res.status(400).json(payload);
+  }
+};
+
+/* ================= RESTORE ACCOUNT (undo a pending soft-delete) ================= */
+export const restoreAccount = async (req, res) => {
+  try {
+    const result = await restoreAccountService(req.body);
+    res.status(200).json(result);
+
+    logUserActivity({
+      userId: result.user?.id,
+      category: "auth",
+      action: "account_restored",
+      details: "User restored a pending account deletion",
+      req,
+    }).catch((err) => console.error("Failed to log account restore activity:", err.message));
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+};
+
+/* ================= DECLINE RESTORE (user keeps the pending deletion) ================= */
+export const declineRestore = async (req, res) => {
+  try {
+    const result = await declineRestoreService(req.body);
+    res.status(200).json({ success: true, message: result.message });
+
+    logUserActivity({
+      userId: result.userId,
+      category: "auth",
+      action: "account_restore_declined",
+      details: "User chose to keep the pending account deletion",
+      req,
+    }).catch((err) => console.error("Failed to log decline-restore activity:", err.message));
+  } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 };
@@ -145,7 +188,6 @@ export const getProfile = async (req, res) => {
      u.mobile,
      u.country,
      u.timezone,
-     u.date_of_birth,
      u.email_verify,
      u.account_status,
      u.created_at,
@@ -256,7 +298,6 @@ const [[wallet]] = await db.execute(
         mobile:         user.mobile,
         country:        user.country,
         timezone:       user.timezone,
-        date_of_birth:  user.date_of_birth,
         email_verify:   user.email_verify,
         account_status: user.account_status,
         created_at:     user.created_at,
@@ -300,17 +341,25 @@ const [[wallet]] = await db.execute(
   }
 };
 
-/* ================= UPDATE PROFILE ================= */
+/* ================= UPDATE PROFILE =================
+   mobile is handled specially: it can't be applied directly like the
+   other fields since it requires OTP verification (via Twilio Verify) —
+   this reuses the same requestMobileChangeService that used to sit
+   behind a standalone /change-mobile endpoint. Sending it here just
+   queues the change (pending_mobile + OTP dispatched); the existing
+   /verify-mobile-change endpoint is still what completes it. ── */
 export const updateProfile = async (req, res) => {
   try {
-    const ALLOWED = ["fullname", "country", "timezone", "date_of_birth"];
+    const ALLOWED = ["fullname", "country", "timezone"];
     const sanitized = {};
 
     for (const key of ALLOWED) {
       if (req.body[key] !== undefined) sanitized[key] = req.body[key];
     }
 
-    if (!Object.keys(sanitized).length) {
+    const mobileRequested = req.body.mobile !== undefined;
+
+    if (!Object.keys(sanitized).length && !mobileRequested) {
       return res.status(400).json({
         success: false,
         message: "No valid fields to update",
@@ -324,40 +373,37 @@ export const updateProfile = async (req, res) => {
       });
     }
 
-    /* ── Age check ── */
-    if (sanitized.date_of_birth) {
-      const age =
-        new Date(Date.now() - new Date(sanitized.date_of_birth)).getUTCFullYear() - 1970;
-      if (age < 18) {
-        return res.status(400).json({
-          success: false,
-          message: "You must be at least 18 years old",
-        });
-      }
+    if (Object.keys(sanitized).length) {
+      const setClauses = Object.keys(sanitized).map((k) => `${k} = ?`).join(", ");
+      const setValues  = Object.values(sanitized);
+
+      await db.execute(
+        `UPDATE users SET ${setClauses} WHERE id = ?`,
+        [...setValues, req.user.id]
+      );
     }
 
-    const setClauses = Object.keys(sanitized).map((k) => `${k} = ?`).join(", ");
-    const setValues  = Object.values(sanitized);
-
-    await db.execute(
-      `UPDATE users SET ${setClauses} WHERE id = ?`,
-      [...setValues, req.user.id]
-    );
+    /* ── Mobile change — queues an OTP instead of writing directly ── */
+    let mobileOtpSent = false;
+    if (mobileRequested) {
+      await requestMobileChangeService(req.user.id, { new_mobile: req.body.mobile });
+      mobileOtpSent = true;
+    }
 
     await logUserActivity({
       userId: req.user.id,
       category: "profile",
       action: "profile_updated",
-      details: `Updated fields: ${Object.keys(sanitized).join(", ")}`,
+      details: `Updated fields: ${Object.keys(sanitized).join(", ") || "none"}${mobileOtpSent ? "; mobile change OTP sent" : ""}`,
       req,
-      metadata: { updated_fields: Object.keys(sanitized) },
+      metadata: { updated_fields: Object.keys(sanitized), mobile_otp_sent: mobileOtpSent },
     });
 
     /* ── Return updated profile ── */
     const [[updated]] = await db.execute(
       `SELECT
-         id, fullname, email, mobile,
-         country, timezone, date_of_birth,
+         id, fullname, email, mobile, pending_mobile,
+         country, timezone,
          email_verify,
          account_status, created_at
        FROM users WHERE id = ?`,
@@ -366,32 +412,22 @@ export const updateProfile = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Profile updated successfully",
-      data:    updated,
+      message: mobileOtpSent
+        ? "Profile updated. OTP sent to your new mobile number — verify it to complete the mobile change."
+        : "Profile updated successfully",
+      mobile_otp_sent: mobileOtpSent,
+      data: updated,
     });
 
-    /* ── Send profile updated notification email ── */
-    await updateProfileService(updated).catch((err) => {
-      console.error("Profile update email failed:", err.message);
-    });
+    /* ── Send profile updated notification email — only for the fields
+       that actually took effect immediately; the mobile OTP email/SMS
+       is already handled inside requestMobileChangeService. ── */
+    if (Object.keys(sanitized).length) {
+      await updateProfileService(updated).catch((err) => {
+        console.error("Profile update email failed:", err.message);
+      });
+    }
 
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-}; 
-
-/* ================= REQUEST MOBILE CHANGE (step 1 — send OTP) ================= */
-export const requestMobileChange = async (req, res) => {
-  try {
-    const result = await requestMobileChangeService(req.user.id, { new_mobile: req.body.new_mobile });
-    await logUserActivity({
-      userId: req.user.id,
-      category: "profile",
-      action: "mobile_change_requested",
-      details: "User requested mobile number change; OTP sent",
-      req,
-    });
-    res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }

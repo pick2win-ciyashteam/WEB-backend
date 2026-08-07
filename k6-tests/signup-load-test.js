@@ -35,12 +35,11 @@ export default function () {
     String(__ITER).padStart(3, '0');
 
   const payload = JSON.stringify({
-    fullname:      `K6 Test User ${uid}`,
-    email:         `k6user_${uid}@p2wtest.com`,
+    fullname: `K6 Test User ${uid}`,
+    email:    `k6user_${uid}@p2wtest.com`,
     mobile,
-    country:       'India',
-    date_of_birth: '1995-05-15',
-    password:      'Test@123',
+    country:  'India',
+    password: 'Test@123',
   });
 
   const params = { headers: { 'Content-Type': 'application/json' } };

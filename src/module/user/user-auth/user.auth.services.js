@@ -1,6 +1,6 @@
 
 
-// user.auth.service.js
+// user.auth.service.js  
 
 import crypto    from "crypto";
 import { hash as bcryptHash, compare as bcryptCompare } from "@node-rs/bcrypt";
@@ -22,8 +22,31 @@ const OTP_MAX                  = 999999;
 const EMAIL_OTP_EXPIRY_MS      = 5 * 60 * 1000;  // signup + resend email OTP
 const SIGNUP_SESSION_EXPIRY_MS = 15 * 60 * 1000; // signup_sessions row TTL
 const SECURITY_OTP_EXPIRY_MS   = 10 * 60 * 1000; // forgot-password / email-change / delete-account OTPs
+const DELETION_GRACE_PERIOD_DAYS = 30;           // account stays soft-deleted this long before permanent purge
 
 const generateOtp = () => crypto.randomInt(OTP_MIN, OTP_MAX).toString();
+
+const issueLoginResponse = (user, message = "Login successful") => {
+  const token = jwt.sign(
+    { id: user.id, email: user.email, type: "user" },
+    process.env.JWT_SECRET,
+    { algorithm: "HS256", expiresIn: process.env.JWT_EXPIRES_IN || "1d" }
+  ); 
+
+  return {
+    success: true,
+    message,
+    token,
+    user: {
+      id:             user.id,
+      fullname:       user.fullname,
+      email:          user.email,
+      mobile:         user.mobile,
+      email_verify:   user.email_verify,
+      account_status: "active",
+    },
+  };
+};
 
 /* ══════════════════════════════════════════
    SIGNUP
@@ -38,7 +61,6 @@ export const signupService = async (data) => {
     mobile,
     country,
     timezone,
-    date_of_birth,
     password,
   } = data;
 
@@ -48,14 +70,6 @@ export const signupService = async (data) => {
   const normalizedEmail = email.trim().toLowerCase();
   const normalizedMobile = mobile ? String(mobile).replace(/\D/g, "").trim() || null : null;
   const normalizedCountry = country ? String(country).trim() : null;
-
-  /* ── Age Check (only if date of birth was provided) ── */
-  if (date_of_birth) {
-    const age = new Date(Date.now() - new Date(date_of_birth)).getUTCFullYear() - 1970;
-    if (age < 18) {
-      throw new Error("You must be at least 18 years old");
-    }
-  }
 
   /* ── Already Registered Check ── */
   const [emailResult, mobileResult] = await Promise.all([
@@ -119,7 +133,6 @@ export const signupService = async (data) => {
       mobile,
       country,
       timezone,
-      date_of_birth,
       password,
       email_otp,
       email_otp_expiry,
@@ -127,14 +140,13 @@ export const signupService = async (data) => {
       expires_at,
       otp_attempts
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 0)
 
     ON DUPLICATE KEY UPDATE
       fullname          = VALUES(fullname),
       email             = VALUES(email),
       country           = VALUES(country),
       timezone          = VALUES(timezone),
-      date_of_birth     = VALUES(date_of_birth),
       password          = VALUES(password),
       email_otp         = VALUES(email_otp),
       email_otp_expiry  = VALUES(email_otp_expiry),
@@ -148,7 +160,6 @@ export const signupService = async (data) => {
       normalizedMobile,
       normalizedCountry,
       validTimezone,
-      date_of_birth || null,
       hashedPassword,
       emailOtp,
       otpExpiry,
@@ -260,18 +271,18 @@ export const resendOtpService = async ({ email }) => {
 ══════════════════════════════════════════ */ 
 const completeRegistration = async (sessionId) => {
   const [[session]] = await db.execute(
-    `SELECT fullname, email, mobile, country, timezone, date_of_birth, password
+    `SELECT fullname, email, mobile, country, timezone, password
      FROM signup_sessions WHERE id = ?`,
     [sessionId]
   );
 
   const [result] = await db.execute(
     `INSERT INTO users
-       (fullname, email, mobile, country, timezone, date_of_birth, password,
+       (fullname, email, mobile, country, timezone, password,
         account_status, email_verify)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 1)`,
+     VALUES (?, ?, ?, ?, ?, ?, 'active', 1)`,
     [session.fullname, session.email, session.mobile,
-     session.country, session.timezone, session.date_of_birth, session.password]
+     session.country, session.timezone, session.password]
   );
 
   const newUserId = result.insertId;
@@ -348,15 +359,25 @@ const completeRegistration = async (sessionId) => {
 export const loginService = async ({ email, password }) => {
   const [[user]] = await db.execute(
     `SELECT id, fullname, email, mobile, password,
-            account_status, email_verify
+            account_status, deleted_at, email_verify
      FROM users WHERE email = ? LIMIT 1`,
     [email.trim().toLowerCase()]
   );
 
   if (!user) throw new Error("User not found. Please signup");
 
-  if (user.account_status === "deleted")
-    throw new Error("This account has been deleted. Contact support.");
+  if (user.account_status === "deleted") {
+    /* ── Account is within its 30-day soft-delete grace period — the
+       frontend uses accountDeleted/deletionDate to show a "Restore
+       Account?" prompt instead of a dead-end error. ── */
+    const deletionDate = new Date(
+      new Date(user.deleted_at).getTime() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+    );
+    const err = new Error("Your account is scheduled for deletion. Restore it to continue.");
+    err.accountDeleted = true;
+    err.deletionDate = deletionDate.toISOString();
+    throw err;
+  }
   if (user.account_status === "blocked")
     throw new Error("Your account has been blocked. Contact support.");
 
@@ -371,25 +392,56 @@ export const loginService = async ({ email, password }) => {
   db.execute(`UPDATE users SET updated_at = NOW() WHERE id = ?`, [user.id])
     .catch((err) => console.error("Failed to update last-login timestamp:", err.message));
 
-  const token = jwt.sign(
-    { id: user.id, email: user.email, type: "user" },
-    process.env.JWT_SECRET,
-    { algorithm: "HS256", expiresIn: process.env.JWT_EXPIRES_IN || "1d" }
+  return issueLoginResponse({ ...user, account_status: user.account_status });
+};
+
+/* ══════════════════════════════════════════
+   RESTORE ACCOUNT  (undo a pending soft-delete within the grace period)
+══════════════════════════════════════════ */
+export const restoreAccountService = async ({ email, password }) => {
+  const [[user]] = await db.execute(
+    `SELECT id, fullname, email, mobile, password,
+            account_status, deleted_at, email_verify
+     FROM users WHERE email = ? LIMIT 1`,
+    [email.trim().toLowerCase()]
   );
 
-  return {
-    success: true,
-    message: "Login successful",
-    token,
-    user: {
-      id:             user.id,
-      fullname:       user.fullname,
-      email:          user.email,
-      mobile:         user.mobile,
-      email_verify:   user.email_verify,
-      account_status: user.account_status,
-    },
-  };
+  if (!user) throw new Error("User not found. Please signup");
+  if (user.account_status !== "deleted") throw new Error("This account is not scheduled for deletion.");
+
+  const isMatch = await bcryptCompare(password, user.password);
+  if (!isMatch) throw new Error("Invalid password or wrong password. Please try again.");
+
+  const deletionDate = new Date(user.deleted_at).getTime() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+  if (Date.now() > deletionDate) {
+    throw new Error("The restore window for this account has expired. Please contact support.");
+  }
+
+  await db.execute(
+    `UPDATE users SET account_status = 'active', deleted_at = NULL WHERE id = ?`,
+    [user.id]
+  );
+
+  return issueLoginResponse(user, "Account restored successfully. Welcome back!");
+};
+
+/* ══════════════════════════════════════════
+   DECLINE RESTORE  (user explicitly keeps the pending deletion —
+   no DB state change, just an audit trail of the choice)
+══════════════════════════════════════════ */
+export const declineRestoreService = async ({ email, password }) => {
+  const [[user]] = await db.execute(
+    `SELECT id, password, account_status FROM users WHERE email = ? LIMIT 1`,
+    [email.trim().toLowerCase()]
+  );
+
+  if (!user) throw new Error("User not found. Please signup");
+  if (user.account_status !== "deleted") throw new Error("This account is not scheduled for deletion.");
+
+  const isMatch = await bcryptCompare(password, user.password);
+  if (!isMatch) throw new Error("Invalid password or wrong password. Please try again.");
+
+  return { success: true, message: "Account deletion remains scheduled.", userId: user.id };
 };
 
 export const updateProfileService = async (updatedUser) => {
@@ -815,13 +867,13 @@ export const deleteAccountService = async (userId) => {
       heading: "Confirm your account deletion request.",
       intro: [
         "We received a request to delete your PICK2WIN account.",
-        "Enter the OTP below to confirm this action. This cannot be undone.",
+        `Enter the OTP below to confirm. Your account will be scheduled for deletion and permanently removed after ${DELETION_GRACE_PERIOD_DAYS} days.`,
       ],
       instructions: [
         "Enter this OTP to confirm your account deletion request.",
         "This OTP can be used only once.",
         "The OTP will expire automatically after the validity period.",
-        "Your account and all associated data will be permanently deleted once confirmed.",
+        `You can restore your account by logging in within ${DELETION_GRACE_PERIOD_DAYS} days — after that it will be permanently deleted.`,
       ],
       ignoreNote: "If you did not request account deletion, please ignore this email and your account will remain unchanged.",
       timeZone: resolveTimezone({ timezone: user.timezone, country: user.country }),
@@ -859,106 +911,106 @@ export const deleteAccountService = async (userId) => {
   if (new Date(user.loginotpexpires) < new Date())
     throw new Error("OTP expired. Please request again.");
 
-  const email = user.email;
-  const fullname = user.fullname;
-  const country = user.country;
-  const timezone = user.timezone;
+  /* ── Soft-delete only — the account (and its coins/teams/transactions/
+     logs) stays intact for DELETION_GRACE_PERIOD_DAYS so a login attempt
+     in that window can offer "Restore Account?" instead of a dead end.
+     purgeDeletedAccountsService (daily cron) does the actual permanent
+     removal once the grace period elapses. ── */
+  await db.execute(
+    `UPDATE users
+     SET account_status = 'deleted',
+         deleted_at = NOW(),
+         tokens_invalidated_at = UTC_TIMESTAMP(),
+         loginotp = NULL, loginotpexpires = NULL
+     WHERE id = ?`,
+    [userId]
+  );
 
-  const conn = await db.getConnection();
+  const deletionDate = new Date(Date.now() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000);
 
+  /* ── Notify — best-effort, doesn't need to block the response ── */
+  sendNoreplyMail({
+    to: user.email,
+    subject: "Your PICK2WIN account is scheduled for deletion",
+    html: `
+      <p>Hello ${user.fullname || "User"},</p>
+      <p>Your PICK2WIN account has been scheduled for deletion.</p>
+      <p>You can restore it anytime within <strong>${DELETION_GRACE_PERIOD_DAYS} days</strong> by simply logging in again.</p>
+      <p>If you don't log in before <strong>${deletionDate.toDateString()}</strong>, your account and all associated data will be permanently deleted.</p>
+      <p>If you didn't request this, log in now to restore your account immediately.</p>
+    `,
+  }).catch((err) => console.error("Account deletion-scheduled email failed:", err.message));
+
+  return {
+    success: true,
+    message: `Account scheduled for deletion. You can restore it by logging in within ${DELETION_GRACE_PERIOD_DAYS} days.`,
+    deletionDate: deletionDate.toISOString(),
+  };
+};
+
+/* ══════════════════════════════════════════
+   PURGE DELETED ACCOUNTS (CRON)
+   Permanently removes accounts whose soft-delete grace period has
+   elapsed — mirrors the cascade the old immediate-delete flow used to
+   run inline at confirm-delete time.
+══════════════════════════════════════════ */
+export const purgeDeletedAccountsService = async () => {
+  let rows;
   try {
-    await conn.beginTransaction();
-
-    await conn.query(
-      `DELETE utp
-       FROM user_team_players utp
-       INNER JOIN user_teams ut
-         ON ut.id = utp.user_team_id
-       WHERE ut.user_id = ?`,
-      [userId]
+    [rows] = await db.query(
+      `SELECT id, email, fullname, country, timezone FROM users
+       WHERE account_status = 'deleted'
+         AND deleted_at IS NOT NULL
+         AND deleted_at <= DATE_SUB(NOW(), INTERVAL ? DAY)`,
+      [DELETION_GRACE_PERIOD_DAYS]
     );
+  } catch (err) {
+    console.error("❌ [Cron] Failed to fetch accounts due for purge:", err.message);
+    return 0;
+  }
 
-    await conn.query(
-      `DELETE FROM user_teams WHERE user_id = ?`,
-      [userId]
-    );
-
-    await conn.query(
-      `DELETE FROM match_generation_log WHERE user_id = ?`,
-      [userId]
-    );
-
-    await conn.query(
-      `DELETE FROM signup_sessions
-       WHERE email = ?`,  
-      [email]
-    );
-
-    await conn.query(
-      `DELETE FROM user_subscriptions
-       WHERE user_id = ?`,
-      [userId]
-    );
-
-    await conn.query(
-      `DELETE FROM user_coins
-       WHERE user_id = ?`,
-      [userId]
-    );
-
-    /* ── Remaining tables that reference user_id — without these, a
-       users FK constraint would abort the whole deletion, and even
-       without one the rows would be left orphaned under a deleted user. ── */
-    await conn.query(`DELETE FROM coins_transactions WHERE user_id = ?`, [userId]);
-    await conn.query(`DELETE FROM user_activity_logs WHERE user_id = ?`, [userId]);
-    await conn.query(`DELETE FROM support_tickets WHERE user_id = ?`, [userId]);
-    await conn.query(`DELETE FROM uct_answers WHERE user_id = ?`, [userId]);
-    await conn.query(`DELETE FROM user_token_blacklist WHERE user_id = ?`, [userId]);
-    await conn.query(`DELETE FROM user_devices WHERE user_id = ?`, [userId]);
-    await conn.query(`DELETE FROM user_notifications WHERE user_id = ?`, [userId]);
-
-    await conn.query(
-      `DELETE FROM users
-       WHERE id = ?`,
-      [userId]
-    );
-
-    await conn.commit();
-
-    /* ── Send Account Deleted Email ── */
+  for (const { id: userId, email, fullname, country, timezone } of rows) {
+    const conn = await db.getConnection();
     try {
-      await sendNoreplyMail({
+      await conn.beginTransaction();
+
+      await conn.query(
+        `DELETE utp
+         FROM user_team_players utp
+         INNER JOIN user_teams ut ON ut.id = utp.user_team_id
+         WHERE ut.user_id = ?`,
+        [userId]
+      );
+      await conn.query(`DELETE FROM user_teams WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM match_generation_log WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM signup_sessions WHERE email = ?`, [email]);
+      await conn.query(`DELETE FROM user_subscriptions WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM user_coins WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM coins_transactions WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM user_activity_logs WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM support_tickets WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM uct_answers WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM user_token_blacklist WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM user_devices WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM user_notifications WHERE user_id = ?`, [userId]);
+      await conn.query(`DELETE FROM users WHERE id = ?`, [userId]);
+
+      await conn.commit();
+      console.log(`✅ [Cron] Permanently purged deleted account — userId:${userId}`);
+
+      sendNoreplyMail({
         to: email,
         subject: "Account Deleted Successfully - PICK2WIN",
-        html: accountDeletedEmailHtml({
-          fullname,
-          email,
-          country,
-          timezone,
-          deletionDateTime: new Date(),
-        }),
-      });
-
-      console.log(
-        `✅ Account deletion email sent to ${email}`
-      );
-    } catch (mailErr) {
-      console.error(
-        "❌ Account deletion email failed:",
-        mailErr.message
-      );
+        html: accountDeletedEmailHtml({ fullname, email, country, timezone, deletionDateTime: new Date() }),
+      }).catch((err) => console.error("Final deletion email failed:", err.message));
+    } catch (err) {
+      await conn.rollback().catch(() => {});
+      console.error(`❌ [Cron] Failed to purge deleted account userId:${userId}:`, err.message);
+    } finally {
+      conn.release();
     }
-
-    return {
-      success: true,
-      message:
-        "Account deleted successfully",
-    };
-  } catch (err) {
-    await conn.rollback().catch(() => {});
-    throw err;
-  } finally {
-    conn.release();
   }
+
+  return rows.length;
 };
     
