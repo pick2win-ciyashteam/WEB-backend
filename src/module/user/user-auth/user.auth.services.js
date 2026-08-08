@@ -533,9 +533,13 @@ export const logoutAllDevicesService = async (userId) => {
 };
 
 /* ══════════════════════════════════════════
-   REQUEST MOBILE CHANGE  (step 1 — OTP to the NEW mobile via Twilio Verify)
+   STAGE PROFILE UPDATE  (step 1 — OTP to the NEW mobile via Twilio Verify)
+   fullname/country ride along with the mobile instead of being written
+   straight away, so a profile can't end up half-updated when the user
+   never completes the OTP step — verifyProfileUpdateService commits all
+   three together.
 ══════════════════════════════════════════ */
-export const requestMobileChangeService = async (userId, { new_mobile }) => {
+export const stageProfileUpdateService = async (userId, { new_mobile, fullname, country }) => {
   const normalizedMobile = String(new_mobile).replace(/\D/g, "").trim();
 
   const [[existing]] = await db.execute(
@@ -548,20 +552,27 @@ export const requestMobileChangeService = async (userId, { new_mobile }) => {
 
   await db.execute(
     `UPDATE users
-     SET pending_mobile = ?, contact_change_type = 'mobile'
+     SET pending_mobile = ?, pending_fullname = ?, pending_country = ?,
+         contact_change_type = 'mobile'
      WHERE id = ?`,
-    [normalizedMobile, userId]
+    [
+      normalizedMobile,
+      fullname !== undefined ? String(fullname).trim() : null,
+      country  !== undefined ? String(country).trim()  : null,
+      userId,
+    ]
   );
 
   return { success: true, message: "OTP sent to your new mobile number" };
 };
 
 /* ══════════════════════════════════════════
-   VERIFY MOBILE CHANGE  (step 2 — confirm OTP, apply the pending mobile)
+   VERIFY PROFILE UPDATE  (step 2 — confirm OTP, commit every pending field)
 ══════════════════════════════════════════ */
-export const verifyMobileChangeService = async (userId, otp) => {
+export const verifyProfileUpdateService = async (userId, otp) => {
   const [[user]] = await db.execute(
-    `SELECT pending_mobile, contact_change_type FROM users WHERE id = ?`,
+    `SELECT pending_mobile, pending_fullname, pending_country, contact_change_type
+     FROM users WHERE id = ?`,
     [userId]
   );
 
@@ -578,14 +589,20 @@ export const verifyMobileChangeService = async (userId, otp) => {
   );
   if (existing) throw new Error("This mobile is already registered");
 
+  /* ── COALESCE keeps whatever is already stored when a staged field was
+     left out, so this never blanks an existing fullname/country. ── */
   await db.execute(
     `UPDATE users
-     SET mobile = ?, pending_mobile = NULL, contact_change_type = NULL
+     SET mobile   = ?,
+         fullname = COALESCE(?, fullname),
+         country  = COALESCE(?, country),
+         pending_mobile = NULL, pending_fullname = NULL, pending_country = NULL,
+         contact_change_type = NULL
      WHERE id = ?`,
-    [user.pending_mobile, userId]
+    [user.pending_mobile, user.pending_fullname, user.pending_country, userId]
   );
 
-  return { success: true, message: "Mobile number updated successfully" };
+  return { success: true, message: "Profile updated successfully" };
 };
 
 /* ══════════════════════════════════════════

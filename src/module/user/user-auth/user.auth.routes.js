@@ -43,10 +43,10 @@ router.get("/activity-logs", authenticate, c.getMyActivityLogs);
 router.post("/forgot-password",  authLimiter, v.forgotPassword,  c.forgotPassword);
 router.post("/reset-password",   authLimiter, v.resetPassword,   c.resetPassword);
 
-/* ── Change Mobile — initiating a mobile change now happens through
-   PATCH /update (send `mobile` in the body); this just confirms the
-   OTP (Twilio Verify) sent to the new number and applies the change. ── */
-router.post("/verify-mobile-change", authenticate, v.verifyMobileChange,  c.verifyMobileChange);
+/* ── Profile update step 2 — PATCH /update stages fullname/country/mobile
+   and sends an OTP (Twilio Verify) to the new number; this confirms that
+   OTP and commits all three staged fields at once. ── */
+router.post("/verify-profile-update", authenticate, v.verifyProfileUpdate, c.verifyProfileUpdate);
 
 /* ── Change Email — protected ── */
 router.post("/change-email",         authenticate, v.requestEmailChange,  c.requestEmailChange);

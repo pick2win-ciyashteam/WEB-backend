@@ -7,8 +7,8 @@ import {
   declineRestoreService,
   logoutService,
   logoutAllDevicesService,
-  requestMobileChangeService,
-  verifyMobileChangeService,
+  stageProfileUpdateService,
+  verifyProfileUpdateService,
   requestEmailChangeService,
   verifyOldEmailChangeService,
   verifyEmailChangeService,
@@ -21,7 +21,6 @@ import {
   
 import db from "../../../config/db.js";
 import { logUserActivity } from "../../../utils/activity.logger.js";
-import { isValidTimezone } from "../../../utils/mailer.js";
 
 const parseMetadata = (metadata) => {
   if (!metadata) return null;
@@ -342,67 +341,34 @@ const [[wallet]] = await db.execute(
 };
 
 /* ================= UPDATE PROFILE =================
-   mobile is handled specially: it can't be applied directly like the
-   other fields since it requires OTP verification (via Twilio Verify) —
-   this reuses the same requestMobileChangeService that used to sit
-   behind a standalone /change-mobile endpoint. Sending it here just
-   queues the change (pending_mobile + OTP dispatched); the existing
-   /verify-mobile-change endpoint is still what completes it. ── */
+   Nothing is written to the profile here — fullname, country and mobile
+   are all staged as pending_* values and an OTP goes to the new mobile.
+   /verify-profile-update is what commits all three at once, so the
+   profile can never end up partially filled when the user abandons the
+   OTP step. ── */
 export const updateProfile = async (req, res) => {
   try {
-    const ALLOWED = ["fullname", "country", "timezone"];
-    const sanitized = {};
+    const { fullname, country, mobile } = req.body;
 
-    for (const key of ALLOWED) {
-      if (req.body[key] !== undefined) sanitized[key] = req.body[key];
-    }
-
-    const mobileRequested = req.body.mobile !== undefined;
-
-    if (!Object.keys(sanitized).length && !mobileRequested) {
-      return res.status(400).json({
-        success: false,
-        message: "No valid fields to update",
-      });
-    }
-
-    if (sanitized.timezone !== undefined && !isValidTimezone(sanitized.timezone)) {
-      return res.status(400).json({
-        success: false,
-        message: "timezone must be a valid IANA timezone (e.g. America/New_York)",
-      });
-    }
-
-    if (Object.keys(sanitized).length) {
-      const setClauses = Object.keys(sanitized).map((k) => `${k} = ?`).join(", ");
-      const setValues  = Object.values(sanitized);
-
-      await db.execute(
-        `UPDATE users SET ${setClauses} WHERE id = ?`,
-        [...setValues, req.user.id]
-      );
-    }
-
-    /* ── Mobile change — queues an OTP instead of writing directly ── */
-    let mobileOtpSent = false;
-    if (mobileRequested) {
-      await requestMobileChangeService(req.user.id, { new_mobile: req.body.mobile });
-      mobileOtpSent = true;
-    }
+    await stageProfileUpdateService(req.user.id, {
+      new_mobile: mobile,
+      fullname,
+      country,
+    });
 
     await logUserActivity({
       userId: req.user.id,
       category: "profile",
-      action: "profile_updated",
-      details: `Updated fields: ${Object.keys(sanitized).join(", ") || "none"}${mobileOtpSent ? "; mobile change OTP sent" : ""}`,
+      action: "profile_update_requested",
+      details: "Profile update staged (fullname, country, mobile); OTP sent to new mobile",
       req,
-      metadata: { updated_fields: Object.keys(sanitized), mobile_otp_sent: mobileOtpSent },
+      metadata: { staged_fields: ["fullname", "country", "mobile"] },
     });
 
-    /* ── Return updated profile ── */
-    const [[updated]] = await db.execute(
+    const [[staged]] = await db.execute(
       `SELECT
-         id, fullname, email, mobile, pending_mobile,
+         id, fullname, email, mobile,
+         pending_fullname, pending_country, pending_mobile,
          country, timezone,
          email_verify,
          account_status, created_at
@@ -412,39 +378,40 @@ export const updateProfile = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: mobileOtpSent
-        ? "Profile updated. OTP sent to your new mobile number — verify it to complete the mobile change."
-        : "Profile updated successfully",
-      mobile_otp_sent: mobileOtpSent,
-      data: updated,
+      message: "OTP sent to your mobile number. Verify it to save your profile.",
+      otp_sent: true,
+      data: staged,
     });
-
-    /* ── Send profile updated notification email — only for the fields
-       that actually took effect immediately; the mobile OTP email/SMS
-       is already handled inside requestMobileChangeService. ── */
-    if (Object.keys(sanitized).length) {
-      await updateProfileService(updated).catch((err) => {
-        console.error("Profile update email failed:", err.message);
-      });
-    }
 
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
 };
 
-/* ================= VERIFY MOBILE CHANGE (step 2 — confirm OTP) ================= */
-export const verifyMobileChange = async (req, res) => {
+/* ================= VERIFY PROFILE UPDATE (step 2 — confirm OTP) ================= */
+export const verifyProfileUpdate = async (req, res) => {
   try {
-    const result = await verifyMobileChangeService(req.user.id, req.body.otp);
+    const result = await verifyProfileUpdateService(req.user.id, req.body.otp);
     await logUserActivity({
       userId: req.user.id,
       category: "profile",
-      action: "mobile_changed",
-      details: "User mobile number changed successfully",
+      action: "profile_updated",
+      details: "Profile committed after mobile OTP verification (fullname, country, mobile)",
       req,
     });
-    res.status(200).json(result);
+
+    /* ── The profile only actually changes at this point, so the
+       "profile updated" email belongs here rather than at staging time. ── */
+    const [[updated]] = await db.execute(
+      `SELECT id, fullname, email, mobile, country, timezone FROM users WHERE id = ?`,
+      [req.user.id]
+    );
+
+    res.status(200).json({ ...result, data: updated });
+
+    updateProfileService(updated).catch((err) => {
+      console.error("Profile update email failed:", err.message);
+    });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
