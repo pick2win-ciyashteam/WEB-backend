@@ -48,7 +48,7 @@ const todayDateString = () => {
   }).format(new Date());
 };
 
-/* ================= SIGNUP ================= */
+/* ================= SIGNUP =================== */
 export const signup = async (req, res) => {
   try {
     const result = await signupService(req.body);
