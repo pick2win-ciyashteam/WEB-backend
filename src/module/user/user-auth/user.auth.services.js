@@ -1,6 +1,4 @@
-
-
-// user.auth.service.js  
+// user.auth.service.js     
 
 import crypto    from "crypto";
 import { hash as bcryptHash, compare as bcryptCompare } from "@node-rs/bcrypt";
@@ -31,7 +29,7 @@ const issueLoginResponse = (user, message = "Login successful") => {
     { id: user.id, email: user.email, type: "user" },
     process.env.JWT_SECRET,
     { algorithm: "HS256", expiresIn: process.env.JWT_EXPIRES_IN || "1d" }
-  ); 
+  );    
 
   return {
     success: true,

@@ -8,4 +8,4 @@ const router = Router();
 router.get("/get-all",           getActiveCountries);
 router.get("/:name",     getCountryByName);
 
-export default router;  
+export default router;      
