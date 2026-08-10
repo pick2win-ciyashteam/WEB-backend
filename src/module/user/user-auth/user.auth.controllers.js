@@ -187,7 +187,8 @@ export const getProfile = async (req, res) => {
      u.mobile,
      u.country,
      u.timezone,
-     u.email_verify,
+  u.email_verify,
+  u.mobile_verify,
      u.account_status,
      u.created_at,
      u.tokens_invalidated_at,
@@ -295,6 +296,7 @@ const [[wallet]] = await db.execute(
         fullname:       user.fullname,
         email:          user.email,
         mobile:         user.mobile,
+        mobile_verify:  user.mobile_verify,
         country:        user.country,
         timezone:       user.timezone,
         email_verify:   user.email_verify,
@@ -371,6 +373,7 @@ export const updateProfile = async (req, res) => {
          pending_fullname, pending_country, pending_mobile,
          country, timezone,
          email_verify,
+         mobile_verify,
          account_status, created_at
        FROM users WHERE id = ?`,
       [req.user.id]
@@ -403,7 +406,7 @@ export const verifyProfileUpdate = async (req, res) => {
     /* ── The profile only actually changes at this point, so the
        "profile updated" email belongs here rather than at staging time. ── */
     const [[updated]] = await db.execute(
-      `SELECT id, fullname, email, mobile, country, timezone FROM users WHERE id = ?`,
+      `SELECT id, fullname, email, mobile, country, timezone, mobile_verify FROM users WHERE id = ?`,
       [req.user.id]
     );
 

@@ -1,6 +1,6 @@
 import * as s from "./banners.service.js";
 import { logAdminActivity } from "../../../utils/activity.logger.js";
-
+  
 export const addBanner = async (req, res) => {
   try {
     const result = await s.addBannerService(req.body);

@@ -12,4 +12,4 @@ router.patch("/:id", adminLimiter, adminAuth(["super_admin"]), countryValidation
 router.delete("/:id", adminLimiter, adminAuth(["super_admin"]), countryController.deleteCountry);
 router.patch("/:id/toggle", adminLimiter, adminAuth(["super_admin"]), countryController.toggleCountry);
 
-export default router;
+export default router;   

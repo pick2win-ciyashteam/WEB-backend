@@ -41,6 +41,7 @@ const issueLoginResponse = (user, message = "Login successful") => {
       email:          user.email,
       mobile:         user.mobile,
       email_verify:   user.email_verify,
+      mobile_verify:  user.mobile_verify,
       account_status: "active",
     },
   };
@@ -277,8 +278,8 @@ const completeRegistration = async (sessionId) => {
   const [result] = await db.execute(
     `INSERT INTO users
        (fullname, email, mobile, country, timezone, password,
-        account_status, email_verify)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', 1)`,
+        account_status, email_verify, mobile_verify)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', 1, 0)`,
     [session.fullname, session.email, session.mobile,
      session.country, session.timezone, session.password]
   );
@@ -357,7 +358,7 @@ const completeRegistration = async (sessionId) => {
 export const loginService = async ({ email, password }) => {
   const [[user]] = await db.execute(
     `SELECT id, fullname, email, mobile, password,
-            account_status, deleted_at, email_verify
+            account_status, deleted_at, email_verify, mobile_verify
      FROM users WHERE email = ? LIMIT 1`,
     [email.trim().toLowerCase()]
   );
@@ -399,7 +400,7 @@ export const loginService = async ({ email, password }) => {
 export const restoreAccountService = async ({ email, password }) => {
   const [[user]] = await db.execute(
     `SELECT id, fullname, email, mobile, password,
-            account_status, deleted_at, email_verify
+            account_status, deleted_at, email_verify, mobile_verify
      FROM users WHERE email = ? LIMIT 1`,
     [email.trim().toLowerCase()]
   );
@@ -594,6 +595,7 @@ export const verifyProfileUpdateService = async (userId, otp) => {
      SET mobile   = ?,
          fullname = COALESCE(?, fullname),
          country  = COALESCE(?, country),
+         mobile_verify = 1,
          pending_mobile = NULL, pending_fullname = NULL, pending_country = NULL,
          contact_change_type = NULL
      WHERE id = ?`,
