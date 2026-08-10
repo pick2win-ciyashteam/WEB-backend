@@ -10,7 +10,7 @@ import depositeRoutes     from "../user/deposite/deposite.route.js";
 import lineupRoutes      from "./lineup/lineup.route.js";
 import teamsRoutes       from "./teams/teams.route.js";
 import supportUserRoutes from "../admin/support/user.support.route.js" 
-
+   
 const router = Router();
 
 router.use("/user-auth",   userAuthRoutes);
