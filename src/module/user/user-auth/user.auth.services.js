@@ -73,14 +73,14 @@ export const signupService = async (data) => {
   /* ── Already Registered Check ── */
   const [emailResult, mobileResult] = await Promise.all([
     db.execute(
-      `SELECT id, account_status
+      `SELECT id, account_status, deleted_at
        FROM users
        WHERE LOWER(email) = LOWER(?)`,
       [normalizedEmail]
     ),
     normalizedMobile
       ? db.execute(
-          `SELECT id, account_status
+          `SELECT id, account_status, deleted_at
            FROM users
            WHERE mobile = ?`,
           [normalizedMobile]
@@ -92,19 +92,31 @@ export const signupService = async (data) => {
   const mobileUser = mobileResult[0][0];
 
   if (emailUser) {
-    throw new Error(
-      emailUser.account_status === "deleted"
-        ? "This email was previously deleted. Contact support."
-        : "Email already registered"
-    );
+    if (emailUser.account_status === "deleted") {
+      const deletionDate = new Date(
+        new Date(emailUser.deleted_at).getTime() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+      );
+      const err = new Error("Your account has been deleted. If you want to continue, please login to restore it.");
+      err.accountDeleted = true;
+      err.deletionDate = deletionDate.toISOString();
+      throw err;
+    }
+
+    throw new Error("Email already registered");
   }
 
   if (mobileUser) {
-    throw new Error(
-      mobileUser.account_status === "deleted"
-        ? "This mobile was previously deleted. Contact support."
-        : "Mobile already registered"
-    );
+    if (mobileUser.account_status === "deleted") {
+      const deletionDate = new Date(
+        new Date(mobileUser.deleted_at).getTime() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+      );
+      const err = new Error("Your account has been deleted. If you want to continue, please login to restore it.");
+      err.accountDeleted = true;
+      err.deletionDate = deletionDate.toISOString();
+      throw err;
+    }
+
+    throw new Error("Mobile already registered");
   }
 
   /* ── Password Strength Check ── */
@@ -366,17 +378,25 @@ export const loginService = async ({ email, password }) => {
   if (!user) throw new Error("User not found. Please signup");
 
   if (user.account_status === "deleted") {
-    /* ── Account is within its 30-day soft-delete grace period — the
-       frontend uses accountDeleted/deletionDate to show a "Restore
-       Account?" prompt instead of a dead-end error. ── */
-    const deletionDate = new Date(
-      new Date(user.deleted_at).getTime() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+    const deletionDateMs = new Date(user.deleted_at).getTime() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
+    if (Date.now() > deletionDateMs) {
+      throw new Error("The restore window for this account has expired. Please contact support.");
+    }
+
+    const isMatch = await bcryptCompare(password, user.password);
+    if (!isMatch) throw new Error("Invalid password or wrong password. Please try again.");
+
+    await db.execute(
+      `UPDATE users SET account_status = 'active', deleted_at = NULL WHERE id = ?`,
+      [user.id]
     );
-    const err = new Error("Your account is scheduled for deletion. Restore it to continue.");
-    err.accountDeleted = true;
-    err.deletionDate = deletionDate.toISOString();
-    throw err;
+
+    db.execute(`UPDATE users SET updated_at = NOW() WHERE id = ?`, [user.id])
+      .catch((err) => console.error("Failed to update last-login timestamp:", err.message));
+
+    return issueLoginResponse({ ...user, account_status: "active" }, "Account restored successfully. Welcome back!");
   }
+
   if (user.account_status === "blocked")
     throw new Error("Your account has been blocked. Contact support.");
 
