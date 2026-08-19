@@ -3178,7 +3178,7 @@ export const getFyProfit = async (req, res) => {
     let fyRevUsd  = 0;
     let fyExpInr  = 0;
     let fyExpUsd  = 0;
-    let fyProfUsd = 0;
+    let fyProfUsd = 0;   
 
     const now2 = new Date();
     const currentM = now2.getMonth() + 1;

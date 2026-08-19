@@ -13,7 +13,7 @@ import {
 const router = Router();
 
 /* ────────────────── COINS PURCHASE ────────────────── */
-router.post("/buy-coins",      authenticate, createCoinsPayment);   // create order
+// router.post("/buy-coins",      authenticate, createCoinsPayment);   // create order
 router.post("/verify-payment", authenticate, verifyCoinsPayment);   // verify & credit coins (automatic)
 router.get ("/razorpay/config", authenticate, getRazorpayConfig);   // key_id for frontend
 
