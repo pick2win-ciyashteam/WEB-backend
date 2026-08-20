@@ -1,5 +1,22 @@
 import db from "../../../config/db.js";
 
+/* IST-pinned "today" — avoids new Date().toISOString() landing on the
+   previous calendar date for ~5.5 hours every day (00:00-05:29 IST). */
+const todayDateString = () => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+};
+
+const addDaysToDateString = (dateString, days) => {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+};
+
 /* ═══════════════════════════════════════════════════
    TEAMS GENERATION REPORT - Comprehensive Analytics
    GET /admin/reports/teams-analytics
@@ -71,7 +88,7 @@ export const getTeamsGenerationReport = async (req, res) => {
          COUNT(mgl.id)           AS total_teams_generated,
          COUNT(DISTINCT mgl.user_id) AS unique_users,
          COUNT(DISTINCT COALESCE(mgl.game, 'football')) AS game_types,
-         COUNT(mgl.id)            AS total_coins_spent
+         SUM(CASE WHEN mgl.status = 'success' THEN 1 ELSE 0 END) AS total_coins_spent
        FROM match_generation_log mgl
        JOIN matches m ON m.id = mgl.match_id
        WHERE mgl.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
@@ -92,7 +109,7 @@ export const getTeamsGenerationReport = async (req, res) => {
          COUNT(mgl.id)        AS teams_generated,
          COUNT(DISTINCT mgl.match_id) AS matches_played,
          COUNT(DISTINCT COALESCE(mgl.game, 'football')) AS games_used,
-         COUNT(mgl.id)         AS total_coins_spent,
+         SUM(CASE WHEN mgl.status = 'success' THEN 1 ELSE 0 END) AS total_coins_spent,
          MAX(mgl.created_at)  AS last_generation
        FROM match_generation_log mgl
        JOIN users u ON u.id = mgl.user_id
@@ -124,7 +141,8 @@ export const getTeamsGenerationReport = async (req, res) => {
       `SELECT
          DATE(created_at) AS date,
          COUNT(*)         AS generations,
-         COUNT(DISTINCT user_id) AS users
+         COUNT(DISTINCT user_id) AS users,
+         SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS coins_spent
        FROM match_generation_log
        WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
        GROUP BY DATE(created_at)
@@ -152,7 +170,7 @@ export const getTeamsGenerationReport = async (req, res) => {
          u.country,
          COUNT(DISTINCT mgl.user_id) AS users,
          COUNT(mgl.id)               AS teams_generated,
-         COUNT(mgl.id)                AS total_coins
+         SUM(CASE WHEN mgl.status = 'success' THEN 1 ELSE 0 END) AS total_coins
        FROM match_generation_log mgl
        JOIN users u ON u.id = mgl.user_id
        WHERE mgl.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
@@ -167,8 +185,8 @@ export const getTeamsGenerationReport = async (req, res) => {
     res.status(200).json({
       success: true,
       period_days: days,
-      period_from: new Date(new Date().setDate(new Date().getDate() - days)).toISOString().split('T')[0],
-      period_to: new Date().toISOString().split('T')[0],
+      period_from: addDaysToDateString(todayDateString(), -days),
+      period_to: todayDateString(),
 
       overall_stats: {
         total_generations: Number(overallStats.total_generations) || 0,
@@ -238,7 +256,7 @@ export const getTeamsGenerationReport = async (req, res) => {
         date: d.date,
         generations: Number(d.generations),
         users: Number(d.users),
-        coins_spent: Number(d.generations) || 0,
+        coins_spent: Number(d.coins_spent) || 0,
       })),
     });
 
@@ -289,7 +307,7 @@ export const getMatchTeamsReport = async (req, res) => {
          COUNT(*) AS total_teams,
          COUNT(DISTINCT user_id) AS unique_users,
          COUNT(DISTINCT COALESCE(game, 'football')) AS game_types,
-         COUNT(*) AS total_coins_spent
+         SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS total_coins_spent
        FROM match_generation_log
        WHERE match_id = ?`,
       [matchId]
@@ -316,7 +334,7 @@ export const getMatchTeamsReport = async (req, res) => {
         fullname: t.fullname,
         country: t.country,
         game: t.game,
-        coins_spent: 1,
+        coins_spent: t.status === "success" ? 1 : 0,
         status: t.status,
         created_at: t.created_at,
       })),

@@ -335,6 +335,13 @@ export const verifyCoinsPayment = async (req, res) => {
         message: "Amount mismatch — payment does not match plan price",
       });
 
+    /* ── ✅ FIX: ఈ payment నిజంగా ఈ logged-in user దే అని Razorpay notes
+       (order create చేసినప్పుడు పెట్టిన notes.userId) తో verify చేయాలి —
+       లేకపోతే వేరే user పొందిన razorpay_order_id/payment_id/signature ని
+       ఎవరైనా తమ token తో submit చేసి ఆ coins తమకే credit చేసుకోగలరు. ── */
+    if (String(paymentDetails.notes?.userId) !== String(req.user.id))
+      return res.status(403).json({ success: false, message: "Payment does not belong to this user" });
+
     const userId    = req.user.id;
     let parsedCoins  = Number(coins);
     let parsedAmount = Number(amount) / 100; // cents → USD (loop లో plan నుండి overwrite అవుతుంది)

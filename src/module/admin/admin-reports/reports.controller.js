@@ -69,6 +69,13 @@ export const getDashboardReport = async (req, res) => {
          AND expiry_date > NOW()`
     );
 
+    /* ── NOTE: "idle_no_pack" here means NEVER purchased any pack (no
+       user_subscriptions row at all, ever) — matches Countries report's
+       "no_pack". This is a different metric from the Users List page's
+       "idle" filter/KPI, which means "no CURRENTLY active pack" and also
+       includes users whose pack expired. Don't compare these two numbers
+       across pages expecting them to match — they measure different
+       things by design. ── */
     const [[idleNoPack]] = await db.execute(
       `SELECT COUNT(*) AS total
        FROM users u
@@ -354,8 +361,11 @@ export const getUsersList = async (req, res) => {
       search  = "",
     } = req.query;
 
-    const limitNum  = Number(limit);
-    const offsetNum = (Number(page) - 1) * limitNum;
+    /* ── ✅ FIX: unclamped limit/page (e.g. limit=0) produced
+       total_pages: Infinity and an empty result set. ── */
+    const pageNum   = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum  = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+    const offsetNum = (pageNum - 1) * limitNum;
 
     const conditions = [];
     const params      = [];
@@ -373,7 +383,9 @@ export const getUsersList = async (req, res) => {
       params.push(country);
     }
 
-    /* pack status (active = has a currently-valid pack, idle = no pack) */
+    /* pack status (active = has a currently-valid pack, idle = no CURRENTLY
+       active pack — includes users whose pack expired; this is a looser
+       definition than Dashboard/Countries' "no pack" = never purchased) */
     if (status === "active") {
       conditions.push(
         `CAST(u.account_status AS CHAR) != 'deleted'
@@ -435,7 +447,13 @@ export const getUsersList = async (req, res) => {
       params
     );
 
-    /* ── KPI cards ── */
+    /* ── KPI cards ──
+       NOTE: "idle_users" = no CURRENTLY active/unexpired pack (includes
+       users whose pack expired) — different from Dashboard/Countries'
+       "idle_no_pack"/"no_pack", which mean NEVER purchased any pack at
+       all. "never_purchased" below is added so this page can also show
+       that stricter metric without the two pages' numbers looking like
+       they disagree. ── */
     const [[kpis]] = await db.execute(
       `SELECT
          COUNT(*)                                                                    AS total_users,
@@ -449,7 +467,12 @@ export const getUsersList = async (req, res) => {
                AND NOT EXISTS (
                  SELECT 1 FROM user_subscriptions us
                  WHERE us.user_id = users.id AND us.status = 'active' AND us.expiry_date > NOW()
-               ) THEN 1 ELSE 0 END)                                                  AS idle_users
+               ) THEN 1 ELSE 0 END)                                                  AS idle_users,
+         SUM(CASE WHEN CAST(account_status AS CHAR) != 'deleted'
+               AND NOT EXISTS (
+                 SELECT 1 FROM user_subscriptions us
+                 WHERE us.user_id = users.id
+               ) THEN 1 ELSE 0 END)                                                  AS never_purchased
        FROM users`
     );
 
@@ -459,11 +482,12 @@ export const getUsersList = async (req, res) => {
         total_users:     Number(kpis.total_users),
         active_accounts: Number(kpis.active_accounts),
         idle_users:       Number(kpis.idle_users),
+        never_purchased:  Number(kpis.never_purchased),
         deleted:          Number(kpis.deleted),
       },
       pagination: {
         total:       Number(total),
-        page:        Number(page),
+        page:        pageNum,
         limit:       limitNum,
         total_pages: Math.ceil(Number(total) / limitNum),
       },
@@ -645,7 +669,10 @@ export const getCoinExpiry = async (req, res) => {
 export const getCountriesReport = async (req, res) => {
   try {
  
-    /* ── Per-country breakdown: total / active (purchased) / idle (no pack) ── */
+    /* ── Per-country breakdown: total / active (purchased) / idle (no pack)
+       NOTE: "no_pack" = NEVER purchased any pack (matches Dashboard's
+       "idle_no_pack"), not the same metric as Users List's "idle" filter
+       (no CURRENTLY active pack, includes expired). ── */
     const [countries] = await db.execute(
       `SELECT
          u.country,
@@ -733,7 +760,10 @@ export const getUctOverview = async (req, res) => {
     if (date && !datePattern.test(String(date))) {
       return res.status(400).json({ success: false, message: "date must be in YYYY-MM-DD format" });
     }
-    const targetDate = date || new Date().toISOString().slice(0, 10);
+    /* ── ✅ FIX: default (no ?date=) previously used toISOString(), which
+       is UTC and lands on the wrong calendar date for ~5.5 hours every day
+       (00:00-05:29 IST) — use the IST-pinned helper instead. ── */
+    const targetDate = date || todayDateString();
 
     /* ── KPI: UCTs used, teams generated, active fixtures, failed/refunded ── */
     const [[kpi]] = await db.execute(
@@ -1035,23 +1065,32 @@ export const getUctActivityList = async (req, res) => {
       limit      = 20,
     } = req.query;
 
-    const limitNum  = Number(limit);
-    const offsetNum = (Number(page) - 1) * limitNum;
+    const pageNum   = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum  = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offsetNum = (pageNum - 1) * limitNum;
 
-    /* ── Resolve date range based on period ── */
+    /* ── Resolve date range based on period ──
+       ✅ FIX: "today"/"month"/"fy" ranges previously used
+       `new Date().toISOString()`, which renders in UTC — for ~5.5 hours
+       every day (00:00-05:29 IST), UTC is still on the PREVIOUS calendar
+       date, so this silently showed yesterday's (often empty) data as
+       "today" during that window. Using the existing IST-pinned
+       todayDateString() helper (already used elsewhere in this file)
+       removes the Node-process-timezone dependency entirely. ── */
     let rangeStart, rangeEnd;
-    const today = new Date();
+    const todayStr = todayDateString();
+    const [todayY, todayM] = todayStr.split("-").map(Number);
 
     if (period === "today") {
-      rangeStart = rangeEnd = today.toISOString().slice(0, 10);
+      rangeStart = rangeEnd = todayStr;
     } else if (period === "month") {
-      rangeStart = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-      rangeEnd   = today.toISOString().slice(0, 10);
+      rangeStart = `${todayY}-${String(todayM).padStart(2, "0")}-01`;
+      rangeEnd   = todayStr;
     } else if (period === "fy") {
       /* Indian FY: Apr 1 - Mar 31 */
-      const fyStartYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
+      const fyStartYear = todayM >= 4 ? todayY : todayY - 1;
       rangeStart = `${fyStartYear}-04-01`;
-      rangeEnd   = today.toISOString().slice(0, 10);
+      rangeEnd   = todayStr;
     } else if (period === "custom") {
       if (!start_date || !end_date) {
         return res.status(400).json({ success: false, message: "start_date and end_date required for custom period" });
@@ -1224,7 +1263,7 @@ export const getUctActivityList = async (req, res) => {
 
       pagination: {
         total:       Number(genTotal),
-        page:        Number(page),
+        page:        pageNum,
         limit:       limitNum,
         total_pages: Math.ceil(Number(genTotal) / limitNum),
       },
@@ -1394,8 +1433,9 @@ export const getVotesSurveySummary = async (req, res) => {
 export const getVotesSurveyList = async (req, res) => {
   try {
     const { vote = "", page = 1, limit = 20 } = req.query;
-    const limitNum  = Number(limit);
-    const offsetNum = (Number(page) - 1) * limitNum;
+    const pageNum   = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum  = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offsetNum = (pageNum - 1) * limitNum;
 
     const conditions = [];
     const params      = [];
@@ -1443,7 +1483,7 @@ export const getVotesSurveyList = async (req, res) => {
       success: true,
       pagination: {
         total:       Number(total),
-        page:        Number(page),
+        page:        pageNum,
         limit:       limitNum,
         total_pages: Math.ceil(Number(total) / limitNum),
       },
@@ -1580,8 +1620,9 @@ export const getDetailedFeedbackSummary = async (req, res) => {
 export const getDetailedFeedbackList = async (req, res) => {
   try {
     const { status = "", page = 1, limit = 20 } = req.query;
-    const limitNum  = Number(limit);
-    const offsetNum = (Number(page) - 1) * limitNum;
+    const pageNum   = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum  = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offsetNum = (pageNum - 1) * limitNum;
 
     const conditions = ["f.user_id IS NOT NULL"];
     const params      = [];
@@ -1631,7 +1672,7 @@ export const getDetailedFeedbackList = async (req, res) => {
       success: true,
       pagination: {
         total:       Number(total),
-        page:        Number(page),
+        page:        pageNum,
         limit:       limitNum,
         total_pages: Math.ceil(Number(total) / limitNum),
       },
@@ -1860,14 +1901,25 @@ export const getCoinPackPurchases = async (req, res) => {
 export const getCoinPackPurchasesByCountry = async (req, res) => {
   try {
     const { country = "", period = "monthly", month, year } = req.query;
- 
+
+    /* ── ✅ FIX: invalid period was silently falling into the "monthly"
+       branch and returning monthly data mislabeled as whatever the caller
+       sent (matches the validation already present in getCoinPackPurchases). ── */
+    const validPeriods = ["today", "monthly", "yearly"];
+    if (!validPeriods.includes(period)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid period. Allowed: ${validPeriods.join(", ")}`,
+      });
+    }
+
     const today = new Date();
     const targetMonth = month ? Number(month) : today.getMonth() + 1;
     const targetYear  = year  ? Number(year)  : today.getFullYear();
- 
+
     let dateCondition;
     const dateParams = [];
- 
+
     if (period === "today") {
       dateCondition = `DATE(us.created_at) = CURDATE()`;
     } else if (period === "yearly") {
@@ -2331,8 +2383,9 @@ export const getActivityLog = async (req, res) => {
       });
     }
 
-    const limitNum  = Number(limit);
-    const offsetNum = (Number(page) - 1) * limitNum;
+    const pageNum   = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum  = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offsetNum = (pageNum - 1) * limitNum;
 
     /* ── KPI cards ── */
     const [[kpi]] = await db.execute(
@@ -2390,7 +2443,7 @@ export const getActivityLog = async (req, res) => {
 
       pagination: {
         total:       Number(total),
-        page:        Number(page),
+        page:        pageNum,
         limit:       limitNum,
         total_pages: Math.ceil(Number(total) / limitNum),
       },
@@ -2842,7 +2895,6 @@ export const getExpensesByMonth = async (req, res) => {
     const targetYear   = year  ? Number(year)  : now.getFullYear();
 
     const fyStartYear  = targetMonth >= 4 ? targetYear : targetYear - 1;
-    const { start: fyStart, end: fyEnd } = getFyRange(fyStartYear);  
     const fyLabel = `FY ${fyStartYear}-${String(fyStartYear + 1).slice(2)}`;
 
     /* ── Categories ── */
@@ -2864,12 +2916,16 @@ export const getExpensesByMonth = async (req, res) => {
     );
 
     /* ── FY totals per category + role ── */
+    /* ── ✅ FIX: FY గా group చేసేది entry ఏ నెలకి సంబంధించినదో (month/year
+       columns) బట్టి, entry ఎప్పుడు add చేశారో (created_at) బట్టి కాదు —
+       లేకపోతే ఇదే డేటా getFyProfit/getProfitStatement లో వేరే FY total
+       చూపిస్తుంది (ఆ రెండూ month/year columns వాడతాయి). ── */
     const [fyEntries] = await db.execute(
       `SELECT category_id, role_id, SUM(amount_inr) AS fy_total
        FROM expense_entries
-       WHERE created_at >= ? AND created_at < ?
+       WHERE (year = ? AND month >= 4) OR (year = ? AND month <= 3)
        GROUP BY category_id, role_id`,
-      [fyStart, fyEnd]
+      [fyStartYear, fyStartYear + 1]
     );
 
     /* ── Build lookup maps ── */
@@ -2986,15 +3042,17 @@ export const getExpensesFyReport = async (req, res) => {
     const { start: fyStart, end: fyEnd } = getFyRange(fyStartYear);
     const fyLabel = `FY ${fyStartYear}-${String(fyStartYear + 1).slice(2)}`;
 
+    /* ── ✅ FIX: month/year logical columns వాడాలి, created_at కాదు —
+       getExpensesByMonth తో అదే source of truth (see fix there). ── */
     const [fyTotals] = await db.execute(
       `SELECT ec.id, ec.name, ec.frequency, ec.is_auto,
               COALESCE(SUM(ee.amount_inr), 0) AS fy_total_inr
        FROM expense_categories ec
        LEFT JOIN expense_entries ee ON ee.category_id = ec.id
-         AND ee.created_at >= ? AND ee.created_at < ?
+         AND ((ee.year = ? AND ee.month >= 4) OR (ee.year = ? AND ee.month <= 3))
        GROUP BY ec.id, ec.name, ec.frequency, ec.is_auto
        ORDER BY fy_total_inr DESC`,
-      [fyStart, fyEnd]
+      [fyStartYear, fyStartYear + 1]
     );
 
     const grandTotal = fyTotals.reduce((s, c) => s + Number(c.fy_total_inr), 0);
@@ -3606,8 +3664,9 @@ export const getTransactionLog = async (req, res) => {
     const now         = new Date();
     const targetMonth = month ? Number(month) : now.getMonth() + 1;
     const targetYear  = year  ? Number(year)  : now.getFullYear();
-    const limitNum    = Number(limit);
-    const offsetNum   = (Number(page) - 1) * limitNum;
+    const pageNum     = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum    = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offsetNum   = (pageNum - 1) * limitNum;
 
     const fyStartYear = targetMonth >= 4 ? targetYear : targetYear - 1;
     const { start: fyStart, end: fyEnd } = getFyRange(fyStartYear);
@@ -3741,7 +3800,7 @@ export const getTransactionLog = async (req, res) => {
 
       pagination: {
         total:       Number(total),
-        page:        Number(page),
+        page:        pageNum,
         limit:       limitNum,
         total_pages: Math.ceil(Number(total) / limitNum),
       },

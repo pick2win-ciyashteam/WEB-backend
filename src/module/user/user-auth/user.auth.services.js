@@ -375,7 +375,11 @@ export const loginService = async ({ email, password }) => {
     [email.trim().toLowerCase()]
   );
 
-  if (!user) throw new Error("User not found. Please signup");
+  /* ── ✅ FIX: registered vs unregistered email కి identical error —
+     "User not found" vs "Invalid password" అనేది login user-enumeration
+     కి దారి తీసేది (Burp తో కనిపెట్టిన bug, forgot-password Finding 2 తో
+     అదే class). ── */
+  if (!user) throw new Error("Invalid email or password");
 
   if (user.account_status === "deleted") {
     const deletionDateMs = new Date(user.deleted_at).getTime() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
@@ -384,7 +388,7 @@ export const loginService = async ({ email, password }) => {
     }
 
     const isMatch = await bcryptCompare(password, user.password);
-    if (!isMatch) throw new Error("Invalid password or wrong password. Please try again.");
+    if (!isMatch) throw new Error("Invalid email or password");
 
     await db.execute(
       `UPDATE users SET account_status = 'active', deleted_at = NULL WHERE id = ?`,
@@ -403,7 +407,7 @@ export const loginService = async ({ email, password }) => {
   if (user.email_verify !== 1) throw new Error("Please verify your email first.");
 
   const isMatch = await bcryptCompare(password, user.password);
-  if (!isMatch) throw new Error("Invalid password or wrong password. Please try again.");
+  if (!isMatch) throw new Error("Invalid email or password");
 
   // Best-effort last-seen timestamp — not needed to answer the client, so
   // it runs in the background instead of holding a DB connection on the
@@ -425,11 +429,11 @@ export const restoreAccountService = async ({ email, password }) => {
     [email.trim().toLowerCase()]
   );
 
-  if (!user) throw new Error("User not found. Please signup");
+  if (!user) throw new Error("Invalid email or password");
   if (user.account_status !== "deleted") throw new Error("This account is not scheduled for deletion.");
 
   const isMatch = await bcryptCompare(password, user.password);
-  if (!isMatch) throw new Error("Invalid password or wrong password. Please try again.");
+  if (!isMatch) throw new Error("Invalid email or password");
 
   const deletionDate = new Date(user.deleted_at).getTime() + DELETION_GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000;
   if (Date.now() > deletionDate) {
@@ -454,11 +458,11 @@ export const declineRestoreService = async ({ email, password }) => {
     [email.trim().toLowerCase()]
   );
 
-  if (!user) throw new Error("User not found. Please signup");
+  if (!user) throw new Error("Invalid email or password");
   if (user.account_status !== "deleted") throw new Error("This account is not scheduled for deletion.");
 
   const isMatch = await bcryptCompare(password, user.password);
-  if (!isMatch) throw new Error("Invalid password or wrong password. Please try again.");
+  if (!isMatch) throw new Error("Invalid email or password");
 
   return { success: true, message: "Account deletion remains scheduled.", userId: user.id };
 };
@@ -797,8 +801,14 @@ export const verifyEmailChangeService = async (userId, otp) => {
     [normalizedEmail]
   );
 
+  /* ── ✅ FIX: registered vs unregistered email కి identical response —
+     లేకపోతే response తేడా (error vs success) ద్వారా account enumeration
+     సాధ్యమయ్యేది (pentest Finding 2). ── */
   if (!user) {
-    throw new Error("No account found with this email");
+    return {
+      success: true,
+      message: "If an account exists for this email, an OTP has been sent",
+    };
   }
 
   const otp = generateOtp();
@@ -835,7 +845,7 @@ export const verifyEmailChangeService = async (userId, otp) => {
 
   return {
     success: true,
-    message: "OTP sent to your email",
+    message: "If an account exists for this email, an OTP has been sent",
     ...(process.env.EXPOSE_OTP === "true" && { otp }),
   };
 };

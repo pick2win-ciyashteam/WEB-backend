@@ -775,10 +775,16 @@ export const deleteNotification = async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
 
-    await db.execute(
+    const [result] = await db.execute(
       `DELETE FROM user_notifications WHERE id = ? AND user_id = ?`,
       [id, userId]
     );
+
+    /* ── ✅ FIX: id వేరే user దైనా leda లేకపోయినా (affectedRows === 0)
+       ఇంతకుముందు unconditional గా success చెప్పేది (pentest Finding 5). ── */
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "Notification not found" });
+    }
 
     return res.status(200).json({ success: true, message: "Notification deleted" });
   } catch (err) {

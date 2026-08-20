@@ -36,7 +36,11 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error("Not allowed by CORS"));
+      /* ── ✅ FIX: status:403 తో error throw చేయాలి, లేకపోతే global error
+         handler దీన్ని 500గా చూపేది (pentest Finding 6) ── */
+      const corsError = new Error("Not allowed by CORS");
+      corsError.status = 403;
+      callback(corsError);
     }
   },
   methods:              ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -53,10 +57,14 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(err.status || 500).json({
-    success: false,
-    message: process.env.NODE_ENV === "production" ? "Internal server error" : err.message,
-  });
+  const status = err.status || 500;
+  /* ── Known, intentional client-facing rejections (status already set,
+     e.g. the CORS check above) keep their real message even in production;
+     only unexpected 500s get the generic message. ── */
+  const message = status !== 500 || process.env.NODE_ENV !== "production"
+    ? err.message
+    : "Internal server error";
+  res.status(status).json({ success: false, message });
 });
 
 export default app;

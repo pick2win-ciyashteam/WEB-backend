@@ -5,6 +5,7 @@
     "dev": "cross-env NODE_ENV=development nodemon server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
     "@node-rs/bcrypt": "^1.10.7",
     "axios": "^1.16.1",
     "cors": "^2.8.6",
