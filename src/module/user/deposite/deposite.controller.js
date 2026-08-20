@@ -14,13 +14,58 @@ const razorpay = new Razorpay({
 });
 
 /* ================= CREATE COINS ORDER ================= */
+// export const createCoinsPayment = async (req, res) => {
+//   try {
+//     const userId = req.user.id;
+//     const { plan_id, amount, coins } = req.body;
+
+//     if (!plan_id || !amount || !coins)
+//       return res.status(400).json({ success: false, message: "plan_id, amount, coins required" });
+
+//     const [[plan]] = await db.execute(
+//       `SELECT id, coins, price, name FROM subscription_plans WHERE id = ? AND is_active = 1`,
+//       [plan_id]
+//     );
+//     if (!plan)
+//       return res.status(400).json({ success: false, message: "Invalid plan" });
+
+//     const amountPaise = Math.round(Number(amount) * 100); // USD cents (Razorpay's smallest-unit param name is "paise" regardless of currency)
+//     if (amountPaise < 100)
+//       return res.status(400).json({ success: false, message: "Minimum amount is $1" });
+
+//     const order = await razorpay.orders.create({
+//       amount: amountPaise,
+//       currency: "USD",
+//       receipt:  `receipt_${userId}_${plan_id}_${Date.now()}`,
+//       notes: {
+//         userId:  String(userId),
+//         plan_id: String(plan_id),
+//         coins:   String(coins),
+//         type:    "coins_purchase",
+//       },
+//     });
+
+//     res.status(200).json({
+//       success:  true,
+//       order_id: order.id,
+//       amount:   order.amount,
+//       currency: order.currency,
+//       key_id:   process.env.RAZORPAY_KEY_ID,
+//     });
+
+//   } catch (err) {
+//     console.error("❌ createCoinsPayment:", err.message);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
+
 export const createCoinsPayment = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { plan_id, amount, coins } = req.body;
+    const { plan_id } = req.body;   // amount, coins ఇక క్లయింట్ నుండి తీసుకోవద్దు
 
-    if (!plan_id || !amount || !coins)
-      return res.status(400).json({ success: false, message: "plan_id, amount, coins required" });
+    if (!plan_id)
+      return res.status(400).json({ success: false, message: "plan_id required" });
 
     const [[plan]] = await db.execute(
       `SELECT id, coins, price, name FROM subscription_plans WHERE id = ? AND is_active = 1`,
@@ -29,9 +74,7 @@ export const createCoinsPayment = async (req, res) => {
     if (!plan)
       return res.status(400).json({ success: false, message: "Invalid plan" });
 
-    const amountPaise = Math.round(Number(amount) * 100); // USD cents (Razorpay's smallest-unit param name is "paise" regardless of currency)
-    if (amountPaise < 100)
-      return res.status(400).json({ success: false, message: "Minimum amount is $1" });
+    const amountPaise = Math.round(Number(plan.price) * 100);   // ✅ DB price నుండి
 
     const order = await razorpay.orders.create({
       amount: amountPaise,
@@ -40,24 +83,206 @@ export const createCoinsPayment = async (req, res) => {
       notes: {
         userId:  String(userId),
         plan_id: String(plan_id),
-        coins:   String(coins),
         type:    "coins_purchase",
       },
     });
 
-    res.status(200).json({
-      success:  true,
-      order_id: order.id,
-      amount:   order.amount,
-      currency: order.currency,
-      key_id:   process.env.RAZORPAY_KEY_ID,
-    });
-
+    res.status(200).json({ success: true, order_id: order.id, amount: order.amount, currency: order.currency, key_id: process.env.RAZORPAY_KEY_ID });
   } catch (err) {
-    console.error("❌ createCoinsPayment:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+/* ================= VERIFY PAYMENT ================= */
+// export const verifyCoinsPayment = async (req, res) => {
+//   try {
+//     const {
+//       razorpay_order_id,
+//       razorpay_payment_id,
+//       razorpay_signature,
+//       plan_id,
+//       coins,
+//       amount,
+//     } = req.body;
+
+//     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !plan_id || !coins || !amount)
+//       return res.status(400).json({ success: false, message: "Missing required fields" });
+
+//     /* ── Signature verify ── */
+//     const generated = crypto
+//       .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+//       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+//       .digest("hex");
+
+//     const sigA = Buffer.from(generated);
+//     const sigB = Buffer.from(razorpay_signature || "");
+//     if (sigA.length !== sigB.length || !crypto.timingSafeEqual(sigA, sigB))
+//       return res.status(400).json({ success: false, message: "Payment verification failed" });
+
+//     const userId        = req.user.id;
+//     let parsedCoins      = Number(coins);
+//     let parsedAmount     = Number(amount) / 100; // cents → USD (overwritten from plan below)
+
+//     /* ── company_ledger appends read-then-insert off the last row, which
+//        InnoDB can deadlock on under concurrent purchases — retry a few
+//        times on deadlock (MySQL's own recommended handling) rather than
+//        surface a false failure to a user who was actually charged. ── */
+//     const MAX_RETRIES = 5;
+
+//     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+//       const conn = await db.getConnection();
+//       try {
+//         await conn.beginTransaction();
+
+//         /* ── Duplicate check ── */
+//         const [[existing]] = await conn.query(
+//           `SELECT id FROM coins_transactions WHERE reference_id = ? LIMIT 1`,
+//           [razorpay_payment_id]
+//         );
+//         if (existing) {
+//           await conn.rollback();
+//           return res.json({ success: true, message: "Already processed" });
+//         }
+
+//         /* ── Plan verify ── */
+//         const [[plan]] = await conn.query(
+//           `SELECT id, name, coins, price, matches, validity_days FROM subscription_plans WHERE id = ? LIMIT 1`,
+//           [plan_id]
+//         );
+//         if (!plan) throw new Error("Plan not found");
+
+//         /* ── Credit the plan's real coins/price — never trust the client body ── */
+//         parsedCoins  = Number(plan.coins);
+//         parsedAmount = Number(plan.price);
+
+//         /* ── Current wallet ── */
+//         const [[wallet]] = await conn.query(
+//           `SELECT coins, total_coins, available_coins FROM user_coins WHERE user_id = ? FOR UPDATE`,
+//           [userId]
+//         );
+
+//         /* ── User fetch ── */
+//         const [[userInfo]] = await conn.query(
+//           `SELECT fullname, email, mobile FROM users WHERE id = ?`,
+//           [userId]
+//         );
+
+//         const openingCoins = wallet ? Number(wallet.available_coins) : 0;
+//         const closingCoins = openingCoins + parsedCoins;
+
+//         /* ── Coins update or insert ── */
+//         if (wallet) {
+//           await conn.query(
+//             `UPDATE user_coins
+//              SET coins           = coins + ?,
+//                  total_coins     = total_coins + ?,
+//                  available_coins = available_coins + ?
+//              WHERE user_id = ?`,
+//             [parsedCoins, parsedCoins, parsedCoins, userId]
+//           );
+//         } else {
+//           await conn.query(
+//             `INSERT INTO user_coins (user_id, coins, total_coins, used_coins, available_coins)
+//              VALUES (?, ?, ?, 0, ?)`,
+//             [userId, parsedCoins, parsedCoins, parsedCoins]
+//           );
+//         }
+
+//         /* ── Coins transaction log ── */
+//         const [txResult] = await conn.query(
+//           `INSERT INTO coins_transactions
+//              (user_id, plan_id, coins, amount,
+//               opening_points, closing_points,
+//               reference_id, status,
+//               user_name, user_email, user_mobile)
+//            VALUES (?, ?, ?, ?, ?, ?, ?, 'success', ?, ?, ?)`,
+//           [
+//             userId, plan_id, parsedCoins, parsedAmount,
+//             openingCoins, closingCoins,
+//             razorpay_payment_id,
+//             userInfo?.fullname || null,
+//             userInfo?.email    || null,
+//             userInfo?.mobile   || null,
+//           ]
+//         );
+
+//         /* ── Subscription record ── */
+//         await conn.query(
+//           `INSERT INTO user_subscriptions
+//              (user_id, plan_id, plan_name, coins, matches_allowed,
+//               amount, payment_reference, status, start_date, expiry_date)
+//            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), DATE_ADD(NOW(), INTERVAL ? DAY))`,
+//           [
+//             userId, plan_id, plan.name, parsedCoins,
+//             plan.matches, parsedAmount, razorpay_payment_id,
+//             plan.validity_days,
+//           ]
+//         );
+
+//         /* ── Company ledger — balance tracked on a fixed single row
+//            (company_balance, id=1) instead of "last row of company_ledger",
+//            which was a moving target: concurrent transactions could each
+//            lock a different "last" row and deadlock on insert. Every
+//            transaction now locks the same row, so they queue in order
+//            instead of deadlocking. ── */
+//         const [[bal]] = await conn.query(
+//           `SELECT balance FROM company_balance WHERE id = 1 FOR UPDATE`
+//         );
+//         const companyOpening = bal ? Number(bal.balance) : 0;
+//         const companyClosing = companyOpening + parsedAmount;
+
+//         await conn.query(
+//           `UPDATE company_balance SET balance = ? WHERE id = 1`,
+//           [companyClosing]
+//         );
+
+//         await conn.query(
+//           `INSERT INTO company_ledger
+//              (transaction_id, user_id, user_name, user_email,
+//               plan_name, amount, opening_balance, closing_balance, payment_reference)
+//            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+//           [
+//             txResult.insertId, userId,
+//             userInfo?.fullname || null,
+//             userInfo?.email    || null,
+//             plan.name, parsedAmount,
+//             companyOpening, companyClosing,
+//             razorpay_payment_id,
+//           ]
+//         );
+
+//         await conn.commit();
+
+//         console.log(`✅ Coins added — userId:${userId} coins:${parsedCoins} closing:${closingCoins}`);
+
+//         await sendPushToUser({
+//           userId,
+//           title: "Coin Pack Purchased",
+//           body: `${parsedCoins} coins from ${plan.name} have been added to your account.`,
+//           data: { type: "coin_pack_purchased", plan_id: plan_id, coins: parsedCoins },
+//         });
+
+//         return res.json({ success: true, message: "Payment verified and coins credited" });
+
+//       } catch (err) {
+//         await conn.rollback().catch(() => {});
+//         if (err.code === "ER_LOCK_DEADLOCK" && attempt < MAX_RETRIES) {
+//           // Small random backoff so retries don't immediately collide
+//           // into the same contention again.
+//           await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 150));
+//           continue;
+//         }
+//         throw err;
+//       } finally {
+//         conn.release();
+//       }
+//     }
+
+//   } catch (err) {
+//     console.error("❌ verifyCoinsPayment:", err.message);
+//     res.status(500).json({ success: false, message: err.message });
+//   }
+// };
 
 /* ================= VERIFY PAYMENT ================= */
 export const verifyCoinsPayment = async (req, res) => {
@@ -85,9 +310,34 @@ export const verifyCoinsPayment = async (req, res) => {
     if (sigA.length !== sigB.length || !crypto.timingSafeEqual(sigA, sigB))
       return res.status(400).json({ success: false, message: "Payment verification failed" });
 
-    const userId        = req.user.id;
-    let parsedCoins      = Number(coins);
-    let parsedAmount     = Number(amount) / 100; // cents → USD (overwritten from plan below)
+    /* ── Plan verify — price ఎప్పుడూ DB నుండే, client body నుండి కాదు ── */
+    const [[planCheck]] = await db.execute(
+      `SELECT id, price FROM subscription_plans WHERE id = ? AND is_active = 1`,
+      [plan_id]
+    );
+    if (!planCheck)
+      return res.status(400).json({ success: false, message: "Invalid plan" });
+
+    /* ── Razorpay నుండి actual captured payment fetch — client body లో వచ్చే
+       amount/coins ఎప్పటికీ నమ్మొద్దు, ఇక్కడే tamper బగ్ ఫిక్స్ అవుతుంది ── */
+    const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
+
+    if (paymentDetails.status !== "captured")
+      return res.status(400).json({ success: false, message: "Payment not captured" });
+
+    if (paymentDetails.order_id !== razorpay_order_id)
+      return res.status(400).json({ success: false, message: "Order mismatch" });
+
+    const expectedPaise = Math.round(Number(planCheck.price) * 100);
+    if (paymentDetails.amount !== expectedPaise)
+      return res.status(400).json({
+        success: false,
+        message: "Amount mismatch — payment does not match plan price",
+      });
+
+    const userId    = req.user.id;
+    let parsedCoins  = Number(coins);
+    let parsedAmount = Number(amount) / 100; // cents → USD (loop లో plan నుండి overwrite అవుతుంది)
 
     /* ── company_ledger appends read-then-insert off the last row, which
        InnoDB can deadlock on under concurrent purchases — retry a few
@@ -110,7 +360,7 @@ export const verifyCoinsPayment = async (req, res) => {
           return res.json({ success: true, message: "Already processed" });
         }
 
-        /* ── Plan verify ── */
+        /* ── Plan verify (transaction లో మళ్ళీ, locking/consistency కోసం) ── */
         const [[plan]] = await conn.query(
           `SELECT id, name, coins, price, matches, validity_days FROM subscription_plans WHERE id = ? LIMIT 1`,
           [plan_id]
@@ -233,8 +483,6 @@ export const verifyCoinsPayment = async (req, res) => {
       } catch (err) {
         await conn.rollback().catch(() => {});
         if (err.code === "ER_LOCK_DEADLOCK" && attempt < MAX_RETRIES) {
-          // Small random backoff so retries don't immediately collide
-          // into the same contention again.
           await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 150));
           continue;
         }
@@ -249,6 +497,7 @@ export const verifyCoinsPayment = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
 
 /* ================= GET RAZORPAY CONFIG ================= */
 export const getRazorpayConfig = async (req, res) => {
