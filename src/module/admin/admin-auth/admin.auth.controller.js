@@ -13,7 +13,7 @@ export const adminLogin = async (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 };
-
+   
 // /* ================= CREATE ADMIN ================= */
 export const createAdmin = async (req, res) => {
   try {
@@ -45,7 +45,7 @@ export const getProfile = async (req, res) => {
       message: err.message,
     });   
   }
-};
+};  
 
 export const setup2FA = async (req, res) => {
   try {
@@ -76,7 +76,7 @@ export const setup2FA = async (req, res) => {
     res.status(200).json(result);
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
-  }
+  }  
 };
 
 /* ================= GET ALL ADMINS ================= */
@@ -89,7 +89,7 @@ export const getAdmins = async (req, res) => {
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
-};
+};   
 
 /* ================= GET ADMIN BY ID ================= */
 export const getAdminById = async (req, res) => {

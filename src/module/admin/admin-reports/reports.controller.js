@@ -158,8 +158,8 @@ export const getDashboardReport = async (req, res) => {
       `SELECT
          'purchase'      AS type,
          us.created_at,
-         u.fullname,
-         u.country,
+         COALESCE(u.fullname, 'User') AS fullname,
+         COALESCE(u.country, 'Unknown') AS country,
          us.plan_name,
          us.coins
 
@@ -174,11 +174,11 @@ export const getDashboardReport = async (req, res) => {
       `SELECT
          'uct_generated'        AS type,
          mgl.created_at,
-         u.fullname,
-         u.country,
+         COALESCE(u.fullname, 'User') AS fullname,
+         COALESCE(u.country, 'Unknown') AS country,
          NULL                   AS plan_name,
          NULL                   AS coins,
-         CONCAT(m.hometeamname, ' vs ', m.awayteamname) AS match_label
+         COALESCE(CONCAT(m.hometeamname, ' vs ', m.awayteamname), 'Unknown match') AS match_label
        FROM match_generation_log mgl
        JOIN users   u ON u.id = mgl.user_id
        JOIN matches m ON m.id = mgl.match_id
@@ -190,8 +190,8 @@ export const getDashboardReport = async (req, res) => {
       `SELECT
          'signup'  AS type,
          created_at,
-         fullname,
-         country,
+         COALESCE(fullname, 'New user') AS fullname,
+         COALESCE(country, 'Unknown') AS country,
          NULL AS plan_name,
          NULL AS coins,
          NULL AS match_label
@@ -204,8 +204,8 @@ export const getDashboardReport = async (req, res) => {
       `SELECT
          'deleted'  AS type,
          updated_at AS created_at,
-         id         AS fullname,
-         NULL       AS country,
+         CONCAT('Deleted user #', id) AS fullname,
+         'Unknown'  AS country,
          NULL AS plan_name,
          NULL AS coins,
          NULL AS match_label
@@ -219,8 +219,8 @@ export const getDashboardReport = async (req, res) => {
       `SELECT
          'uct_cancelled' AS type,
          mgl.created_at,
-         u.fullname,
-         u.country,
+         COALESCE(u.fullname, 'User') AS fullname,
+         COALESCE(u.country, 'Unknown') AS country,
          NULL AS plan_name,
          NULL AS coins,
          NULL AS match_label
@@ -235,8 +235,8 @@ export const getDashboardReport = async (req, res) => {
       `SELECT
          'banned'    AS type,
          updated_at  AS created_at,
-         fullname,
-         country,
+         COALESCE(fullname, 'User') AS fullname,
+         COALESCE(country, 'Unknown') AS country,
          NULL AS plan_name,
          NULL AS coins,
          NULL AS match_label
